@@ -100,23 +100,29 @@ func CloneRepository(input string, verbose bool) (string, string, error) {
 		return "", "", fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
-	fmt.Printf("Cloning repository: %s\n", params.URL)
-	if params.Branch != "" {
-		fmt.Printf("Branch: %s\n", params.Branch)
+	if verbose {
+		fmt.Printf("Cloning repository: %s\n", params.URL)
+		if params.Branch != "" {
+			fmt.Printf("Branch: %s\n", params.Branch)
+		}
+		if params.Path != "setup.bp" {
+			fmt.Printf("Setup file: %s\n", params.Path)
+		}
+		fmt.Printf("To: %s\n", tmpDir)
 	}
-	if params.Path != "setup.bp" {
-		fmt.Printf("Setup file: %s\n", params.Path)
-	}
-	fmt.Printf("To: %s\n", tmpDir)
 
 	// Try to clone with the original URL
 	err = tryClone(tmpDir, params.URL, params.Branch, verbose)
 
 	// If SSH fails on a public repo, try converting to HTTPS
 	if err != nil && strings.HasPrefix(params.URL, "git@") {
-		fmt.Printf("SSH failed, attempting HTTPS fallback...\n")
+		if verbose {
+			fmt.Printf("SSH failed, attempting HTTPS fallback...\n")
+		}
 		httpsURL := convertSSHToHTTPS(params.URL)
-		fmt.Printf("Trying: %s\n", httpsURL)
+		if verbose {
+			fmt.Printf("Trying: %s\n", httpsURL)
+		}
 		err = tryClone(tmpDir, httpsURL, params.Branch, verbose)
 	}
 
@@ -126,7 +132,9 @@ func CloneRepository(input string, verbose bool) (string, string, error) {
 		return "", "", fmt.Errorf("failed to clone repository: %w", err)
 	}
 
-	fmt.Printf("Repository cloned successfully\n\n")
+	if verbose {
+		fmt.Printf("Repository cloned successfully\n\n")
+	}
 	return tmpDir, params.Path, nil
 }
 
