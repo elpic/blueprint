@@ -265,10 +265,6 @@ func executeRules(rules []parser.Rule, blueprint string, osName string) []Execut
 	var records []ExecutionRecord
 
 	for i, rule := range rules {
-		// Show progress bar
-		ui.PrintProgressBar(i+1, len(rules))
-		ui.ClearProgressBar()
-
 		cmd := buildCommand(rule)
 
 		// Show actual command including sudo if needed
@@ -277,8 +273,7 @@ func executeRules(rules []parser.Rule, blueprint string, osName string) []Execut
 			actualCmd = "sudo " + cmd
 		}
 
-		fmt.Printf("[%d/%d] %s\n", i+1, len(rules), ui.FormatHighlight("Executing: "+rule.Action))
-		fmt.Printf("       Command: %s\n", ui.FormatDim(actualCmd))
+		fmt.Printf("[%d/%d] %s", i+1, len(rules), ui.FormatHighlight(rule.Action))
 
 		// Execute the command
 		output, err := executeCommand(cmd)
@@ -293,22 +288,15 @@ func executeRules(rules []parser.Rule, blueprint string, osName string) []Execut
 		}
 
 		if err != nil {
-			fmt.Printf("       %s\n", ui.FormatError(err.Error()))
-			if output != "" {
-				fmt.Printf("       %s\n", ui.FormatDim(strings.TrimSpace(output)))
-			}
+			fmt.Printf(" %s\n", ui.FormatError("Failed"))
 			record.Status = "error"
 			record.Error = err.Error()
 		} else {
-			if output != "" {
-				fmt.Printf("       %s\n", ui.FormatDim(strings.TrimSpace(output)))
-			}
-			fmt.Printf("       %s\n", ui.FormatSuccess("Done"))
+			fmt.Printf(" %s\n", ui.FormatSuccess("Done"))
 			record.Status = "success"
 		}
 
 		records = append(records, record)
-		fmt.Println()
 	}
 
 	return records
