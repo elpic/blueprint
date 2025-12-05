@@ -166,21 +166,32 @@ func displayRules(rules []parser.Rule) {
 }
 
 func buildCommand(rule parser.Rule) string {
-	if rule.Action == "install" && len(rule.Packages) > 0 {
-		pkgNames := ""
-		for i, pkg := range rule.Packages {
-			if i > 0 {
-				pkgNames += " "
-			}
-			pkgNames += pkg.Name
-		}
+	if len(rule.Packages) == 0 {
+		return fmt.Sprintf("%s %v", rule.Action, rule.Packages)
+	}
 
+	pkgNames := ""
+	for i, pkg := range rule.Packages {
+		if i > 0 {
+			pkgNames += " "
+		}
+		pkgNames += pkg.Name
+	}
+
+	if rule.Action == "install" {
 		// Use brew for macOS, apt for Linux
 		if len(rule.OSList) > 0 && rule.OSList[0] == "mac" {
 			return fmt.Sprintf("brew install %s", pkgNames)
 		}
 		return fmt.Sprintf("apt-get install -y %s", pkgNames)
+	} else if rule.Action == "uninstall" {
+		// Uninstall commands
+		if len(rule.OSList) > 0 && rule.OSList[0] == "mac" {
+			return fmt.Sprintf("brew uninstall -y %s", pkgNames)
+		}
+		return fmt.Sprintf("apt-get remove -y %s", pkgNames)
 	}
+
 	return fmt.Sprintf("%s %v", rule.Action, rule.Packages)
 }
 
@@ -202,6 +213,7 @@ func needsSudo(command string) bool {
 	}
 
 	// Package managers that require sudo on Linux
+	// Both install and remove/uninstall commands need sudo
 	sudoRequired := []string{
 		"apt", "apt-get", "aptitude",
 		"yum", "dnf",

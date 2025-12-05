@@ -82,6 +82,12 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 			if rule != nil {
 				rules = append(rules, *rule)
 			}
+		} else if strings.HasPrefix(line, "uninstall ") {
+			// Parse format: uninstall <packages> on: [<platforms>]
+			rule := parseUninstallRule(line)
+			if rule != nil {
+				rules = append(rules, *rule)
+			}
 		}
 	}
 
@@ -137,6 +143,40 @@ func parseInstallRule(line string) *Rule {
 
 	return &Rule{
 		Action:   "install",
+		Packages: pkgs,
+		OSList:   osList,
+		Tool:     "package-manager",
+	}
+}
+
+func parseUninstallRule(line string) *Rule {
+	// Remove "uninstall " prefix
+	line = strings.TrimPrefix(line, "uninstall ")
+
+	// Split by "on:"
+	parts := strings.Split(line, "on:")
+	if len(parts) != 2 {
+		return nil
+	}
+
+	packages := strings.Fields(strings.TrimSpace(parts[0]))
+	osListStr := strings.TrimSpace(parts[1])
+
+	// Parse OS list [linux, mac, windows]
+	osListStr = strings.Trim(osListStr, "[]")
+	osList := strings.Split(osListStr, ",")
+	for i := range osList {
+		osList[i] = strings.TrimSpace(osList[i])
+	}
+
+	// Create packages
+	pkgs := make([]Package, len(packages))
+	for i, pkg := range packages {
+		pkgs[i] = Package{Name: pkg, Version: "latest"}
+	}
+
+	return &Rule{
+		Action:   "uninstall",
 		Packages: pkgs,
 		OSList:   osList,
 		Tool:     "package-manager",

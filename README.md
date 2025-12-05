@@ -180,8 +180,18 @@ The DSL format uses lines with keywords to define rules and include other files:
 
 ### Install Rules
 
+Install packages on specified platforms:
+
 ```
 install <package> [package2] ... on: [platform1, platform2, ...]
+```
+
+### Uninstall Rules
+
+Remove packages from specified platforms:
+
+```
+uninstall <package> [package2] ... on: [platform1, platform2, ...]
 ```
 
 ### Include Statements
@@ -198,6 +208,11 @@ include ../config/setup.bp
 **Simple install rule:**
 ```
 install git curl on: [mac]
+```
+
+**Simple uninstall rule:**
+```
+uninstall git curl on: [mac]
 ```
 
 **Multiple packages:**
@@ -219,9 +234,12 @@ include config/runtimes.bp
 include config/dev-tools.bp
 include config/runtimes.bp
 
-# Local rules
+# Install rules
 install brew on: [mac]
 install xcode-select on: [mac]
+
+# Uninstall rules (for cleanup)
+uninstall vim on: [mac]
 ```
 
 **Included file (config/dev-tools.bp):**
@@ -229,7 +247,23 @@ install xcode-select on: [mac]
 # Development tools
 install git curl on: [mac]
 install make on: [mac, linux]
+
+uninstall old-tool on: [mac, linux]
 ```
+
+## Automatic Command Generation
+
+Blueprint automatically generates the correct package manager commands:
+
+### macOS
+- `install` → `brew install <packages>`
+- `uninstall` → `brew uninstall -y <packages>`
+
+### Linux
+- `install` → `apt-get install -y <packages>`
+- `uninstall` → `apt-get remove -y <packages>`
+
+The system also automatically adds `sudo` when needed on Linux (if not running as root).
 
 ## History Tracking
 
