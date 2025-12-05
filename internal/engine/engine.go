@@ -77,18 +77,34 @@ func Run(file string, dry bool) {
 	filteredRules := filterRulesByOS(rules)
 	currentOS := getOSName()
 
+	// Check history and add auto-uninstall rules for removed packages
+	autoUninstallRules := getAutoUninstallRules(filteredRules, file, currentOS)
+	allRules := append(filteredRules, autoUninstallRules...)
+
 	if dry {
 		fmt.Println("=== [PLAN MODE - DRY RUN] ===\n")
 		fmt.Printf("Blueprint: %s\n", file)
 		fmt.Printf("Current OS: %s\n", currentOS)
-		fmt.Printf("Applicable Rules: %d\n\n", len(filteredRules))
+		fmt.Printf("Applicable Rules: %d\n", len(filteredRules))
+		if len(autoUninstallRules) > 0 {
+			fmt.Printf("Auto-uninstall Rules: %d\n", len(autoUninstallRules))
+		}
+		fmt.Printf("\n")
 		displayRules(filteredRules)
+		if len(autoUninstallRules) > 0 {
+			fmt.Println("--- Auto-uninstall (removed from blueprint) ---\n")
+			displayRules(autoUninstallRules)
+		}
 		fmt.Println("\n[No changes will be applied]")
 	} else {
 		fmt.Println("=== [APPLY MODE] ===\n")
 		fmt.Printf("OS: %s\n", currentOS)
-		fmt.Printf("Executing %d rules from %s\n\n", len(filteredRules), file)
-		records := executeRules(filteredRules, file, currentOS)
+		if len(autoUninstallRules) > 0 {
+			fmt.Printf("Executing %d rules + %d auto-uninstall from %s\n\n", len(filteredRules), len(autoUninstallRules), file)
+		} else {
+			fmt.Printf("Executing %d rules from %s\n\n", len(filteredRules), file)
+		}
+		records := executeRules(allRules, file, currentOS)
 		if err := saveHistory(records); err != nil {
 			fmt.Printf("Warning: Failed to save history: %v\n", err)
 		}
@@ -353,5 +369,109 @@ func saveHistory(records []ExecutionRecord) error {
 	}
 
 	return nil
+}
+
+// getAutoUninstallRules compares history with current rules and generates uninstall rules for removed packages
+func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osName string) []parser.Rule {
+	var autoUninstallRules []parser.Rule
+
+	// Load history
+	historyPath, err := getHistoryPath()
+	if err != nil {
+		return autoUninstallRules
+	}
+
+	// Read history file
+	data, err := os.ReadFile(historyPath)
+	if err != nil {
+		// No history yet, nothing to uninstall
+		return autoUninstallRules
+	}
+
+	// Parse history
+	var records []ExecutionRecord
+	if err := json.Unmarshal(data, &records); err != nil {
+		return autoUninstallRules
+	}
+
+	// Extract historically installed packages for this blueprint and OS
+	historicalPackages := make(map[string]bool)
+	for _, record := range records {
+		// Only consider successful installs from this blueprint on this OS
+		if record.Status == "success" && record.Blueprint == blueprintFile && record.OS == osName {
+			// Check if it's an install command
+			if strings.Contains(record.Command, "install") {
+				// Extract package names from command
+				// Format: "brew install <packages>" or "apt-get install -y <packages>"
+				pkgs := extractPackagesFromCommand(record.Command, "install")
+				for _, pkg := range pkgs {
+					historicalPackages[pkg] = true
+				}
+			}
+		}
+	}
+
+	// Get current packages from blueprint rules
+	currentPackages := make(map[string]bool)
+	for _, rule := range currentRules {
+		if rule.Action == "install" {
+			for _, pkg := range rule.Packages {
+				currentPackages[pkg.Name] = true
+			}
+		}
+	}
+
+	// Find packages to uninstall (in history but not in current rules)
+	var packagesToUninstall []parser.Package
+	for pkg := range historicalPackages {
+		if !currentPackages[pkg] {
+			packagesToUninstall = append(packagesToUninstall, parser.Package{
+				Name:    pkg,
+				Version: "latest",
+			})
+		}
+	}
+
+	// If there are packages to uninstall, create a rule
+	if len(packagesToUninstall) > 0 {
+		autoUninstallRules = append(autoUninstallRules, parser.Rule{
+			Action:   "uninstall",
+			Packages: packagesToUninstall,
+			OSList:   []string{osName},
+			Tool:     "package-manager",
+		})
+	}
+
+	return autoUninstallRules
+}
+
+// extractPackagesFromCommand extracts package names from a command string
+func extractPackagesFromCommand(command string, action string) []string {
+	var packages []string
+
+	if action == "install" {
+		// Handle different install commands
+		if strings.Contains(command, "brew install") {
+			// Extract packages after "brew install"
+			parts := strings.Split(command, "brew install")
+			if len(parts) > 1 {
+				pkgStr := strings.TrimSpace(parts[1])
+				packages = strings.Fields(pkgStr)
+			}
+		} else if strings.Contains(command, "apt-get install") {
+			// Extract packages after "apt-get install -y"
+			// Remove sudo prefix if present
+			cmd := strings.TrimPrefix(command, "sudo ")
+			parts := strings.Split(cmd, "apt-get install")
+			if len(parts) > 1 {
+				pkgStr := strings.TrimSpace(parts[1])
+				// Remove -y flag
+				pkgStr = strings.ReplaceAll(pkgStr, "-y", "")
+				packages = strings.Fields(pkgStr)
+			}
+		}
+	}
+
+	return packages
 }
 

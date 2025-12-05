@@ -186,13 +186,13 @@ Install packages on specified platforms:
 install <package> [package2] ... on: [platform1, platform2, ...]
 ```
 
-### Uninstall Rules
+### Automatic Cleanup
 
-Remove packages from specified platforms:
+Blueprint automatically removes packages that were previously installed but are no longer in your blueprint configuration. It uses execution history to track what was installed and compares it with the current blueprint:
 
-```
-uninstall <package> [package2] ... on: [platform1, platform2, ...]
-```
+- When you remove a package from the blueprint and run `apply`, Blueprint will automatically uninstall it
+- Only packages that were successfully installed on the current OS will be removed
+- History is tracked per blueprint file and OS to ensure accuracy
 
 ### Include Statements
 
@@ -208,11 +208,6 @@ include ../config/setup.bp
 **Simple install rule:**
 ```
 install git curl on: [mac]
-```
-
-**Simple uninstall rule:**
-```
-uninstall git curl on: [mac]
 ```
 
 **Multiple packages:**
@@ -237,9 +232,7 @@ include config/runtimes.bp
 # Install rules
 install brew on: [mac]
 install xcode-select on: [mac]
-
-# Uninstall rules (for cleanup)
-uninstall vim on: [mac]
+install git curl on: [mac]
 ```
 
 **Included file (config/dev-tools.bp):**
@@ -247,21 +240,19 @@ uninstall vim on: [mac]
 # Development tools
 install git curl on: [mac]
 install make on: [mac, linux]
-
-uninstall old-tool on: [mac, linux]
 ```
 
 ## Automatic Command Generation
 
-Blueprint automatically generates the correct package manager commands:
+Blueprint automatically generates the correct package manager commands for both explicit rules and automatic cleanup:
 
 ### macOS
-- `install` → `brew install <packages>`
-- `uninstall` → `brew uninstall -y <packages>`
+- Install rules → `brew install <packages>`
+- Auto-cleanup (removed packages) → `brew uninstall -y <packages>`
 
 ### Linux
-- `install` → `apt-get install -y <packages>`
-- `uninstall` → `apt-get remove -y <packages>`
+- Install rules → `apt-get install -y <packages>`
+- Auto-cleanup (removed packages) → `apt-get remove -y <packages>`
 
 The system also automatically adds `sudo` when needed on Linux (if not running as root).
 
