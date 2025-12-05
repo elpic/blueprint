@@ -13,6 +13,7 @@ import (
 	"time"
 	"github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/ui"
 )
 
 type ExecutionRecord struct {
@@ -82,28 +83,15 @@ func Run(file string, dry bool) {
 	allRules := append(filteredRules, autoUninstallRules...)
 
 	if dry {
-		fmt.Println("=== [PLAN MODE - DRY RUN] ===\n")
-		fmt.Printf("Blueprint: %s\n", file)
-		fmt.Printf("Current OS: %s\n", currentOS)
-		fmt.Printf("Applicable Rules: %d\n", len(filteredRules))
-		if len(autoUninstallRules) > 0 {
-			fmt.Printf("Auto-uninstall Rules: %d\n", len(autoUninstallRules))
-		}
-		fmt.Printf("\n")
+		ui.PrintExecutionHeader(false, currentOS, file, len(filteredRules), len(autoUninstallRules))
 		displayRules(filteredRules)
 		if len(autoUninstallRules) > 0 {
-			fmt.Println("--- Auto-uninstall (removed from blueprint) ---\n")
+			ui.PrintAutoUninstallSection()
 			displayRules(autoUninstallRules)
 		}
-		fmt.Println("\n[No changes will be applied]")
+		ui.PrintPlanFooter()
 	} else {
-		fmt.Println("=== [APPLY MODE] ===\n")
-		fmt.Printf("OS: %s\n", currentOS)
-		if len(autoUninstallRules) > 0 {
-			fmt.Printf("Executing %d rules + %d auto-uninstall from %s\n\n", len(filteredRules), len(autoUninstallRules), file)
-		} else {
-			fmt.Printf("Executing %d rules from %s\n\n", len(filteredRules), file)
-		}
+		ui.PrintExecutionHeader(true, currentOS, file, len(filteredRules), len(autoUninstallRules))
 		records := executeRules(allRules, file, currentOS)
 		if err := saveHistory(records); err != nil {
 			fmt.Printf("Warning: Failed to save history: %v\n", err)
@@ -145,8 +133,8 @@ func filterRulesByOS(rules []parser.Rule) []parser.Rule {
 
 func displayRules(rules []parser.Rule) {
 	for i, rule := range rules {
-		fmt.Printf("Rule #%d:\n", i+1)
-		fmt.Printf("  Action: %s\n", rule.Action)
+		fmt.Printf("Rule #%s:\n", ui.FormatHighlight(fmt.Sprint(i+1)))
+		fmt.Printf("  Action: %s\n", ui.FormatHighlight(rule.Action))
 
 		if len(rule.Packages) > 0 {
 			fmt.Print("  Packages: ")
@@ -154,7 +142,7 @@ func displayRules(rules []parser.Rule) {
 				if j > 0 {
 					fmt.Print(", ")
 				}
-				fmt.Print(pkg.Name)
+				fmt.Print(ui.FormatInfo(pkg.Name))
 			}
 			fmt.Println()
 		}
@@ -165,18 +153,18 @@ func displayRules(rules []parser.Rule) {
 				if j > 0 {
 					fmt.Print(", ")
 				}
-				fmt.Print(os)
+				fmt.Print(ui.FormatDim(os))
 			}
 			fmt.Println()
 		}
 
 		if rule.Tool != "" {
-			fmt.Printf("  Tool: %s\n", rule.Tool)
+			fmt.Printf("  Tool: %s\n", ui.FormatDim(rule.Tool))
 		}
 
 		// Display command that will be executed
 		cmd := buildCommand(rule)
-		fmt.Printf("  Command: %s\n", cmd)
+		fmt.Printf("  Command: %s\n", ui.FormatDim(cmd))
 		fmt.Println()
 	}
 }
@@ -277,7 +265,10 @@ func executeRules(rules []parser.Rule, blueprint string, osName string) []Execut
 	var records []ExecutionRecord
 
 	for i, rule := range rules {
-		fmt.Printf("[%d/%d] Executing: %s\n", i+1, len(rules), rule.Action)
+		// Show progress bar
+		ui.PrintProgressBar(i+1, len(rules))
+		ui.ClearProgressBar()
+
 		cmd := buildCommand(rule)
 
 		// Show actual command including sudo if needed
@@ -285,7 +276,9 @@ func executeRules(rules []parser.Rule, blueprint string, osName string) []Execut
 		if needsSudo(cmd) {
 			actualCmd = "sudo " + cmd
 		}
-		fmt.Printf("       Command: %s\n", actualCmd)
+
+		fmt.Printf("[%d/%d] %s\n", i+1, len(rules), ui.FormatHighlight("Executing: "+rule.Action))
+		fmt.Printf("       Command: %s\n", ui.FormatDim(actualCmd))
 
 		// Execute the command
 		output, err := executeCommand(cmd)
@@ -300,17 +293,17 @@ func executeRules(rules []parser.Rule, blueprint string, osName string) []Execut
 		}
 
 		if err != nil {
-			fmt.Printf("       ✗ Error: %v\n", err)
+			fmt.Printf("       %s\n", ui.FormatError(err.Error()))
 			if output != "" {
-				fmt.Printf("       %s\n", strings.TrimSpace(output))
+				fmt.Printf("       %s\n", ui.FormatDim(strings.TrimSpace(output)))
 			}
 			record.Status = "error"
 			record.Error = err.Error()
 		} else {
 			if output != "" {
-				fmt.Printf("       %s\n", strings.TrimSpace(output))
+				fmt.Printf("       %s\n", ui.FormatDim(strings.TrimSpace(output)))
 			}
-			fmt.Println("       ✓ Done")
+			fmt.Printf("       %s\n", ui.FormatSuccess("Done"))
 			record.Status = "success"
 		}
 
