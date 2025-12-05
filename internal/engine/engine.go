@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"github.com/elpic/blueprint/internal/git"
@@ -165,12 +166,43 @@ func buildCommand(rule parser.Rule) string {
 	return fmt.Sprintf("%s %v", rule.Action, rule.Packages)
 }
 
+// executeCommand parses and executes a command string
+func executeCommand(cmdStr string) (string, error) {
+	// Parse command string into parts
+	parts := strings.Fields(cmdStr)
+	if len(parts) == 0 {
+		return "", fmt.Errorf("empty command")
+	}
+
+	// Create command
+	cmd := exec.Command(parts[0], parts[1:]...)
+
+	// Capture output
+	output, err := cmd.CombinedOutput()
+
+	return string(output), err
+}
+
 func executeRules(rules []parser.Rule) {
 	for i, rule := range rules {
 		fmt.Printf("[%d/%d] Executing: %s\n", i+1, len(rules), rule.Action)
 		cmd := buildCommand(rule)
 		fmt.Printf("       Command: %s\n", cmd)
-		fmt.Println("       ✓ Done")
+
+		// Execute the command
+		output, err := executeCommand(cmd)
+
+		if err != nil {
+			fmt.Printf("       ✗ Error: %v\n", err)
+			if output != "" {
+				fmt.Printf("       %s\n", strings.TrimSpace(output))
+			}
+		} else {
+			if output != "" {
+				fmt.Printf("       %s\n", strings.TrimSpace(output))
+			}
+			fmt.Println("       ✓ Done")
+		}
 		fmt.Println()
 	}
 }
