@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"runtime"
+	"strconv"
 	"strings"
 	"github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
@@ -166,8 +168,52 @@ func buildCommand(rule parser.Rule) string {
 	return fmt.Sprintf("%s %v", rule.Action, rule.Packages)
 }
 
+// needsSudo checks if a command requires sudo elevation
+func needsSudo(command string) bool {
+	// Only on Linux
+	if runtime.GOOS != "linux" {
+		return false
+	}
+
+	// Check if current user is root
+	currentUser, err := user.Current()
+	if err == nil {
+		uid, err := strconv.Atoi(currentUser.Uid)
+		if err == nil && uid == 0 {
+			// Already root, no sudo needed
+			return false
+		}
+	}
+
+	// Package managers that require sudo on Linux
+	sudoRequired := []string{
+		"apt", "apt-get", "aptitude",
+		"yum", "dnf",
+		"pacman", "pamac",
+		"zypper",
+		"emerge",
+		"opkg",
+		"apk",
+		"pkg",
+	}
+
+	cmdName := strings.Fields(command)[0]
+	for _, pm := range sudoRequired {
+		if cmdName == pm {
+			return true
+		}
+	}
+
+	return false
+}
+
 // executeCommand parses and executes a command string
 func executeCommand(cmdStr string) (string, error) {
+	// Check if sudo is needed
+	if needsSudo(cmdStr) {
+		cmdStr = "sudo " + cmdStr
+	}
+
 	// Parse command string into parts
 	parts := strings.Fields(cmdStr)
 	if len(parts) == 0 {
@@ -187,7 +233,13 @@ func executeRules(rules []parser.Rule) {
 	for i, rule := range rules {
 		fmt.Printf("[%d/%d] Executing: %s\n", i+1, len(rules), rule.Action)
 		cmd := buildCommand(rule)
-		fmt.Printf("       Command: %s\n", cmd)
+
+		// Show actual command including sudo if needed
+		actualCmd := cmd
+		if needsSudo(cmd) {
+			actualCmd = "sudo " + cmd
+		}
+		fmt.Printf("       Command: %s\n", actualCmd)
 
 		// Execute the command
 		output, err := executeCommand(cmd)
