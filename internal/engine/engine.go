@@ -1,16 +1,29 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 	"github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
 )
+
+type ExecutionRecord struct {
+	Timestamp string `json:"timestamp"`
+	Blueprint string `json:"blueprint"`
+	OS        string `json:"os"`
+	Command   string `json:"command"`
+	Status    string `json:"status"`
+	Output    string `json:"output,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
 
 func Run(file string, dry bool) {
 	var setupPath string
@@ -75,7 +88,10 @@ func Run(file string, dry bool) {
 		fmt.Println("=== [APPLY MODE] ===\n")
 		fmt.Printf("OS: %s\n", currentOS)
 		fmt.Printf("Executing %d rules from %s\n\n", len(filteredRules), file)
-		executeRules(filteredRules)
+		records := executeRules(filteredRules, file, currentOS)
+		if err := saveHistory(records); err != nil {
+			fmt.Printf("Warning: Failed to save history: %v\n", err)
+		}
 	}
 }
 
@@ -229,7 +245,9 @@ func executeCommand(cmdStr string) (string, error) {
 	return string(output), err
 }
 
-func executeRules(rules []parser.Rule) {
+func executeRules(rules []parser.Rule, blueprint string, osName string) []ExecutionRecord {
+	var records []ExecutionRecord
+
 	for i, rule := range rules {
 		fmt.Printf("[%d/%d] Executing: %s\n", i+1, len(rules), rule.Action)
 		cmd := buildCommand(rule)
@@ -244,18 +262,84 @@ func executeRules(rules []parser.Rule) {
 		// Execute the command
 		output, err := executeCommand(cmd)
 
+		// Create execution record
+		record := ExecutionRecord{
+			Timestamp: time.Now().Format(time.RFC3339),
+			Blueprint: blueprint,
+			OS:        osName,
+			Command:   actualCmd,
+			Output:    strings.TrimSpace(output),
+		}
+
 		if err != nil {
 			fmt.Printf("       ✗ Error: %v\n", err)
 			if output != "" {
 				fmt.Printf("       %s\n", strings.TrimSpace(output))
 			}
+			record.Status = "error"
+			record.Error = err.Error()
 		} else {
 			if output != "" {
 				fmt.Printf("       %s\n", strings.TrimSpace(output))
 			}
 			fmt.Println("       ✓ Done")
+			record.Status = "success"
 		}
+
+		records = append(records, record)
 		fmt.Println()
 	}
+
+	return records
+}
+
+// getHistoryPath returns the path to the history file in ~/.blueprint/
+func getHistoryPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	blueprintDir := filepath.Join(homeDir, ".blueprint")
+
+	// Create directory if it doesn't exist
+	if err := os.MkdirAll(blueprintDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create .blueprint directory: %w", err)
+	}
+
+	return filepath.Join(blueprintDir, "history.json"), nil
+}
+
+// saveHistory saves execution records to ~/.blueprint/history.json
+func saveHistory(records []ExecutionRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	historyPath, err := getHistoryPath()
+	if err != nil {
+		return err
+	}
+
+	// Read existing history
+	var allRecords []ExecutionRecord
+	if data, err := os.ReadFile(historyPath); err == nil {
+		json.Unmarshal(data, &allRecords)
+	}
+
+	// Append new records
+	allRecords = append(allRecords, records...)
+
+	// Write back to file
+	data, err := json.MarshalIndent(allRecords, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal history: %w", err)
+	}
+
+	if err := os.WriteFile(historyPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write history file: %w", err)
+	}
+
+	return nil
 }
 

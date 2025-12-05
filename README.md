@@ -231,23 +231,47 @@ install git curl on: [mac]
 install make on: [mac, linux]
 ```
 
-## Generated Files
+## History Tracking
 
-### history.json
+Blueprint automatically saves execution history to `~/.blueprint/history.json` after each `apply` operation. This allows you to:
 
-Generated automatically after each execution and contains a log of all executed rules:
+- Track what was executed and when
+- Review command output and errors
+- Maintain an audit log of all system changes
+
+### History File Location
+
+```
+~/.blueprint/history.json
+```
+
+### History Record Format
+
+Each execution creates a record with:
 
 ```json
-[
-  {
-    "rule_name": "initialize_database",
-    "status": "success",
-    "timestamp": "2025-12-05T10:30:00Z",
-    "result": {
-      "action": "create_database(\"mydb\")"
-    }
-  }
-]
+{
+  "timestamp": "2025-12-05T20:25:01-03:00",
+  "blueprint": "/path/to/setup.bp",
+  "os": "mac",
+  "command": "brew install git curl",
+  "status": "success|error",
+  "output": "command output here",
+  "error": "error message if failed"
+}
+```
+
+### View History
+
+```bash
+# View all execution history
+cat ~/.blueprint/history.json | jq .
+
+# View latest execution
+cat ~/.blueprint/history.json | jq '.[-1]'
+
+# Filter by blueprint
+cat ~/.blueprint/history.json | jq '.[] | select(.blueprint == "/path/to/setup.bp")'
 ```
 
 ## Modular Blueprints
