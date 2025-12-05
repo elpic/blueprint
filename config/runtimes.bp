@@ -1,0 +1,3 @@
+# Language runtimes for macOS
+install python3 ruby go on: [mac]
+install node npm on: [mac]

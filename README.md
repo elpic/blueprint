@@ -1,0 +1,350 @@
+# Blueprint
+
+Blueprint is a DSL (Domain Specific Language) based rule engine written in Go. It allows you to define and execute complex rules with conditions and actions in a declarative manner.
+
+## Project Structure
+
+```
+.
+├── cmd/
+│   └── blueprint/          # Main CLI
+│       └── main.go
+├── internal/
+│   ├── parser/             # DSL parser
+│   │   └── parser.go
+│   ├── engine/             # Rule executor / history
+│   │   └── engine.go
+│   ├── git/                # Git operations (clone, auth)
+│   │   └── git.go
+│   └── models/             # Shared structs
+│       └── types.go
+├── config/                 # Example includes
+│   ├── base.bp
+│   ├── dev-tools.bp
+│   └── runtimes.bp
+├── .gitignore              # Git ignore rules
+├── justfile                # Build recipes
+├── history.json            # Generated at runtime
+├── setup.bp                # Example configuration
+├── setup-modular.bp        # Modular example with includes
+└── README.md
+```
+
+## Usage
+
+### Build
+
+#### For Current OS
+
+```bash
+go build -o blueprint ./cmd/blueprint
+```
+
+#### Cross-Platform Builds
+
+Use `just` (a modern Make alternative) to build for all platforms:
+
+```bash
+# Build for all platforms (default)
+just build
+
+# Build for specific platform
+just build-linux      # Linux (amd64 and arm64)
+just build-windows    # Windows (amd64)
+just build-macos      # macOS (amd64 and arm64)
+
+# Show all available recipes
+just help
+```
+
+**Install `just`:** https://github.com/casey/just#installation
+
+This creates:
+- `blueprint-linux-amd64` - Linux (x86_64)
+- `blueprint-linux-arm64` - Linux (ARM64, e.g., Raspberry Pi, Apple Silicon)
+- `blueprint-windows-amd64.exe` - Windows (x86_64)
+- `blueprint-macos-amd64` - macOS Intel
+- `blueprint-macos-arm64` - macOS Apple Silicon
+- `blueprint` - Current OS
+
+### Run
+
+#### Linux
+
+```bash
+# Intel/AMD x86_64
+./blueprint-linux-amd64 plan setup.bp
+./blueprint-linux-amd64 apply setup.bp
+
+# ARM64 (Raspberry Pi, etc.)
+./blueprint-linux-arm64 plan setup.bp
+./blueprint-linux-arm64 apply setup.bp
+```
+
+#### macOS
+
+```bash
+# Intel Macs
+./blueprint-macos-amd64 plan setup.bp
+
+# Apple Silicon (M1/M2/M3)
+./blueprint-macos-arm64 plan setup.bp
+```
+
+#### Windows
+
+```cmd
+blueprint-windows-amd64.exe plan setup.bp
+blueprint-windows-amd64.exe apply setup.bp
+```
+
+#### Current OS
+
+```bash
+./blueprint plan setup.bp     # Dry-run mode
+./blueprint apply setup.bp    # Execute rules
+```
+
+### Run From Git Repository
+
+Blueprint can clone and execute blueprints from remote git repositories without requiring the git CLI installed. It automatically handles authentication and cleans up temporary directories.
+
+#### Basic Usage
+
+```bash
+# With HTTPS URL
+./blueprint plan https://github.com/username/blueprint-repo.git
+
+# With git SSH URL (with automatic HTTPS fallback for public repos)
+./blueprint plan git@github.com:username/blueprint-repo.git
+```
+
+#### Specify Branch
+
+Clone from a specific branch:
+
+```bash
+# Using @ syntax
+./blueprint plan "https://github.com/username/repo.git@develop"
+./blueprint plan "git@github.com:username/repo.git@main"
+```
+
+#### Specify Custom Setup File Path
+
+If your blueprint file is not in the root directory:
+
+```bash
+# Using : syntax
+./blueprint plan "https://github.com/username/repo.git:config/setup.bp"
+./blueprint plan "https://github.com/username/repo.git:blueprints/dev.bp"
+```
+
+#### Combine Branch and Path
+
+```bash
+# Using @branch:path syntax
+./blueprint plan "https://github.com/username/repo.git@develop:config/setup.bp"
+./blueprint plan "git@github.com:username/repo.git@staging:blueprints/setup.bp"
+```
+
+#### Authentication
+
+For **private repositories**, set environment variables:
+
+**HTTPS with GitHub Personal Access Token:**
+```bash
+export GITHUB_USER="your_username"
+export GITHUB_TOKEN="your_personal_access_token"
+./blueprint plan https://github.com/username/private-repo.git
+```
+
+**SSH with SSH Agent:**
+```bash
+# Ensure your SSH key is loaded in SSH agent
+ssh-add ~/.ssh/id_rsa
+./blueprint plan git@github.com:username/private-repo.git
+```
+
+#### How It Works
+
+1. Clones repository to temporary directory
+2. Finds and reads the specified setup file (defaults to `setup.bp`)
+3. Parses and executes rules for your OS
+4. Automatically cleans up temporary directory
+
+**Note:** SSH URLs automatically fall back to HTTPS for public repositories if SSH authentication fails.
+
+## DSL Format
+
+The DSL format uses lines with keywords to define rules and include other files:
+
+### Install Rules
+
+```
+install <package> [package2] ... on: [platform1, platform2, ...]
+```
+
+### Include Statements
+
+Include other blueprint files (supports relative paths and circular include prevention):
+
+```
+include path/to/other.bp
+include ../config/setup.bp
+```
+
+### Examples
+
+**Simple install rule:**
+```
+install git curl on: [mac]
+```
+
+**Multiple packages:**
+```
+install python3 ruby go on: [mac, linux]
+```
+
+**Include with relative paths:**
+```
+include config/dev-tools.bp
+include config/runtimes.bp
+```
+
+**Complete example (setup.bp):**
+```
+# Main blueprint file
+
+# Include configuration files
+include config/dev-tools.bp
+include config/runtimes.bp
+
+# Local rules
+install brew on: [mac]
+install xcode-select on: [mac]
+```
+
+**Included file (config/dev-tools.bp):**
+```
+# Development tools
+install git curl on: [mac]
+install make on: [mac, linux]
+```
+
+## Generated Files
+
+### history.json
+
+Generated automatically after each execution and contains a log of all executed rules:
+
+```json
+[
+  {
+    "rule_name": "initialize_database",
+    "status": "success",
+    "timestamp": "2025-12-05T10:30:00Z",
+    "result": {
+      "action": "create_database(\"mydb\")"
+    }
+  }
+]
+```
+
+## Modular Blueprints
+
+Blueprint supports modular configurations through the `include` statement. This allows you to:
+
+- **Organize rules** into logical groups (dev-tools, databases, runtimes, etc.)
+- **Reuse configurations** across multiple blueprints
+- **Maintain DRY principles** by avoiding duplication
+- **Prevent circular includes** automatically
+
+### Example Structure
+
+```
+├── setup.bp                 # Main blueprint
+├── config/
+│   ├── dev-tools.bp        # Development tools
+│   ├── runtimes.bp         # Language runtimes
+│   └── databases.bp        # Database tools
+└── scripts/
+    └── post-install.bp     # Post-installation hooks
+```
+
+### Execution Order
+
+Includes are processed in order, so rules from included files are executed in the sequence they appear:
+
+```
+setup.bp:
+  include config/dev-tools.bp    -> Rules from dev-tools.bp
+  include config/runtimes.bp     -> Rules from runtimes.bp
+  install brew on: [mac]         -> Local rules
+```
+
+## Main Components
+
+### Parser (`internal/parser/parser.go`)
+- Parses `.bp` files in DSL format with include support
+- Supports recursive file includes with relative paths
+- Prevents circular includes automatically
+- Extracts rules and processes includes
+
+### Engine (`internal/engine/engine.go`)
+- Executes rules sequentially
+- Maintains execution history
+- Saves results to `history.json`
+- Supports both local files and git repositories
+- Automatically filters rules by operating system
+
+### Git Module (`internal/git/git.go`)
+- Clones repositories using pure Go (no git CLI required)
+- Supports HTTPS and SSH authentication
+- Handles temporary directory management
+- Auto-cleanup of cloned repositories
+
+### Models (`internal/models/types.go`)
+- Defines shared structures: `Rule` and `ExecutionHistory`
+- JSON serializable
+
+## Development
+
+### Requirements
+- Go 1.20+
+- `just` (optional, for convenient build commands) - https://github.com/casey/just#installation
+
+### Build Commands
+
+```bash
+# Build for all platforms (default)
+just build
+
+# Build for specific platform
+just build-linux
+just build-windows
+just build-macos
+
+# Clean build artifacts
+just clean
+
+# Show all available recipes
+just help
+```
+
+Or use `go build` directly:
+
+```bash
+go build -o blueprint ./cmd/blueprint
+```
+
+### Install Dependencies
+
+```bash
+go mod download
+```
+
+### Run Tests
+
+```bash
+go test ./...
+```

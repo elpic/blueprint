@@ -1,0 +1,20 @@
+# History file generated at runtime
+history.json
+
+# Binaries
+blueprint
+blueprint-*
+*.exe
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Go build cache
+vendor/
+*.mod
+*.sum

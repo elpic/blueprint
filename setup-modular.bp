@@ -1,0 +1,12 @@
+# Modular Blueprint Setup
+# This file demonstrates include functionality
+
+# Include development tools
+include config/dev-tools.bp
+
+# Include language runtimes
+include config/runtimes.bp
+
+# Local rules
+install brew on: [mac]
+install xcode-select on: [mac]

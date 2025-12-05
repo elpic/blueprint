@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(go build:*)",
+      "Bash(./blueprint plan:*)",
+      "Bash(go get:*)",
+      "Bash(GOOS=linux GOARCH=amd64 go build:*)",
+      "Bash(GOOS=linux GOARCH=arm64 go build:*)",
+      "Bash(GOOS=windows GOARCH=amd64 go build:*)",
+      "Bash(make help:*)",
+      "Bash(just:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
