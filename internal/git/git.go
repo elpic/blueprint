@@ -2,6 +2,7 @@ package git
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,7 +89,8 @@ func ParseGitURL(input string) GitURLParams {
 // CloneRepository clones a git repository to a temporary directory
 // and returns the path to the cloned repository
 // Accepts URL with optional branch: url@branch or path: url:path or both: url@branch:path
-func CloneRepository(input string) (string, string, error) {
+// verbose: if true, shows clone progress; if false, hides progress output
+func CloneRepository(input string, verbose bool) (string, string, error) {
 	// Parse URL to extract branch and path
 	params := ParseGitURL(input)
 
@@ -108,14 +110,14 @@ func CloneRepository(input string) (string, string, error) {
 	fmt.Printf("To: %s\n", tmpDir)
 
 	// Try to clone with the original URL
-	err = tryClone(tmpDir, params.URL, params.Branch)
+	err = tryClone(tmpDir, params.URL, params.Branch, verbose)
 
 	// If SSH fails on a public repo, try converting to HTTPS
 	if err != nil && strings.HasPrefix(params.URL, "git@") {
 		fmt.Printf("SSH failed, attempting HTTPS fallback...\n")
 		httpsURL := convertSSHToHTTPS(params.URL)
 		fmt.Printf("Trying: %s\n", httpsURL)
-		err = tryClone(tmpDir, httpsURL, params.Branch)
+		err = tryClone(tmpDir, httpsURL, params.Branch, verbose)
 	}
 
 	if err != nil {
@@ -129,11 +131,18 @@ func CloneRepository(input string) (string, string, error) {
 }
 
 // tryClone attempts to clone a repository with the given URL and optional branch
-func tryClone(tmpDir, url, branch string) error {
+func tryClone(tmpDir, url, branch string, verbose bool) error {
 	// Prepare clone options
+	var progress io.Writer
+	if verbose {
+		progress = os.Stdout
+	} else {
+		progress = io.Discard
+	}
+
 	cloneOpts := &git.CloneOptions{
 		URL:      url,
-		Progress: os.Stdout,
+		Progress: progress,
 	}
 
 	// Set branch if specified

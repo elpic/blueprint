@@ -15,8 +15,8 @@ func Run(file string, dry bool) {
 
 	// Check if input is a git URL
 	if git.IsGitURL(file) {
-		// Clone the repository
-		tempDir, setupFile, err := git.CloneRepository(file)
+		// Clone the repository (show progress in dry run mode, hide in apply mode)
+		tempDir, setupFile, err := git.CloneRepository(file, dry)
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			return

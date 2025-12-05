@@ -9,7 +9,8 @@
       "Bash(GOOS=linux GOARCH=arm64 go build:*)",
       "Bash(GOOS=windows GOARCH=amd64 go build:*)",
       "Bash(make help:*)",
-      "Bash(just:*)"
+      "Bash(just:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
