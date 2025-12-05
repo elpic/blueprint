@@ -397,15 +397,29 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 	// Extract historically installed packages for this blueprint and OS
 	historicalPackages := make(map[string]bool)
 	for _, record := range records {
-		// Only consider successful installs from this blueprint on this OS
+		// Only consider successful commands from this blueprint on this OS
 		if record.Status == "success" && record.Blueprint == blueprintFile && record.OS == osName {
 			// Check if it's an install command
-			if strings.Contains(record.Command, "install") {
+			if strings.Contains(record.Command, "install") && !strings.Contains(record.Command, "uninstall") {
 				// Extract package names from command
 				// Format: "brew install <packages>" or "apt-get install -y <packages>"
 				pkgs := extractPackagesFromCommand(record.Command, "install")
 				for _, pkg := range pkgs {
 					historicalPackages[pkg] = true
+				}
+			}
+		}
+	}
+
+	// Remove packages that have been successfully uninstalled
+	for _, record := range records {
+		if record.Status == "success" && record.Blueprint == blueprintFile && record.OS == osName {
+			// Check if it's an uninstall command
+			if strings.Contains(record.Command, "uninstall") || (strings.Contains(record.Command, "remove") && strings.Contains(record.Command, "apt-get")) {
+				// Extract package names from command
+				pkgs := extractPackagesFromCommand(record.Command, "uninstall")
+				for _, pkg := range pkgs {
+					delete(historicalPackages, pkg)
 				}
 			}
 		}
@@ -463,6 +477,29 @@ func extractPackagesFromCommand(command string, action string) []string {
 			// Remove sudo prefix if present
 			cmd := strings.TrimPrefix(command, "sudo ")
 			parts := strings.Split(cmd, "apt-get install")
+			if len(parts) > 1 {
+				pkgStr := strings.TrimSpace(parts[1])
+				// Remove -y flag
+				pkgStr = strings.ReplaceAll(pkgStr, "-y", "")
+				packages = strings.Fields(pkgStr)
+			}
+		}
+	} else if action == "uninstall" {
+		// Handle different uninstall commands
+		if strings.Contains(command, "brew uninstall") {
+			// Extract packages after "brew uninstall"
+			parts := strings.Split(command, "brew uninstall")
+			if len(parts) > 1 {
+				pkgStr := strings.TrimSpace(parts[1])
+				// Remove -y flag
+				pkgStr = strings.ReplaceAll(pkgStr, "-y", "")
+				packages = strings.Fields(pkgStr)
+			}
+		} else if strings.Contains(command, "apt-get remove") {
+			// Extract packages after "apt-get remove -y"
+			// Remove sudo prefix if present
+			cmd := strings.TrimPrefix(command, "sudo ")
+			parts := strings.Split(cmd, "apt-get remove")
 			if len(parts) > 1 {
 				pkgStr := strings.TrimSpace(parts[1])
 				// Remove -y flag
