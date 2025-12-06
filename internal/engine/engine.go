@@ -358,6 +358,10 @@ func executeRules(rules []parser.Rule, blueprint string, osName string) []Execut
 			// Handle asdf installation
 			output, cloneInfo, err = executeAsdf()
 			actualCmd = "asdf-init"
+		} else if rule.Action == "uninstall-asdf" {
+			// Handle asdf uninstallation
+			output, err = executeUninstallAsdf()
+			actualCmd = "asdf-uninstall"
 		} else {
 			// Handle install/uninstall operation
 			cmd := buildCommand(rule)
@@ -726,6 +730,35 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 		})
 	}
 
+	// Check if asdf was historically used but is not in current rules
+	asdfWasUsed := false
+	for _, record := range records {
+		if record.Status == "success" && record.Blueprint == blueprintFile && record.OS == osName {
+			if record.Command == "asdf-init" {
+				asdfWasUsed = true
+				break
+			}
+		}
+	}
+
+	// Check if asdf is in current rules
+	asdfIsInCurrentRules := false
+	for _, rule := range currentRules {
+		if rule.Action == "asdf" {
+			asdfIsInCurrentRules = true
+			break
+		}
+	}
+
+	// If asdf was used but is not in current rules, create an uninstall rule
+	if asdfWasUsed && !asdfIsInCurrentRules {
+		autoUninstallRules = append(autoUninstallRules, parser.Rule{
+			Action: "uninstall-asdf",
+			OSList: []string{osName},
+			Tool:   "asdf-vm",
+		})
+	}
+
 	return autoUninstallRules
 }
 
@@ -1008,6 +1041,125 @@ func addAsdfSourceToFile(filePath string, sourceCmd string) error {
 	content += "\n# asdf initialization\n" + sourceCmd + "\n"
 
 	return os.WriteFile(filePath, []byte(content), 0644)
+}
+
+// executeUninstallAsdf handles asdf uninstallation and cleanup
+func executeUninstallAsdf() (string, error) {
+	asdfPath := os.ExpandEnv("$HOME/.asdf")
+
+	// Check if asdf is installed
+	if _, err := os.Stat(asdfPath); err != nil {
+		// asdf not found, nothing to uninstall
+		return "asdf was not installed", nil
+	}
+
+	// Remove asdf directory
+	if err := os.RemoveAll(asdfPath); err != nil {
+		return "", fmt.Errorf("failed to remove asdf directory: %w", err)
+	}
+
+	// Clean up shell configuration files
+	if err := removeAsdfFromShells(); err != nil {
+		return "", fmt.Errorf("asdf removed but failed to clean up shells: %w", err)
+	}
+
+	return "asdf uninstalled", nil
+}
+
+// removeAsdfFromShells removes asdf initialization from shell configuration files
+func removeAsdfFromShells() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	// Try bash configurations
+	bashRcPath := filepath.Join(homeDir, ".bashrc")
+	bashProfilePath := filepath.Join(homeDir, ".bash_profile")
+
+	// Try zsh configurations
+	zshRcPath := filepath.Join(homeDir, ".zshrc")
+	zshProfilePath := filepath.Join(homeDir, ".zsh_profile")
+
+	// Remove from .bashrc if it exists
+	if _, err := os.Stat(bashRcPath); err == nil {
+		if err := removeAsdfSourceFromFile(bashRcPath); err != nil {
+			return err
+		}
+	}
+
+	// Remove from .bash_profile if it exists
+	if _, err := os.Stat(bashProfilePath); err == nil {
+		if err := removeAsdfSourceFromFile(bashProfilePath); err != nil {
+			return err
+		}
+	}
+
+	// Remove from .zshrc if it exists
+	if _, err := os.Stat(zshRcPath); err == nil {
+		if err := removeAsdfSourceFromFile(zshRcPath); err != nil {
+			return err
+		}
+	}
+
+	// Remove from .zsh_profile if it exists
+	if _, err := os.Stat(zshProfilePath); err == nil {
+		if err := removeAsdfSourceFromFile(zshProfilePath); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// removeAsdfSourceFromFile removes asdf initialization from a shell config file
+func removeAsdfSourceFromFile(filePath string) error {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+
+	content := string(data)
+
+	// Check if asdf is sourced in this file
+	if !strings.Contains(content, "asdf.sh") {
+		return nil // Not configured
+	}
+
+	// Remove asdf-related lines
+	lines := strings.Split(content, "\n")
+	var result []string
+	skipNextBlank := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Skip asdf initialization comment and source lines
+		if strings.Contains(trimmed, "asdf initialization") {
+			skipNextBlank = true
+			continue
+		}
+		if strings.Contains(trimmed, "asdf.sh") {
+			skipNextBlank = true
+			continue
+		}
+
+		// Skip blank line after asdf lines if needed
+		if skipNextBlank && trimmed == "" {
+			skipNextBlank = false
+			continue
+		}
+
+		result = append(result, line)
+	}
+
+	newContent := strings.Join(result, "\n")
+	// Clean up multiple consecutive blank lines
+	for strings.Contains(newContent, "\n\n\n") {
+		newContent = strings.ReplaceAll(newContent, "\n\n\n", "\n\n")
+	}
+
+	return os.WriteFile(filePath, []byte(newContent), 0644)
 }
 
 // PrintStatus displays the current status of installed packages and clones
