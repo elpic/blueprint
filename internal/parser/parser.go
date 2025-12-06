@@ -25,6 +25,9 @@ type Rule struct {
 	CloneURL  string     // Git repository URL
 	ClonePath string     // Destination path for cloned repository
 	Branch    string     // Branch to clone (optional, defaults to repo default)
+
+	// ASDF-specific fields
+	AsdfPackages []string // List of "plugin@version" for asdf (e.g., "nodejs@21.4.0")
 }
 
 // Parse parses content without include support
@@ -367,11 +370,12 @@ func parseAsdfRule(line string) *Rule {
 		}
 	}
 
-	// Parse rule part: extract id: and after: clauses
+	// Parse rule part: extract packages first, then id: and after: clauses
 	var id string
 	var dependencies []string
+	var asdfPackages []string
 
-	// Extract id: value
+	// Extract id: value first
 	if strings.Contains(rulePart, "id:") {
 		idParts := strings.Split(rulePart, "id:")
 		if len(idParts) >= 2 {
@@ -404,17 +408,32 @@ func parseAsdfRule(line string) *Rule {
 		}
 	}
 
+	// Extract asdf packages (plugin@version format)
+	// Remaining text in rulePart should be space-separated plugin@version pairs
+	rulePart = strings.TrimSpace(rulePart)
+	if rulePart != "" {
+		// Split by spaces and keep only valid plugin@version pairs
+		fields := strings.Fields(rulePart)
+		for _, field := range fields {
+			// Valid asdf package format: name@version or just name
+			if strings.Contains(field, "@") || !strings.Contains(field, ":") {
+				asdfPackages = append(asdfPackages, field)
+			}
+		}
+	}
+
 	// If no ID is provided, use "asdf" as the ID
 	if id == "" {
 		id = "asdf"
 	}
 
 	return &Rule{
-		ID:       id,
-		Action:   "asdf",
-		OSList:   osList,
-		After:    dependencies,
-		Tool:     "asdf-vm",
+		ID:           id,
+		Action:       "asdf",
+		OSList:       osList,
+		After:        dependencies,
+		Tool:         "asdf-vm",
+		AsdfPackages: asdfPackages,
 	}
 }
 

@@ -181,7 +181,18 @@ func displayRules(rules []parser.Rule) {
 				fmt.Printf("  Branch: %s\n", ui.FormatDim(rule.Branch))
 			}
 		} else if rule.Action == "asdf" {
-			fmt.Printf("  Description: %s\n", ui.FormatInfo("Installs asdf version manager"))
+			if len(rule.AsdfPackages) > 0 {
+				fmt.Print("  Plugins: ")
+				for j, pkg := range rule.AsdfPackages {
+					if j > 0 {
+						fmt.Print(", ")
+					}
+					fmt.Print(ui.FormatInfo(pkg))
+				}
+				fmt.Println()
+			} else {
+				fmt.Printf("  Description: %s\n", ui.FormatInfo("Installs asdf version manager"))
+			}
 		} else {
 			if len(rule.Packages) > 0 {
 				fmt.Print("  Packages: ")
@@ -356,7 +367,7 @@ func executeRules(rules []parser.Rule, blueprint string, osName string) []Execut
 			}
 		} else if rule.Action == "asdf" {
 			// Handle asdf installation
-			output, cloneInfo, err = executeAsdf()
+			output, cloneInfo, err = executeAsdf(rule)
 			actualCmd = "asdf-init"
 		} else if rule.Action == "uninstall-asdf" {
 			// Handle asdf uninstallation
@@ -923,7 +934,7 @@ func executeClone(rule parser.Rule) (string, string, error) {
 }
 
 // executeAsdf handles asdf installation and shell integration
-func executeAsdf() (string, string, error) {
+func executeAsdf(rule parser.Rule) (string, string, error) {
 	asdfPath := os.ExpandEnv("$HOME/.asdf")
 
 	// Check if asdf is already installed
@@ -943,31 +954,85 @@ func executeAsdf() (string, string, error) {
 		if oldSHA != "" && newSHA != "" && oldSHA != newSHA {
 			return "", fmt.Sprintf("Updated (SHA changed: %s → %s)", oldSHA[:8], newSHA[:8]), nil
 		}
-		return "", "Already installed", nil
+	} else {
+		// Clone asdf if not installed
+		_, newSHA, cloneStatus, err := gitpkg.CloneOrUpdateRepository(
+			"https://github.com/asdf-vm/asdf.git",
+			asdfPath,
+			"",
+		)
+
+		if err != nil {
+			return "", "", err
+		}
+
+		// Setup asdf in shell configuration files
+		if err := setupAsdfInShells(asdfPath); err != nil {
+			return "", "", fmt.Errorf("asdf installed but failed to setup in shells: %w", err)
+		}
+
+		// Format status message with SHA
+		if newSHA != "" && cloneStatus == "Cloned" {
+			return "", fmt.Sprintf("Installed (SHA: %s)", newSHA[:8]), nil
+		}
+		return "", cloneStatus, nil
 	}
 
-	// Clone asdf
-	_, newSHA, cloneStatus, err := gitpkg.CloneOrUpdateRepository(
-		"https://github.com/asdf-vm/asdf.git",
-		asdfPath,
-		"",
-	)
-
-	if err != nil {
-		return "", "", err
+	// Now handle plugin installations if any
+	if len(rule.AsdfPackages) == 0 {
+		return "", "Initialized", nil
 	}
 
-	// Setup asdf in shell configuration files
-	if err := setupAsdfInShells(asdfPath); err != nil {
-		return "", "", fmt.Errorf("asdf installed but failed to setup in shells: %w", err)
+	// Build shell source command to ensure asdf is available
+	sourceCmd := fmt.Sprintf("source %s/asdf.sh", asdfPath)
+
+	// Process each plugin@version entry
+	var pluginOutput strings.Builder
+	for _, pkg := range rule.AsdfPackages {
+		// Parse plugin@version format
+		var plugin string
+		var version string
+
+		if strings.Contains(pkg, "@") {
+			parts := strings.Split(pkg, "@")
+			plugin = parts[0]
+			version = strings.Join(parts[1:], "@") // Handle versions with @ (rare but possible)
+		} else {
+			plugin = pkg
+			version = "latest"
+		}
+
+		// Step 1: Add plugin if not already added
+		addCmd := fmt.Sprintf("bash -c '%s && asdf plugin add %s 2>/dev/null || true'", sourceCmd, plugin)
+		cmd := exec.Command("sh", "-c", addCmd)
+		if err := cmd.Run(); err != nil {
+			// Some plugins might fail to add if already added, that's okay
+			fmt.Printf("Note: Could not add plugin %s (may already exist)\n", plugin)
+		}
+
+		// Step 2: Install specific version
+		if version != "latest" && version != "" {
+			installCmd := fmt.Sprintf("bash -c '%s && asdf install %s %s'", sourceCmd, plugin, version)
+			cmd = exec.Command("sh", "-c", installCmd)
+			if output, err := cmd.CombinedOutput(); err != nil {
+				return string(output), "", fmt.Errorf("failed to install %s@%s: %w", plugin, version, err)
+			}
+		}
+
+		// Step 3: Set global version
+		if version != "latest" && version != "" {
+			globalCmd := fmt.Sprintf("bash -c '%s && asdf global %s %s'", sourceCmd, plugin, version)
+			cmd = exec.Command("sh", "-c", globalCmd)
+			if output, err := cmd.CombinedOutput(); err != nil {
+				return string(output), "", fmt.Errorf("failed to set global version for %s: %w", plugin, err)
+			}
+			pluginOutput.WriteString(fmt.Sprintf("\n  - %s@%s", plugin, version))
+		} else {
+			pluginOutput.WriteString(fmt.Sprintf("\n  - %s (latest)", plugin))
+		}
 	}
 
-	// Format status message with SHA
-	statusMsg := cloneStatus
-	if newSHA != "" && cloneStatus == "Cloned" {
-		statusMsg = fmt.Sprintf("Installed (SHA: %s)", newSHA[:8])
-	}
-
+	statusMsg := fmt.Sprintf("Plugins installed:%s", pluginOutput.String())
 	return "", statusMsg, nil
 }
 

@@ -1,26 +1,28 @@
 # Example Blueprint: Development Environment with ASDF
 # This example shows how to use asdf for managing language versions
 
-# Install asdf version manager
-asdf id: version-manager on: [mac, linux]
+# Install asdf version manager with specific plugins
+# Format: asdf plugin@version [plugin@version ...] [id: name] [after: dependency] on: [platforms]
+asdf nodejs@18.19.0 nodejs@21.4.0 id: version-manager on: [mac, linux]
 
 # Install development tools
 install git curl wget on: [mac, linux]
 install build-essential on: [linux]
 install xcode-select on: [mac]
 
-# Note: After setting up asdf, you can manage language versions:
+# Example with multiple plugins:
+# asdf nodejs@18.19.0 ruby@3.2.0 python@3.11.0 id: languages on: [mac, linux]
+
+# Note: After setting up asdf with this blueprint:
+# - Plugins will be automatically added
+# - Specified versions will be installed
+# - The first version listed will be set as the global default
 #
-# asdf plugin add nodejs                    # Add nodejs plugin
-# asdf install nodejs 18.0.0                # Install specific version
-# asdf global nodejs 18.0.0                 # Set global version
-# asdf local nodejs 18.0.0                  # Set project-specific version
+# You can then manage versions manually with:
 #
-# Common plugins you might want to add:
-# - nodejs        (Node.js)
-# - ruby          (Ruby)
-# - python        (Python)
-# - golang        (Go)
-# - java          (Java)
-# - elixir        (Elixir)
-# - erlang        (Erlang)
+# asdf local nodejs 21.4.0                  # Set project-specific version
+# asdf versions nodejs                      # List installed versions
+#
+# Available plugin format:
+# - plugin@version    (installs specific version, sets as global)
+# - plugin            (no version specified - available as reference)
