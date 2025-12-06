@@ -13,13 +13,18 @@ type Package struct {
 }
 
 type Rule struct {
-	ID       string     // Unique identifier for this rule
-	Action   string
-	Packages []Package
-	OSList   []string
-	Tool     string
-	After    []string   // List of IDs or package names this rule depends on
-	Group    string
+	ID        string     // Unique identifier for this rule
+	Action    string     // "install", "uninstall", or "clone"
+	Packages  []Package
+	OSList    []string
+	Tool      string
+	After     []string   // List of IDs or package names this rule depends on
+	Group     string
+
+	// Clone-specific fields
+	CloneURL  string     // Git repository URL
+	ClonePath string     // Destination path for cloned repository
+	Branch    string     // Branch to clone (optional, defaults to repo default)
 }
 
 // Parse parses content without include support
@@ -80,6 +85,12 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 		} else if strings.HasPrefix(line, "install ") {
 			// Parse format: install <packages> on: [<platforms>]
 			rule := parseInstallRule(line)
+			if rule != nil {
+				rules = append(rules, *rule)
+			}
+		} else if strings.HasPrefix(line, "clone ") {
+			// Parse format: clone <url> to: <path> [branch: <branch>] [id: <id>] on: [<platforms>]
+			rule := parseCloneRule(line)
 			if rule != nil {
 				rules = append(rules, *rule)
 			}
@@ -181,6 +192,118 @@ func parseInstallRule(line string) *Rule {
 		OSList:   osList,
 		After:    dependencies,
 		Tool:     "package-manager",
+	}
+}
+
+func parseCloneRule(line string) *Rule {
+	// Remove "clone " prefix
+	line = strings.TrimPrefix(line, "clone ")
+
+	// Split by "on:" to get OS list
+	parts := strings.Split(line, "on:")
+	if len(parts) != 2 {
+		return nil
+	}
+
+	osListStr := strings.TrimSpace(parts[1])
+	rulePart := strings.TrimSpace(parts[0])
+
+	// Parse OS list [linux, mac, windows]
+	osListStr = strings.Trim(osListStr, "[]")
+	osList := strings.Split(osListStr, ",")
+	for i := range osList {
+		osList[i] = strings.TrimSpace(osList[i])
+	}
+
+	// Parse rule part: extract url, to:, branch:, id:, and after: clauses
+	var cloneURL string
+	var clonePath string
+	var branch string
+	var id string
+	var dependencies []string
+
+	// Extract clone URL (first token)
+	fields := strings.Fields(rulePart)
+	if len(fields) == 0 {
+		return nil
+	}
+	cloneURL = fields[0]
+	rulePart = strings.Join(fields[1:], " ")
+
+	// Extract to: value
+	if strings.Contains(rulePart, "to:") {
+		toParts := strings.Split(rulePart, "to:")
+		if len(toParts) >= 2 {
+			toValue := strings.TrimSpace(toParts[1])
+			// Get the path (first word after to:)
+			toFields := strings.Fields(toValue)
+			if len(toFields) > 0 {
+				clonePath = toFields[0]
+				// Reconstruct rulePart without the to: part
+				rulePart = toParts[0] + " " + strings.Join(toFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract branch: value
+	if strings.Contains(rulePart, "branch:") {
+		branchParts := strings.Split(rulePart, "branch:")
+		if len(branchParts) >= 2 {
+			branchValue := strings.TrimSpace(branchParts[1])
+			// Get the branch name (first word after branch:)
+			branchFields := strings.Fields(branchValue)
+			if len(branchFields) > 0 {
+				branch = branchFields[0]
+				// Reconstruct rulePart without the branch: part
+				rulePart = branchParts[0] + " " + strings.Join(branchFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract id: value
+	if strings.Contains(rulePart, "id:") {
+		idParts := strings.Split(rulePart, "id:")
+		if len(idParts) >= 2 {
+			idValue := strings.TrimSpace(idParts[1])
+			// Get the ID (first word after id:)
+			idFields := strings.Fields(idValue)
+			if len(idFields) > 0 {
+				id = idFields[0]
+				// Reconstruct rulePart without the id: part
+				rulePart = idParts[0] + " " + strings.Join(idFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract after: value
+	if strings.Contains(rulePart, "after:") {
+		afterParts := strings.Split(rulePart, "after:")
+		if len(afterParts) >= 2 {
+			afterValue := strings.TrimSpace(afterParts[1])
+			// Parse comma-separated dependencies
+			deps := strings.Split(afterValue, ",")
+			for _, dep := range deps {
+				dep = strings.TrimSpace(dep)
+				if dep != "" {
+					dependencies = append(dependencies, dep)
+				}
+			}
+		}
+	}
+
+	if cloneURL == "" || clonePath == "" {
+		return nil
+	}
+
+	return &Rule{
+		ID:        id,
+		Action:    "clone",
+		CloneURL:  cloneURL,
+		ClonePath: clonePath,
+		Branch:    branch,
+		OSList:    osList,
+		After:     dependencies,
+		Tool:      "git",
 	}
 }
 

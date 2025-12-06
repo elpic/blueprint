@@ -140,15 +140,24 @@ func displayRules(rules []parser.Rule) {
 			fmt.Printf("  ID: %s\n", ui.FormatDim(rule.ID))
 		}
 
-		if len(rule.Packages) > 0 {
-			fmt.Print("  Packages: ")
-			for j, pkg := range rule.Packages {
-				if j > 0 {
-					fmt.Print(", ")
-				}
-				fmt.Print(ui.FormatInfo(pkg.Name))
+		// Display rule-specific information
+		if rule.Action == "clone" {
+			fmt.Printf("  URL: %s\n", ui.FormatInfo(rule.CloneURL))
+			fmt.Printf("  Path: %s\n", ui.FormatInfo(rule.ClonePath))
+			if rule.Branch != "" {
+				fmt.Printf("  Branch: %s\n", ui.FormatDim(rule.Branch))
 			}
-			fmt.Println()
+		} else {
+			if len(rule.Packages) > 0 {
+				fmt.Print("  Packages: ")
+				for j, pkg := range rule.Packages {
+					if j > 0 {
+						fmt.Print(", ")
+					}
+					fmt.Print(ui.FormatInfo(pkg.Name))
+				}
+				fmt.Println()
+			}
 		}
 
 		if len(rule.After) > 0 {
@@ -177,9 +186,11 @@ func displayRules(rules []parser.Rule) {
 			fmt.Printf("  Tool: %s\n", ui.FormatDim(rule.Tool))
 		}
 
-		// Display command that will be executed
-		cmd := buildCommand(rule)
-		fmt.Printf("  Command: %s\n", ui.FormatDim(cmd))
+		// Display command that will be executed (for install/uninstall only)
+		if rule.Action != "clone" {
+			cmd := buildCommand(rule)
+			fmt.Printf("  Command: %s\n", ui.FormatDim(cmd))
+		}
 		fmt.Println()
 	}
 }
@@ -287,30 +298,47 @@ func executeRules(rules []parser.Rule, blueprint string, osName string) []Execut
 	}
 
 	for i, rule := range sortedRules {
-		cmd := buildCommand(rule)
-
-		// Show actual command including sudo if needed
-		actualCmd := cmd
-		if needsSudo(cmd) {
-			actualCmd = "sudo " + cmd
-		}
-
-		// Build package list string
-		packages := ""
-		for j, pkg := range rule.Packages {
-			if j > 0 {
-				packages += ", "
-			}
-			packages += pkg.Name
-		}
-
 		fmt.Printf("[%d/%d] %s", i+1, len(sortedRules), ui.FormatHighlight(rule.Action))
-		if packages != "" {
-			fmt.Printf(" %s", ui.FormatInfo(packages))
-		}
 
-		// Execute the command
-		output, err := executeCommand(cmd)
+		var output string
+		var err error
+		var actualCmd string
+		var cloneInfo string
+
+		if rule.Action == "clone" {
+			// Handle clone operation
+			fmt.Printf(" %s", ui.FormatInfo(rule.ClonePath))
+			output, cloneInfo, err = executeClone(rule)
+			actualCmd = fmt.Sprintf("git clone %s %s", rule.CloneURL, rule.ClonePath)
+			if rule.Branch != "" {
+				actualCmd = fmt.Sprintf("git clone -b %s %s %s", rule.Branch, rule.CloneURL, rule.ClonePath)
+			}
+		} else {
+			// Handle install/uninstall operation
+			cmd := buildCommand(rule)
+
+			// Show actual command including sudo if needed
+			actualCmd = cmd
+			if needsSudo(cmd) {
+				actualCmd = "sudo " + cmd
+			}
+
+			// Build package list string
+			packages := ""
+			for j, pkg := range rule.Packages {
+				if j > 0 {
+					packages += ", "
+				}
+				packages += pkg.Name
+			}
+
+			if packages != "" {
+				fmt.Printf(" %s", ui.FormatInfo(packages))
+			}
+
+			// Execute the command
+			output, err = executeCommand(cmd)
+		}
 
 		// Create execution record
 		record := ExecutionRecord{
@@ -326,7 +354,11 @@ func executeRules(rules []parser.Rule, blueprint string, osName string) []Execut
 			record.Status = "error"
 			record.Error = err.Error()
 		} else {
-			fmt.Printf(" %s\n", ui.FormatSuccess("Done"))
+			if cloneInfo != "" {
+				fmt.Printf(" %s\n", ui.FormatSuccess(cloneInfo))
+			} else {
+				fmt.Printf(" %s\n", ui.FormatSuccess("Done"))
+			}
 			record.Status = "success"
 		}
 
@@ -606,5 +638,107 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 	}
 
 	return sorted, nil
+}
+
+// executeClone handles git clone operations with SHA tracking
+func executeClone(rule parser.Rule) (string, string, error) {
+	// Expand home directory path
+	clonePath := rule.ClonePath
+	if strings.HasPrefix(clonePath, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		clonePath = filepath.Join(homeDir, clonePath[2:])
+	}
+
+	// Check if directory already exists
+	info, err := os.Stat(clonePath)
+	pathExists := err == nil && info.IsDir()
+
+	var oldSHA string
+	var newSHA string
+
+	if pathExists {
+		// Repository already exists - get current SHA
+		shaCmd := fmt.Sprintf("git -C %s rev-parse HEAD", clonePath)
+		oldSHAOutput, err := executeCommand(shaCmd)
+		if err == nil {
+			oldSHA = strings.TrimSpace(oldSHAOutput)
+		}
+
+		// Fetch latest
+		fetchCmd := fmt.Sprintf("git -C %s fetch origin", clonePath)
+		_, err = executeCommand(fetchCmd)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to fetch latest: %w", err)
+		}
+
+		// Checkout to specified branch or default
+		branch := rule.Branch
+		if branch == "" {
+			// Get default branch
+			branchCmd := fmt.Sprintf("git -C %s rev-parse --abbrev-ref origin/HEAD", clonePath)
+			branchOutput, err := executeCommand(branchCmd)
+			if err == nil {
+				// Output is like "origin/main", extract branch name
+				branchParts := strings.Split(strings.TrimSpace(branchOutput), "/")
+				if len(branchParts) > 1 {
+					branch = branchParts[len(branchParts)-1]
+				} else {
+					branch = "main"
+				}
+			} else {
+				branch = "main"
+			}
+		}
+
+		// Pull latest changes
+		pullCmd := fmt.Sprintf("git -C %s pull origin %s", clonePath, branch)
+		pullOutput, err := executeCommand(pullCmd)
+		if err != nil {
+			return strings.TrimSpace(pullOutput), "", fmt.Errorf("failed to pull: %w", err)
+		}
+
+		// Get new SHA
+		shaCmd = fmt.Sprintf("git -C %s rev-parse HEAD", clonePath)
+		newSHAOutput, err := executeCommand(shaCmd)
+		if err == nil {
+			newSHA = strings.TrimSpace(newSHAOutput)
+		}
+
+		// Determine if updated
+		if oldSHA != "" && newSHA != "" && oldSHA != newSHA {
+			return strings.TrimSpace(pullOutput), fmt.Sprintf("Updated (SHA changed: %s → %s)", oldSHA[:8], newSHA[:8]), nil
+		} else if oldSHA == newSHA && oldSHA != "" {
+			return "", "Already up to date", nil
+		} else {
+			return strings.TrimSpace(pullOutput), "Done", nil
+		}
+	} else {
+		// Clone the repository
+		cloneCmd := fmt.Sprintf("git clone %s %s", rule.CloneURL, clonePath)
+		if rule.Branch != "" {
+			cloneCmd = fmt.Sprintf("git clone -b %s %s %s", rule.Branch, rule.CloneURL, clonePath)
+		}
+
+		output, err := executeCommand(cloneCmd)
+		if err != nil {
+			return strings.TrimSpace(output), "", fmt.Errorf("failed to clone: %w", err)
+		}
+
+		// Get SHA of cloned repository
+		shaCmd := fmt.Sprintf("git -C %s rev-parse HEAD", clonePath)
+		shaOutput, err := executeCommand(shaCmd)
+		if err == nil {
+			newSHA = strings.TrimSpace(shaOutput)
+		}
+
+		if newSHA != "" {
+			return strings.TrimSpace(output), fmt.Sprintf("Cloned (SHA: %s)", newSHA[:8]), nil
+		} else {
+			return strings.TrimSpace(output), "Cloned", nil
+		}
+	}
 }
 
