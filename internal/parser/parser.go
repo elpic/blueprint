@@ -125,20 +125,31 @@ func parseInstallRule(line string) *Rule {
 	// Remove "install " prefix
 	line = strings.TrimPrefix(line, "install ")
 
-	// Split by "on:" to get OS list
+	// Split by "on:" to get OS list (on: is optional)
 	parts := strings.Split(line, "on:")
-	if len(parts) != 2 {
+	var osListStr string
+	var rulePart string
+
+	if len(parts) == 2 {
+		// "on:" clause is present
+		osListStr = strings.TrimSpace(parts[1])
+		rulePart = strings.TrimSpace(parts[0])
+	} else if len(parts) == 1 {
+		// No "on:" clause - rule applies to all systems
+		rulePart = strings.TrimSpace(parts[0])
+		osListStr = ""
+	} else {
 		return nil
 	}
 
-	osListStr := strings.TrimSpace(parts[1])
-	rulePart := strings.TrimSpace(parts[0])
-
 	// Parse OS list [linux, mac, windows]
-	osListStr = strings.Trim(osListStr, "[]")
-	osList := strings.Split(osListStr, ",")
-	for i := range osList {
-		osList[i] = strings.TrimSpace(osList[i])
+	var osList []string
+	if osListStr != "" {
+		osListStr = strings.Trim(osListStr, "[]")
+		osList = strings.Split(osListStr, ",")
+		for i := range osList {
+			osList[i] = strings.TrimSpace(osList[i])
+		}
 	}
 
 	// Parse rule part: extract id: and after: clauses
@@ -199,20 +210,31 @@ func parseCloneRule(line string) *Rule {
 	// Remove "clone " prefix
 	line = strings.TrimPrefix(line, "clone ")
 
-	// Split by "on:" to get OS list
+	// Split by "on:" to get OS list (on: is optional)
 	parts := strings.Split(line, "on:")
-	if len(parts) != 2 {
+	var osListStr string
+	var rulePart string
+
+	if len(parts) == 2 {
+		// "on:" clause is present
+		osListStr = strings.TrimSpace(parts[1])
+		rulePart = strings.TrimSpace(parts[0])
+	} else if len(parts) == 1 {
+		// No "on:" clause - rule applies to all systems
+		rulePart = strings.TrimSpace(parts[0])
+		osListStr = ""
+	} else {
 		return nil
 	}
 
-	osListStr := strings.TrimSpace(parts[1])
-	rulePart := strings.TrimSpace(parts[0])
-
 	// Parse OS list [linux, mac, windows]
-	osListStr = strings.Trim(osListStr, "[]")
-	osList := strings.Split(osListStr, ",")
-	for i := range osList {
-		osList[i] = strings.TrimSpace(osList[i])
+	var osList []string
+	if osListStr != "" {
+		osListStr = strings.Trim(osListStr, "[]")
+		osList = strings.Split(osListStr, ",")
+		for i := range osList {
+			osList[i] = strings.TrimSpace(osList[i])
+		}
 	}
 
 	// Parse rule part: extract url, to:, branch:, id:, and after: clauses

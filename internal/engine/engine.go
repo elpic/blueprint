@@ -146,6 +146,12 @@ func filterRulesByOS(rules []parser.Rule) []parser.Rule {
 	var filtered []parser.Rule
 
 	for _, rule := range rules {
+		// If no OS is specified, rule applies to all systems
+		if len(rule.OSList) == 0 {
+			filtered = append(filtered, rule)
+			continue
+		}
+
 		// Check if rule applies to current OS
 		for _, os := range rule.OSList {
 			if strings.TrimSpace(os) == currentOS {
@@ -235,15 +241,21 @@ func buildCommand(rule parser.Rule) string {
 		pkgNames += pkg.Name
 	}
 
+	// Determine target OS: use first in OSList if specified, otherwise use current OS
+	targetOS := getOSName()
+	if len(rule.OSList) > 0 {
+		targetOS = strings.TrimSpace(rule.OSList[0])
+	}
+
 	if rule.Action == "install" {
 		// Use brew for macOS, apt for Linux
-		if len(rule.OSList) > 0 && rule.OSList[0] == "mac" {
+		if targetOS == "mac" {
 			return fmt.Sprintf("brew install %s", pkgNames)
 		}
 		return fmt.Sprintf("apt-get install -y %s", pkgNames)
 	} else if rule.Action == "uninstall" {
 		// Uninstall commands
-		if len(rule.OSList) > 0 && rule.OSList[0] == "mac" {
+		if targetOS == "mac" {
 			return fmt.Sprintf("brew uninstall -y %s", pkgNames)
 		}
 		return fmt.Sprintf("apt-get remove -y %s", pkgNames)
