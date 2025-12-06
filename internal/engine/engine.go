@@ -351,6 +351,8 @@ func executeRules(rules []parser.Rule, blueprint string, osName string) []Execut
 
 		if err != nil {
 			fmt.Printf(" %s\n", ui.FormatError("Failed"))
+			// Print error details on next line
+			fmt.Printf("       %s\n", ui.FormatError(err.Error()))
 			record.Status = "error"
 			record.Error = err.Error()
 		} else {
