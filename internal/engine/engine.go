@@ -623,6 +623,13 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 					OS:        osName,
 				})
 			}
+		} else if rule.Action == "uninstall-asdf" {
+			// Check if asdf was uninstalled successfully
+			if succeededCommands["asdf-uninstall"] {
+				// Remove asdf from status
+				asdfPath := "~/.asdf"
+				status.Clones = removeCloneStatus(status.Clones, asdfPath, blueprint, osName)
+			}
 		}
 	}
 
