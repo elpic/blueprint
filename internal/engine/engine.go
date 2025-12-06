@@ -376,6 +376,7 @@ func executeRules(rules []parser.Rule, blueprint string, osName string) []Execut
 			actualCmd = "asdf-init"
 		} else if rule.Action == "uninstall-asdf" {
 			// Handle asdf uninstallation
+			fmt.Printf(" %s", ui.FormatError("asdf"))
 			output, err = executeUninstallAsdf()
 			actualCmd = "asdf-uninstall"
 		} else {
@@ -898,6 +899,9 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 			} else if rule.Action == "clone" {
 				// For clone rules without ID, use the clone path as key
 				ruleKey = rule.ClonePath
+			} else if rule.Action == "uninstall-asdf" {
+				// For uninstall-asdf rules, use action as key
+				ruleKey = "uninstall-asdf"
 			} else {
 				return nil
 			}
