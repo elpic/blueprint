@@ -67,6 +67,35 @@ This creates:
 - `blueprint-macos-arm64` - macOS Apple Silicon
 - `blueprint` - Current OS
 
+### Quick Start
+
+The typical workflow is:
+
+1. **Create a blueprint file** (`setup.bp`):
+```bash
+install git curl on: [mac]
+install python3 ruby on: [linux, mac]
+```
+
+2. **Preview the plan** (dry-run, no changes):
+```bash
+./blueprint plan setup.bp
+```
+
+This shows all rules that will be executed without making any changes.
+
+3. **Apply the blueprint** (execute rules):
+```bash
+./blueprint apply setup.bp
+```
+
+This executes all rules and saves the execution history.
+
+4. **Check history** (audit log):
+```bash
+cat ~/.blueprint/history.json | jq '.'
+```
+
 ### Run
 
 #### Linux
@@ -103,6 +132,87 @@ blueprint-windows-amd64.exe apply setup.bp
 ```bash
 ./blueprint plan setup.bp     # Dry-run mode
 ./blueprint apply setup.bp    # Execute rules
+```
+
+### Workflow & Examples
+
+#### Step-by-Step Example
+
+**1. Create your blueprint:**
+```bash
+cat > setup.bp << 'EOF'
+install git curl on: [mac]
+install python3 on: [mac, linux]
+include config/dev-tools.bp
+EOF
+```
+
+**2. Preview what will happen:**
+```bash
+./blueprint plan setup.bp
+```
+
+Output:
+```
+═══ [PLAN MODE - DRY RUN] ═══
+
+Blueprint: setup.bp
+Current OS: mac
+Applicable Rules: 3
+
+Rule #1:
+  Action: install
+  Packages: git, curl
+  Command: brew install git curl
+
+Rule #2:
+  Action: install
+  Packages: python3
+  Command: brew install python3
+
+[No changes will be applied]
+```
+
+**3. Execute the blueprint:**
+```bash
+./blueprint apply setup.bp
+```
+
+Output:
+```
+═══ [APPLY MODE] ═══
+
+OS: mac
+Executing 3 rules from setup.bp
+
+[1/3] install git, curl ✓ Done
+[2/3] install python3 ✓ Done
+[3/3] install make ✓ Done
+```
+
+**4. Later, remove `curl` from blueprint:**
+```bash
+cat > setup.bp << 'EOF'
+install git on: [mac]
+install python3 on: [mac, linux]
+EOF
+```
+
+**5. Apply again - `curl` is automatically uninstalled:**
+```bash
+./blueprint apply setup.bp
+```
+
+Output:
+```
+═══ [APPLY MODE] ═══
+
+OS: mac
+Executing 2 rules + 1 auto-uninstall from setup.bp
+
+[1/2] install git ✓ Done
+[2/2] install python3 ✓ Done
+[1/1] uninstall curl ✓ Done
 ```
 
 ### Run From Git Repository
