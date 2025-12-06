@@ -933,10 +933,57 @@ func executeClone(rule parser.Rule) (string, string, error) {
 	return "", statusMsg, nil
 }
 
+// getShellInfo detects the user's current shell and returns shell executable and config file
+func getShellInfo() (shellExe, configFile string, err error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", "", err
+	}
+
+	// Get the user's shell from $SHELL environment variable
+	userShell := os.Getenv("SHELL")
+	if userShell == "" {
+		// Fallback: try to detect from common shell executables
+		if _, err := exec.LookPath("zsh"); err == nil {
+			userShell = "zsh"
+		} else if _, err := exec.LookPath("bash"); err == nil {
+			userShell = "bash"
+		} else {
+			return "bash", filepath.Join(homeDir, ".bashrc"), nil // Default fallback
+		}
+	}
+
+	// Extract shell name from path (e.g., "/bin/zsh" -> "zsh")
+	shellName := filepath.Base(userShell)
+
+	// Determine the appropriate config file based on shell
+	var configPath string
+	switch shellName {
+	case "zsh":
+		configPath = filepath.Join(homeDir, ".zshrc")
+	case "bash":
+		configPath = filepath.Join(homeDir, ".bashrc")
+	case "fish":
+		configPath = filepath.Join(homeDir, ".config/fish/config.fish")
+	default:
+		// Default to bash
+		configPath = filepath.Join(homeDir, ".bashrc")
+		shellName = "bash"
+	}
+
+	return shellName, configPath, nil
+}
+
 // executeAsdf handles asdf installation and shell integration
 func executeAsdf(rule parser.Rule) (string, string, error) {
 	asdfPath := os.ExpandEnv("$HOME/.asdf")
 	var asdfStatusMsg string
+
+	// Detect user's shell
+	shellName, _, err := getShellInfo()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to detect shell: %w", err)
+	}
 
 	// Check if asdf is already installed
 	if _, err := os.Stat(asdfPath); err == nil {
@@ -987,8 +1034,16 @@ func executeAsdf(rule parser.Rule) (string, string, error) {
 		return "", asdfStatusMsg, nil
 	}
 
-	// Build shell source command to ensure asdf is available
-	sourceCmd := fmt.Sprintf("source %s/asdf.sh", asdfPath)
+	// Build source command based on detected shell
+	var sourceCmd string
+	switch shellName {
+	case "fish":
+		sourceCmd = fmt.Sprintf("source %s/asdf.fish", asdfPath)
+	case "zsh":
+		sourceCmd = fmt.Sprintf(". %s/asdf.sh", asdfPath)
+	default:
+		sourceCmd = fmt.Sprintf(". %s/asdf.sh", asdfPath)
+	}
 
 	// Process each plugin@version entry
 	var pluginOutput strings.Builder
@@ -1006,9 +1061,10 @@ func executeAsdf(rule parser.Rule) (string, string, error) {
 			version = "latest"
 		}
 
+		// Build commands with proper shell sourcing
 		// Step 1: Add plugin if not already added
-		addCmd := fmt.Sprintf("bash -c '%s && asdf plugin add %s 2>/dev/null || true'", sourceCmd, plugin)
-		cmd := exec.Command("sh", "-c", addCmd)
+		addCmd := fmt.Sprintf("%s && asdf plugin add %s 2>/dev/null || true", sourceCmd, plugin)
+		cmd := exec.Command(shellName, "-c", addCmd)
 		if err := cmd.Run(); err != nil {
 			// Some plugins might fail to add if already added, that's okay
 			fmt.Printf("Note: Could not add plugin %s (may already exist)\n", plugin)
@@ -1016,8 +1072,8 @@ func executeAsdf(rule parser.Rule) (string, string, error) {
 
 		// Step 2: Install specific version
 		if version != "latest" && version != "" {
-			installCmd := fmt.Sprintf("bash -c '%s && asdf install %s %s'", sourceCmd, plugin, version)
-			cmd = exec.Command("sh", "-c", installCmd)
+			installCmd := fmt.Sprintf("%s && asdf install %s %s", sourceCmd, plugin, version)
+			cmd = exec.Command(shellName, "-c", installCmd)
 			if output, err := cmd.CombinedOutput(); err != nil {
 				return string(output), "", fmt.Errorf("failed to install %s@%s: %w", plugin, version, err)
 			}
@@ -1025,8 +1081,8 @@ func executeAsdf(rule parser.Rule) (string, string, error) {
 
 		// Step 3: Set global version
 		if version != "latest" && version != "" {
-			globalCmd := fmt.Sprintf("bash -c '%s && asdf global %s %s'", sourceCmd, plugin, version)
-			cmd = exec.Command("sh", "-c", globalCmd)
+			globalCmd := fmt.Sprintf("%s && asdf global %s %s", sourceCmd, plugin, version)
+			cmd = exec.Command(shellName, "-c", globalCmd)
 			if output, err := cmd.CombinedOutput(); err != nil {
 				return string(output), "", fmt.Errorf("failed to set global version for %s: %w", plugin, err)
 			}
@@ -1048,42 +1104,64 @@ func setupAsdfInShells(asdfPath string) error {
 		return err
 	}
 
-	// Source line to add to shell config
-	sourceCmd := fmt.Sprintf(`. %s/asdf.sh`, asdfPath)
+	// Detect user's shell to know which config files to update
+	shellName, _, err := getShellInfo()
+	if err != nil {
+		shellName = "bash" // Fallback to bash
+	}
 
-	// Try bash configurations
-	bashRcPath := filepath.Join(homeDir, ".bashrc")
-	bashProfilePath := filepath.Join(homeDir, ".bash_profile")
-
-	// Try zsh configurations
-	zshRcPath := filepath.Join(homeDir, ".zshrc")
-	zshProfilePath := filepath.Join(homeDir, ".zsh_profile")
-
-	// Add to .bashrc if it exists
-	if _, err := os.Stat(bashRcPath); err == nil {
-		if err := addAsdfSourceToFile(bashRcPath, sourceCmd); err != nil {
-			return err
+	// Determine which config files to update based on the detected shell
+	var configFiles []string
+	switch shellName {
+	case "zsh":
+		configFiles = []string{
+			filepath.Join(homeDir, ".zshrc"),
+			filepath.Join(homeDir, ".zsh_profile"),
+		}
+	case "fish":
+		configFiles = []string{
+			filepath.Join(homeDir, ".config/fish/config.fish"),
+		}
+	default: // bash
+		configFiles = []string{
+			filepath.Join(homeDir, ".bashrc"),
+			filepath.Join(homeDir, ".bash_profile"),
 		}
 	}
 
-	// Add to .bash_profile if it exists
-	if _, err := os.Stat(bashProfilePath); err == nil {
-		if err := addAsdfSourceToFile(bashProfilePath, sourceCmd); err != nil {
-			return err
-		}
+	// Determine the source command based on shell
+	var sourceCmd string
+	switch shellName {
+	case "fish":
+		sourceCmd = fmt.Sprintf("source %s/asdf.fish", asdfPath)
+	case "zsh":
+		sourceCmd = fmt.Sprintf(". %s/asdf.sh", asdfPath)
+	default: // bash
+		sourceCmd = fmt.Sprintf(". %s/asdf.sh", asdfPath)
 	}
 
-	// Add to .zshrc if it exists
-	if _, err := os.Stat(zshRcPath); err == nil {
-		if err := addAsdfSourceToFile(zshRcPath, sourceCmd); err != nil {
-			return err
+	// Add to all relevant config files
+	for _, configFile := range configFiles {
+		// Create parent directory if needed (for fish)
+		if strings.Contains(configFile, ".config") {
+			configDir := filepath.Dir(configFile)
+			if _, err := os.Stat(configDir); os.IsNotExist(err) {
+				if err := os.MkdirAll(configDir, 0755); err != nil {
+					return err
+				}
+			}
 		}
-	}
 
-	// Add to .zsh_profile if it exists
-	if _, err := os.Stat(zshProfilePath); err == nil {
-		if err := addAsdfSourceToFile(zshProfilePath, sourceCmd); err != nil {
-			return err
+		// Add to config file if it exists, or create it
+		if _, err := os.Stat(configFile); err == nil {
+			if err := addAsdfSourceToFile(configFile, sourceCmd); err != nil {
+				return err
+			}
+		} else if configFile == filepath.Join(homeDir, ".zshrc") || configFile == filepath.Join(homeDir, ".bashrc") {
+			// For main shell config files, create them if they don't exist
+			if err := addAsdfSourceToFile(configFile, sourceCmd); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -1092,20 +1170,20 @@ func setupAsdfInShells(asdfPath string) error {
 
 // addAsdfSourceToFile adds the asdf source command to a shell config file if not already present
 func addAsdfSourceToFile(filePath string, sourceCmd string) error {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return err
-	}
-
-	content := string(data)
-
-	// Check if asdf is already sourced in this file
-	if strings.Contains(content, "asdf.sh") {
-		return nil // Already configured
+	// Read existing content if file exists
+	var content string
+	if data, err := os.ReadFile(filePath); err == nil {
+		content = string(data)
+		// Check if asdf is already sourced in this file
+		if strings.Contains(content, "asdf.sh") || strings.Contains(content, "asdf.fish") {
+			return nil // Already configured
+		}
+	} else if !os.IsNotExist(err) {
+		return err // Return error if it's not a "file not found" error
 	}
 
 	// Add source command at the end
-	if !strings.HasSuffix(content, "\n") {
+	if content != "" && !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
 	content += "\n# asdf initialization\n" + sourceCmd + "\n"
@@ -1143,39 +1221,37 @@ func removeAsdfFromShells() error {
 		return err
 	}
 
-	// Try bash configurations
-	bashRcPath := filepath.Join(homeDir, ".bashrc")
-	bashProfilePath := filepath.Join(homeDir, ".bash_profile")
+	// Detect user's shell to know which config files to clean up
+	shellName, _, err := getShellInfo()
+	if err != nil {
+		shellName = "bash" // Fallback to bash
+	}
 
-	// Try zsh configurations
-	zshRcPath := filepath.Join(homeDir, ".zshrc")
-	zshProfilePath := filepath.Join(homeDir, ".zsh_profile")
-
-	// Remove from .bashrc if it exists
-	if _, err := os.Stat(bashRcPath); err == nil {
-		if err := removeAsdfSourceFromFile(bashRcPath); err != nil {
-			return err
+	// Determine which config files to clean up based on the detected shell
+	var configFiles []string
+	switch shellName {
+	case "zsh":
+		configFiles = []string{
+			filepath.Join(homeDir, ".zshrc"),
+			filepath.Join(homeDir, ".zsh_profile"),
+		}
+	case "fish":
+		configFiles = []string{
+			filepath.Join(homeDir, ".config/fish/config.fish"),
+		}
+	default: // bash
+		configFiles = []string{
+			filepath.Join(homeDir, ".bashrc"),
+			filepath.Join(homeDir, ".bash_profile"),
 		}
 	}
 
-	// Remove from .bash_profile if it exists
-	if _, err := os.Stat(bashProfilePath); err == nil {
-		if err := removeAsdfSourceFromFile(bashProfilePath); err != nil {
-			return err
-		}
-	}
-
-	// Remove from .zshrc if it exists
-	if _, err := os.Stat(zshRcPath); err == nil {
-		if err := removeAsdfSourceFromFile(zshRcPath); err != nil {
-			return err
-		}
-	}
-
-	// Remove from .zsh_profile if it exists
-	if _, err := os.Stat(zshProfilePath); err == nil {
-		if err := removeAsdfSourceFromFile(zshProfilePath); err != nil {
-			return err
+	// Remove from all relevant config files
+	for _, configFile := range configFiles {
+		if _, err := os.Stat(configFile); err == nil {
+			if err := removeAsdfSourceFromFile(configFile); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -1192,7 +1268,7 @@ func removeAsdfSourceFromFile(filePath string) error {
 	content := string(data)
 
 	// Check if asdf is sourced in this file
-	if !strings.Contains(content, "asdf.sh") {
+	if !strings.Contains(content, "asdf.sh") && !strings.Contains(content, "asdf.fish") {
 		return nil // Not configured
 	}
 
@@ -1209,7 +1285,7 @@ func removeAsdfSourceFromFile(filePath string) error {
 			skipNextBlank = true
 			continue
 		}
-		if strings.Contains(trimmed, "asdf.sh") {
+		if strings.Contains(trimmed, "asdf.sh") || strings.Contains(trimmed, "asdf.fish") {
 			skipNextBlank = true
 			continue
 		}
