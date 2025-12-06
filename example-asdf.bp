@@ -1,0 +1,26 @@
+# Example Blueprint: Development Environment with ASDF
+# This example shows how to use asdf for managing language versions
+
+# Install asdf version manager
+asdf id: version-manager on: [mac, linux]
+
+# Install development tools
+install git curl wget on: [mac, linux]
+install build-essential on: [linux]
+install xcode-select on: [mac]
+
+# Note: After setting up asdf, you can manage language versions:
+#
+# asdf plugin add nodejs                    # Add nodejs plugin
+# asdf install nodejs 18.0.0                # Install specific version
+# asdf global nodejs 18.0.0                 # Set global version
+# asdf local nodejs 18.0.0                  # Set project-specific version
+#
+# Common plugins you might want to add:
+# - nodejs        (Node.js)
+# - ruby          (Ruby)
+# - python        (Python)
+# - golang        (Go)
+# - java          (Java)
+# - elixir        (Elixir)
+# - erlang        (Erlang)

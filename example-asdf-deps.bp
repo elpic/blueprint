@@ -1,0 +1,29 @@
+# Example Blueprint: Development Environment with ASDF and Dependencies
+# This example shows how to use asdf with dependencies
+
+# Install asdf version manager with ID so other rules can depend on it
+asdf id: asdf-vm on: [mac, linux]
+
+# Install build tools needed for compiling from source
+install build-essential on: [linux]
+install xcode-select on: [mac]
+
+# Install git first (no dependencies)
+install git on: [mac, linux]
+
+# Install Node.js after asdf is ready
+# You can then use: asdf install nodejs <version>
+#                   asdf global nodejs <version>
+install nodejs-build-tools on: [mac] after: asdf-vm
+install python3-dev on: [linux] after: asdf-vm
+
+# Clone dotfiles configuration after everything is ready
+clone https://github.com/your-username/dotfiles.git to: ~/.dotfiles after: asdf-vm on: [mac, linux]
+
+# Summary of execution order:
+# 1. asdf-vm           -> Install asdf
+# 2. build-essential   -> Install build tools (parallel with xcode-select)
+# 3. git               -> Install git (parallel with build-essential)
+# 4. nodejs-build-tools -> Install after asdf (macOS)
+# 5. python3-dev       -> Install after asdf (Linux)
+# 6. dotfiles          -> Clone after asdf is ready
