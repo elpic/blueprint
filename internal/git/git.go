@@ -218,3 +218,133 @@ func CleanupRepository(path string) error {
 	}
 	return os.RemoveAll(path)
 }
+
+// CloneOrUpdateRepository clones a repository to a specific path or updates it if already exists
+// Returns: (oldSHA, newSHA, status_message, error)
+// status_message can be: "Cloned", "Updated", "Already up to date"
+func CloneOrUpdateRepository(url, path, branch string) (string, string, string, error) {
+	// Expand home directory
+	if strings.HasPrefix(path, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", "", "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		path = filepath.Join(homeDir, path[2:])
+	}
+
+	// Check if directory already exists
+	info, err := os.Stat(path)
+	pathExists := err == nil && info.IsDir()
+
+	var oldSHA string
+	var newSHA string
+
+	if pathExists {
+		// Repository already exists - get current SHA
+		repo, err := git.PlainOpen(path)
+		if err != nil {
+			return "", "", "", fmt.Errorf("failed to open repository: %w", err)
+		}
+
+		// Get current HEAD
+		ref, err := repo.Head()
+		if err != nil {
+			return "", "", "", fmt.Errorf("failed to get HEAD: %w", err)
+		}
+		oldSHA = ref.Hash().String()
+
+		// Fetch latest from all branches
+		err = repo.Fetch(&git.FetchOptions{})
+		if err != nil && err != git.NoErrAlreadyUpToDate {
+			return oldSHA, "", "", fmt.Errorf("failed to fetch latest: %w", err)
+		}
+
+		// Get the current branch
+		tree, err := repo.Worktree()
+		if err != nil {
+			return oldSHA, "", "", fmt.Errorf("failed to get worktree: %w", err)
+		}
+
+		// Reset to latest from origin (for current branch)
+		// This is more reliable than Pull for our use case
+		remote, err := repo.Remote("origin")
+		if err == nil {
+			// Get the remote HEAD reference
+			refs, err := remote.List(&git.ListOptions{})
+			if err == nil {
+				// Find HEAD
+				for _, ref := range refs {
+					if ref.Name() == "HEAD" {
+						// Reset working directory to fetch origin
+						resetErr := tree.Reset(&git.ResetOptions{
+							Mode:   git.HardReset,
+							Commit: ref.Hash(),
+						})
+						if resetErr == nil {
+							// Successfully reset
+							break
+						}
+					}
+				}
+			}
+		}
+
+		// Get new SHA
+		ref, err = repo.Head()
+		if err != nil {
+			return oldSHA, "", "", fmt.Errorf("failed to get new HEAD: %w", err)
+		}
+		newSHA = ref.Hash().String()
+
+		// Determine status
+		if oldSHA != newSHA {
+			return oldSHA, newSHA, "Updated", nil
+		} else {
+			return oldSHA, newSHA, "Already up to date", nil
+		}
+	} else {
+		// Clone the repository
+		cloneOpts := &git.CloneOptions{
+			URL:      url,
+			Progress: io.Discard, // Don't show output, caller will display status
+		}
+
+		// Set branch if specified
+		if branch != "" {
+			cloneOpts.ReferenceName = plumbing.ReferenceName("refs/heads/" + branch)
+			cloneOpts.SingleBranch = true
+		}
+
+		// Add authentication
+		if strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://") {
+			if username := os.Getenv("GITHUB_USER"); username != "" {
+				if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+					cloneOpts.Auth = &http.BasicAuth{
+						Username: username,
+						Password: token,
+					}
+				}
+			}
+		} else if strings.HasPrefix(url, "git@") {
+			publicKeys, err := ssh.NewSSHAgentAuth("git")
+			if err == nil {
+				cloneOpts.Auth = publicKeys
+			}
+		}
+
+		// Clone the repository
+		repo, err := git.PlainClone(path, false, cloneOpts)
+		if err != nil {
+			return "", "", "", fmt.Errorf("failed to clone: %w", err)
+		}
+
+		// Get SHA of cloned repository
+		ref, err := repo.Head()
+		if err != nil {
+			return "", "", "", fmt.Errorf("failed to get HEAD: %w", err)
+		}
+		newSHA = ref.Hash().String()
+
+		return "", newSHA, "Cloned", nil
+	}
+}

@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"github.com/elpic/blueprint/internal/git"
+	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
 )
@@ -31,17 +31,17 @@ func Run(file string, dry bool) {
 	var err error
 
 	// Check if input is a git URL
-	if git.IsGitURL(file) {
+	if gitpkg.IsGitURL(file) {
 		// Clone the repository (show progress in dry run mode, hide in apply mode)
-		tempDir, setupFile, err := git.CloneRepository(file, dry)
+		tempDir, setupFile, err := gitpkg.CloneRepository(file, dry)
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			return
 		}
-		defer git.CleanupRepository(tempDir)
+		defer gitpkg.CleanupRepository(tempDir)
 
 		// Find setup file in the cloned repo
-		setupPath, err = git.FindSetupFile(tempDir, setupFile)
+		setupPath, err = gitpkg.FindSetupFile(tempDir, setupFile)
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			return
@@ -53,7 +53,7 @@ func Run(file string, dry bool) {
 
 	// Parse the setup file (with include support for local files)
 	var rules []parser.Rule
-	if git.IsGitURL(file) {
+	if gitpkg.IsGitURL(file) {
 		// For git URLs, read content and parse with string parsing
 		data, err := os.ReadFile(setupPath)
 		if err != nil {
@@ -642,103 +642,20 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 
 // executeClone handles git clone operations with SHA tracking
 func executeClone(rule parser.Rule) (string, string, error) {
-	// Expand home directory path
-	clonePath := rule.ClonePath
-	if strings.HasPrefix(clonePath, "~/") {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return "", "", fmt.Errorf("failed to get home directory: %w", err)
-		}
-		clonePath = filepath.Join(homeDir, clonePath[2:])
+	oldSHA, newSHA, status, err := gitpkg.CloneOrUpdateRepository(rule.CloneURL, rule.ClonePath, rule.Branch)
+
+	if err != nil {
+		return "", "", err
 	}
 
-	// Check if directory already exists
-	info, err := os.Stat(clonePath)
-	pathExists := err == nil && info.IsDir()
-
-	var oldSHA string
-	var newSHA string
-
-	if pathExists {
-		// Repository already exists - get current SHA
-		shaCmd := fmt.Sprintf("git -C %s rev-parse HEAD", clonePath)
-		oldSHAOutput, err := executeCommand(shaCmd)
-		if err == nil {
-			oldSHA = strings.TrimSpace(oldSHAOutput)
-		}
-
-		// Fetch latest
-		fetchCmd := fmt.Sprintf("git -C %s fetch origin", clonePath)
-		_, err = executeCommand(fetchCmd)
-		if err != nil {
-			return "", "", fmt.Errorf("failed to fetch latest: %w", err)
-		}
-
-		// Checkout to specified branch or default
-		branch := rule.Branch
-		if branch == "" {
-			// Get default branch
-			branchCmd := fmt.Sprintf("git -C %s rev-parse --abbrev-ref origin/HEAD", clonePath)
-			branchOutput, err := executeCommand(branchCmd)
-			if err == nil {
-				// Output is like "origin/main", extract branch name
-				branchParts := strings.Split(strings.TrimSpace(branchOutput), "/")
-				if len(branchParts) > 1 {
-					branch = branchParts[len(branchParts)-1]
-				} else {
-					branch = "main"
-				}
-			} else {
-				branch = "main"
-			}
-		}
-
-		// Pull latest changes
-		pullCmd := fmt.Sprintf("git -C %s pull origin %s", clonePath, branch)
-		pullOutput, err := executeCommand(pullCmd)
-		if err != nil {
-			return strings.TrimSpace(pullOutput), "", fmt.Errorf("failed to pull: %w", err)
-		}
-
-		// Get new SHA
-		shaCmd = fmt.Sprintf("git -C %s rev-parse HEAD", clonePath)
-		newSHAOutput, err := executeCommand(shaCmd)
-		if err == nil {
-			newSHA = strings.TrimSpace(newSHAOutput)
-		}
-
-		// Determine if updated
-		if oldSHA != "" && newSHA != "" && oldSHA != newSHA {
-			return strings.TrimSpace(pullOutput), fmt.Sprintf("Updated (SHA changed: %s → %s)", oldSHA[:8], newSHA[:8]), nil
-		} else if oldSHA == newSHA && oldSHA != "" {
-			return "", "Already up to date", nil
-		} else {
-			return strings.TrimSpace(pullOutput), "Done", nil
-		}
-	} else {
-		// Clone the repository
-		cloneCmd := fmt.Sprintf("git clone %s %s", rule.CloneURL, clonePath)
-		if rule.Branch != "" {
-			cloneCmd = fmt.Sprintf("git clone -b %s %s %s", rule.Branch, rule.CloneURL, clonePath)
-		}
-
-		output, err := executeCommand(cloneCmd)
-		if err != nil {
-			return strings.TrimSpace(output), "", fmt.Errorf("failed to clone: %w", err)
-		}
-
-		// Get SHA of cloned repository
-		shaCmd := fmt.Sprintf("git -C %s rev-parse HEAD", clonePath)
-		shaOutput, err := executeCommand(shaCmd)
-		if err == nil {
-			newSHA = strings.TrimSpace(shaOutput)
-		}
-
-		if newSHA != "" {
-			return strings.TrimSpace(output), fmt.Sprintf("Cloned (SHA: %s)", newSHA[:8]), nil
-		} else {
-			return strings.TrimSpace(output), "Cloned", nil
-		}
+	// Format status message with SHA info
+	statusMsg := status
+	if oldSHA != "" && newSHA != "" && oldSHA != newSHA {
+		statusMsg = fmt.Sprintf("Updated (SHA changed: %s → %s)", oldSHA[:8], newSHA[:8])
+	} else if newSHA != "" && status == "Cloned" {
+		statusMsg = fmt.Sprintf("Cloned (SHA: %s)", newSHA[:8])
 	}
+
+	return "", statusMsg, nil
 }
 
