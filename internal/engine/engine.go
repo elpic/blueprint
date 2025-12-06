@@ -180,6 +180,8 @@ func displayRules(rules []parser.Rule) {
 			if rule.Branch != "" {
 				fmt.Printf("  Branch: %s\n", ui.FormatDim(rule.Branch))
 			}
+		} else if rule.Action == "asdf" {
+			fmt.Printf("  Description: %s\n", ui.FormatInfo("Installs asdf version manager"))
 		} else {
 			if len(rule.Packages) > 0 {
 				fmt.Print("  Packages: ")
@@ -220,7 +222,7 @@ func displayRules(rules []parser.Rule) {
 		}
 
 		// Display command that will be executed (for install/uninstall only)
-		if rule.Action != "clone" {
+		if rule.Action != "clone" && rule.Action != "asdf" {
 			cmd := buildCommand(rule)
 			fmt.Printf("  Command: %s\n", ui.FormatDim(cmd))
 		}
@@ -352,6 +354,10 @@ func executeRules(rules []parser.Rule, blueprint string, osName string) []Execut
 			if rule.Branch != "" {
 				actualCmd = fmt.Sprintf("git clone -b %s %s %s", rule.Branch, rule.CloneURL, rule.ClonePath)
 			}
+		} else if rule.Action == "asdf" {
+			// Handle asdf installation
+			output, cloneInfo, err = executeAsdf()
+			actualCmd = "asdf-init"
 		} else {
 			// Handle install/uninstall operation
 			cmd := buildCommand(rule)
@@ -564,6 +570,38 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 			// Remove uninstalled packages
 			for _, pkg := range rule.Packages {
 				status.Packages = removePackageStatus(status.Packages, pkg.Name, blueprint, osName)
+			}
+		} else if rule.Action == "asdf" {
+			// Check if asdf was executed successfully
+			if succeededCommands["asdf-init"] {
+				// Find the SHA from the records
+				var asdfSHA string
+				for _, record := range records {
+					if record.Status == "success" && record.Command == "asdf-init" {
+						// Extract SHA from output
+						if strings.Contains(record.Output, "SHA:") {
+							parts := strings.Split(record.Output, "SHA:")
+							if len(parts) > 1 {
+								asdfSHA = strings.TrimSpace(strings.Split(parts[1], ")")[0])
+								break
+							}
+						}
+					}
+				}
+
+				// Use "asdf" as the path identifier for status tracking
+				asdfPath := "~/.asdf"
+				// Remove existing asdf entry if present
+				status.Clones = removeCloneStatus(status.Clones, asdfPath, blueprint, osName)
+				// Add new entry
+				status.Clones = append(status.Clones, CloneStatus{
+					URL:       "https://github.com/asdf-vm/asdf.git",
+					Path:      asdfPath,
+					SHA:       asdfSHA,
+					ClonedAt:  time.Now().Format(time.RFC3339),
+					Blueprint: blueprint,
+					OS:        osName,
+				})
 			}
 		}
 	}
@@ -849,6 +887,127 @@ func executeClone(rule parser.Rule) (string, string, error) {
 	}
 
 	return "", statusMsg, nil
+}
+
+// executeAsdf handles asdf installation and shell integration
+func executeAsdf() (string, string, error) {
+	asdfPath := os.ExpandEnv("$HOME/.asdf")
+
+	// Check if asdf is already installed
+	if _, err := os.Stat(asdfPath); err == nil {
+		// asdf already exists, check for updates
+		oldSHA, newSHA, _, err := gitpkg.CloneOrUpdateRepository(
+			"https://github.com/asdf-vm/asdf.git",
+			asdfPath,
+			"",
+		)
+
+		if err != nil {
+			return "", "", err
+		}
+
+		// Format status message
+		if oldSHA != "" && newSHA != "" && oldSHA != newSHA {
+			return "", fmt.Sprintf("Updated (SHA changed: %s → %s)", oldSHA[:8], newSHA[:8]), nil
+		}
+		return "", "Already installed", nil
+	}
+
+	// Clone asdf
+	_, newSHA, cloneStatus, err := gitpkg.CloneOrUpdateRepository(
+		"https://github.com/asdf-vm/asdf.git",
+		asdfPath,
+		"",
+	)
+
+	if err != nil {
+		return "", "", err
+	}
+
+	// Setup asdf in shell configuration files
+	if err := setupAsdfInShells(asdfPath); err != nil {
+		return "", "", fmt.Errorf("asdf installed but failed to setup in shells: %w", err)
+	}
+
+	// Format status message with SHA
+	statusMsg := cloneStatus
+	if newSHA != "" && cloneStatus == "Cloned" {
+		statusMsg = fmt.Sprintf("Installed (SHA: %s)", newSHA[:8])
+	}
+
+	return "", statusMsg, nil
+}
+
+// setupAsdfInShells adds asdf initialization to shell configuration files
+func setupAsdfInShells(asdfPath string) error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	// Source line to add to shell config
+	sourceCmd := fmt.Sprintf(`. %s/asdf.sh`, asdfPath)
+
+	// Try bash configurations
+	bashRcPath := filepath.Join(homeDir, ".bashrc")
+	bashProfilePath := filepath.Join(homeDir, ".bash_profile")
+
+	// Try zsh configurations
+	zshRcPath := filepath.Join(homeDir, ".zshrc")
+	zshProfilePath := filepath.Join(homeDir, ".zsh_profile")
+
+	// Add to .bashrc if it exists
+	if _, err := os.Stat(bashRcPath); err == nil {
+		if err := addAsdfSourceToFile(bashRcPath, sourceCmd); err != nil {
+			return err
+		}
+	}
+
+	// Add to .bash_profile if it exists
+	if _, err := os.Stat(bashProfilePath); err == nil {
+		if err := addAsdfSourceToFile(bashProfilePath, sourceCmd); err != nil {
+			return err
+		}
+	}
+
+	// Add to .zshrc if it exists
+	if _, err := os.Stat(zshRcPath); err == nil {
+		if err := addAsdfSourceToFile(zshRcPath, sourceCmd); err != nil {
+			return err
+		}
+	}
+
+	// Add to .zsh_profile if it exists
+	if _, err := os.Stat(zshProfilePath); err == nil {
+		if err := addAsdfSourceToFile(zshProfilePath, sourceCmd); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// addAsdfSourceToFile adds the asdf source command to a shell config file if not already present
+func addAsdfSourceToFile(filePath string, sourceCmd string) error {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+
+	content := string(data)
+
+	// Check if asdf is already sourced in this file
+	if strings.Contains(content, "asdf.sh") {
+		return nil // Already configured
+	}
+
+	// Add source command at the end
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	content += "\n# asdf initialization\n" + sourceCmd + "\n"
+
+	return os.WriteFile(filePath, []byte(content), 0644)
 }
 
 // PrintStatus displays the current status of installed packages and clones
