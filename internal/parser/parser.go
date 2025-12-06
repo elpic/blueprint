@@ -13,11 +13,12 @@ type Package struct {
 }
 
 type Rule struct {
+	ID       string     // Unique identifier for this rule
 	Action   string
 	Packages []Package
 	OSList   []string
 	Tool     string
-	After    []string
+	After    []string   // List of IDs or package names this rule depends on
 	Group    string
 }
 
@@ -113,14 +114,14 @@ func parseInstallRule(line string) *Rule {
 	// Remove "install " prefix
 	line = strings.TrimPrefix(line, "install ")
 
-	// Split by "on:"
+	// Split by "on:" to get OS list
 	parts := strings.Split(line, "on:")
 	if len(parts) != 2 {
 		return nil
 	}
 
-	packages := strings.Fields(strings.TrimSpace(parts[0]))
 	osListStr := strings.TrimSpace(parts[1])
+	rulePart := strings.TrimSpace(parts[0])
 
 	// Parse OS list [linux, mac, windows]
 	osListStr = strings.Trim(osListStr, "[]")
@@ -129,16 +130,56 @@ func parseInstallRule(line string) *Rule {
 		osList[i] = strings.TrimSpace(osList[i])
 	}
 
-	// Create packages
-	pkgs := make([]Package, len(packages))
-	for i, pkg := range packages {
+	// Parse rule part: extract id: and after: clauses
+	var id string
+	var dependencies []string
+
+	// Extract id: value
+	if strings.Contains(rulePart, "id:") {
+		idParts := strings.Split(rulePart, "id:")
+		if len(idParts) >= 2 {
+			idValue := strings.TrimSpace(idParts[1])
+			// Get the ID (first word after id:)
+			idFields := strings.Fields(idValue)
+			if len(idFields) > 0 {
+				id = idFields[0]
+				// Reconstruct rulePart without the id: part
+				rulePart = idParts[0] + " " + strings.Join(idFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract after: value
+	if strings.Contains(rulePart, "after:") {
+		afterParts := strings.Split(rulePart, "after:")
+		if len(afterParts) >= 2 {
+			afterValue := strings.TrimSpace(afterParts[1])
+			// Parse comma-separated dependencies
+			deps := strings.Split(afterValue, ",")
+			for _, dep := range deps {
+				dep = strings.TrimSpace(dep)
+				if dep != "" {
+					dependencies = append(dependencies, dep)
+				}
+			}
+			// Reconstruct rulePart without the after: part
+			rulePart = afterParts[0]
+		}
+	}
+
+	// Extract package names (remaining words in rulePart)
+	packageNames := strings.Fields(rulePart)
+	pkgs := make([]Package, len(packageNames))
+	for i, pkg := range packageNames {
 		pkgs[i] = Package{Name: pkg, Version: "latest"}
 	}
 
 	return &Rule{
+		ID:       id,
 		Action:   "install",
 		Packages: pkgs,
 		OSList:   osList,
+		After:    dependencies,
 		Tool:     "package-manager",
 	}
 }

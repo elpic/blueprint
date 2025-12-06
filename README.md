@@ -215,6 +215,77 @@ Executing 2 rules + 1 auto-uninstall from setup.bp
 [1/1] uninstall curl ✓ Done
 ```
 
+#### Dependency Management Example
+
+You can control the execution order by specifying dependencies:
+
+**Blueprint file:**
+```bash
+cat > setup.bp << 'EOF'
+install git id: base-git on: [mac]
+install curl after: base-git on: [mac]
+install wget after: git on: [mac]
+EOF
+```
+
+**Plan mode shows the dependencies:**
+```bash
+./blueprint plan setup.bp
+```
+
+Output:
+```
+═══ [PLAN MODE - DRY RUN] ═══
+
+Blueprint: setup.bp
+Current OS: mac
+Applicable Rules: 3
+
+Rule #1:
+  Action: install
+  ID: base-git
+  Packages: git
+  Command: brew install git
+
+Rule #2:
+  Action: install
+  Packages: curl
+  After: base-git
+  Command: brew install curl
+
+Rule #3:
+  Action: install
+  Packages: wget
+  After: git
+  Command: brew install wget
+
+[No changes will be applied]
+```
+
+**Apply mode executes in dependency order:**
+```bash
+./blueprint apply setup.bp
+```
+
+Output:
+```
+═══ [APPLY MODE] ═══
+
+OS: mac
+Executing 3 rules from setup.bp
+
+[1/3] install git ✓ Done
+[2/3] install curl ✓ Done
+[3/3] install wget ✓ Done
+```
+
+**Dependency Features:**
+- Use `id: <name>` to give a rule an identifier
+- Use `after: <dependency>` to specify dependencies (by ID or package name)
+- Multiple dependencies: `after: dep1, dep2`
+- Circular dependencies are detected and reported as errors
+- Dependencies work across all rules (including auto-uninstall rules)
+
 ### Run From Git Repository
 
 Blueprint can clone and execute blueprints from remote git repositories without requiring the git CLI installed. It automatically handles authentication and cleans up temporary directories.
@@ -293,7 +364,29 @@ The DSL format uses lines with keywords to define rules and include other files:
 Install packages on specified platforms:
 
 ```
-install <package> [package2] ... on: [platform1, platform2, ...]
+install <package> [package2] ... [id: <rule-id>] [after: <dependency>] on: [platform1, platform2, ...]
+```
+
+**Options:**
+- `id: <rule-id>` - Give this rule a unique identifier (optional)
+- `after: <dependency>` - Execute after another rule (by ID or package name) (optional)
+
+**Examples:**
+```
+# Simple install
+install git on: [mac]
+
+# Install with ID
+install git id: setup-git on: [mac]
+
+# Install after another package (by name)
+install curl after: git on: [mac]
+
+# Install after another rule (by ID)
+install curl after: setup-git on: [mac]
+
+# Multiple dependencies
+install curl wget after: git, base-tools on: [mac]
 ```
 
 ### Automatic Cleanup

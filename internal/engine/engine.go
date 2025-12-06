@@ -136,6 +136,10 @@ func displayRules(rules []parser.Rule) {
 		fmt.Printf("Rule #%s:\n", ui.FormatHighlight(fmt.Sprint(i+1)))
 		fmt.Printf("  Action: %s\n", ui.FormatHighlight(rule.Action))
 
+		if rule.ID != "" {
+			fmt.Printf("  ID: %s\n", ui.FormatDim(rule.ID))
+		}
+
 		if len(rule.Packages) > 0 {
 			fmt.Print("  Packages: ")
 			for j, pkg := range rule.Packages {
@@ -143,6 +147,17 @@ func displayRules(rules []parser.Rule) {
 					fmt.Print(", ")
 				}
 				fmt.Print(ui.FormatInfo(pkg.Name))
+			}
+			fmt.Println()
+		}
+
+		if len(rule.After) > 0 {
+			fmt.Print("  After: ")
+			for j, dep := range rule.After {
+				if j > 0 {
+					fmt.Print(", ")
+				}
+				fmt.Print(ui.FormatHighlight(dep))
 			}
 			fmt.Println()
 		}
@@ -264,7 +279,14 @@ func executeCommand(cmdStr string) (string, error) {
 func executeRules(rules []parser.Rule, blueprint string, osName string) []ExecutionRecord {
 	var records []ExecutionRecord
 
-	for i, rule := range rules {
+	// Sort rules by dependencies
+	sortedRules, err := resolveDependencies(rules)
+	if err != nil {
+		fmt.Printf("%s\n", ui.FormatError(err.Error()))
+		return records
+	}
+
+	for i, rule := range sortedRules {
 		cmd := buildCommand(rule)
 
 		// Show actual command including sudo if needed
@@ -282,7 +304,7 @@ func executeRules(rules []parser.Rule, blueprint string, osName string) []Execut
 			packages += pkg.Name
 		}
 
-		fmt.Printf("[%d/%d] %s", i+1, len(rules), ui.FormatHighlight(rule.Action))
+		fmt.Printf("[%d/%d] %s", i+1, len(sortedRules), ui.FormatHighlight(rule.Action))
 		if packages != "" {
 			fmt.Printf(" %s", ui.FormatInfo(packages))
 		}
@@ -503,5 +525,86 @@ func extractPackagesFromCommand(command string, action string) []string {
 	}
 
 	return packages
+}
+
+// resolveDependencies performs topological sort on rules based on dependencies
+func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
+	if len(rules) == 0 {
+		return rules, nil
+	}
+
+	// Build maps for lookup by ID and package name
+	rulesByID := make(map[string]*parser.Rule)
+	rulesByPackage := make(map[string]*parser.Rule)
+
+	for i := range rules {
+		if rules[i].ID != "" {
+			rulesByID[rules[i].ID] = &rules[i]
+		}
+		for _, pkg := range rules[i].Packages {
+			rulesByPackage[pkg.Name] = &rules[i]
+		}
+	}
+
+	// Track visited and recursion stack for cycle detection
+	visited := make(map[string]bool)
+	recursionStack := make(map[string]bool)
+	var sorted []parser.Rule
+
+	// Helper function for DFS
+	var visit func(rule *parser.Rule) error
+	visit = func(rule *parser.Rule) error {
+		ruleKey := rule.ID
+		if ruleKey == "" {
+			// Use first package name as key if no ID
+			if len(rule.Packages) > 0 {
+				ruleKey = rule.Packages[0].Name
+			} else {
+				return nil
+			}
+		}
+
+		if recursionStack[ruleKey] {
+			return fmt.Errorf("circular dependency detected involving rule %s", ruleKey)
+		}
+
+		if visited[ruleKey] {
+			return nil
+		}
+
+		recursionStack[ruleKey] = true
+
+		// Visit dependencies first
+		for _, depName := range rule.After {
+			var depRule *parser.Rule
+
+			// First try to find by ID
+			if depRule = rulesByID[depName]; depRule == nil {
+				// Then try to find by package name
+				depRule = rulesByPackage[depName]
+			}
+
+			if depRule != nil {
+				if err := visit(depRule); err != nil {
+					return err
+				}
+			}
+		}
+
+		recursionStack[ruleKey] = false
+		visited[ruleKey] = true
+		sorted = append(sorted, *rule)
+
+		return nil
+	}
+
+	// Visit all rules
+	for i := range rules {
+		if err := visit(&rules[i]); err != nil {
+			return nil, err
+		}
+	}
+
+	return sorted, nil
 }
 
