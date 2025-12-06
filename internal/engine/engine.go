@@ -193,6 +193,8 @@ func displayRules(rules []parser.Rule) {
 			} else {
 				fmt.Printf("  Description: %s\n", ui.FormatInfo("Installs asdf version manager"))
 			}
+		} else if rule.Action == "uninstall-asdf" {
+			fmt.Printf("  Description: %s\n", ui.FormatError("Uninstalls asdf version manager"))
 		} else {
 			if len(rule.Packages) > 0 {
 				fmt.Print("  Packages: ")
@@ -233,9 +235,12 @@ func displayRules(rules []parser.Rule) {
 		}
 
 		// Display command that will be executed (for install/uninstall only)
-		if rule.Action != "clone" && rule.Action != "asdf" {
+		if rule.Action != "clone" && rule.Action != "asdf" && rule.Action != "uninstall-asdf" {
 			cmd := buildCommand(rule)
 			fmt.Printf("  Command: %s\n", ui.FormatDim(cmd))
+		} else if rule.Action == "uninstall-asdf" {
+			// For uninstall-asdf, show what command will be executed
+			fmt.Printf("  Command: %s\n", ui.FormatDim("Remove ~/.asdf directory and clean shell configs"))
 		}
 		fmt.Println()
 	}
@@ -679,11 +684,15 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 		return autoUninstallRules
 	}
 
+	// Normalize the blueprint file path for comparison
+	normalizedBlueprintFile := normalizePath(blueprintFile)
+
 	// Extract historically installed packages for this blueprint and OS
 	historicalPackages := make(map[string]bool)
 	for _, record := range records {
 		// Only consider successful commands from this blueprint on this OS
-		if record.Status == "success" && record.Blueprint == blueprintFile && record.OS == osName {
+		// Use normalized paths for comparison to handle relative vs absolute paths
+		if record.Status == "success" && normalizePath(record.Blueprint) == normalizedBlueprintFile && record.OS == osName {
 			// Check if it's an install command
 			if strings.Contains(record.Command, "install") && !strings.Contains(record.Command, "uninstall") {
 				// Extract package names from command
@@ -698,7 +707,7 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 
 	// Remove packages that have been successfully uninstalled
 	for _, record := range records {
-		if record.Status == "success" && record.Blueprint == blueprintFile && record.OS == osName {
+		if record.Status == "success" && normalizePath(record.Blueprint) == normalizedBlueprintFile && record.OS == osName {
 			// Check if it's an uninstall command
 			if strings.Contains(record.Command, "uninstall") || (strings.Contains(record.Command, "remove") && strings.Contains(record.Command, "apt-get")) {
 				// Extract package names from command
@@ -744,10 +753,15 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 	// Check if asdf was historically used but is not in current rules
 	asdfWasUsed := false
 	for _, record := range records {
-		if record.Status == "success" && record.Blueprint == blueprintFile && record.OS == osName {
-			if record.Command == "asdf-init" {
-				asdfWasUsed = true
-				break
+		if record.Status == "success" && normalizePath(record.Blueprint) == normalizedBlueprintFile && record.OS == osName {
+			if record.Command == "asdf-init" || record.Command == "asdf-uninstall" {
+				// If we find asdf-init, it was used; if we only find asdf-uninstall, it was already cleaned up
+				if record.Command == "asdf-init" {
+					asdfWasUsed = true
+				} else if record.Command == "asdf-uninstall" {
+					// If we find uninstall after init, mark that asdf is no longer used
+					asdfWasUsed = false
+				}
 			}
 		}
 	}
@@ -771,6 +785,18 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 	}
 
 	return autoUninstallRules
+}
+
+// normalizePath normalizes a file path to allow comparison of relative and absolute paths
+// It converts to absolute path and normalizes separators
+func normalizePath(filePath string) string {
+	// Try to get absolute path
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		// If conversion fails, just return the normalized version of the input
+		return filepath.Clean(filePath)
+	}
+	return filepath.Clean(absPath)
 }
 
 // extractPackagesFromCommand extracts package names from a command string
