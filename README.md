@@ -91,7 +91,14 @@ This shows all rules that will be executed without making any changes.
 
 This executes all rules and saves the execution history.
 
-4. **Check history** (audit log):
+4. **Check current status** (what's installed):
+```bash
+./blueprint status
+```
+
+Shows all packages and cloned repositories currently managed by Blueprint.
+
+5. **Check history** (audit log):
 ```bash
 cat ~/.blueprint/history.json | jq '.'
 ```
@@ -425,13 +432,75 @@ clone https://github.com/user/dotfiles.git to: ~/.dotfiles id: setup-dotfiles on
 clone https://github.com/user/tools.git to: ~/tools after: setup-dotfiles on: [mac]
 ```
 
+### ASDF Rules
+
+Install and maintain the asdf version manager:
+
+```
+asdf [id: <rule-id>] [after: <dependency>] on: [platform1, platform2, ...]
+```
+
+**What is asdf?**
+asdf is a version manager that can handle multiple runtime versions for different languages and tools. Learn more at https://asdf-vm.com/
+
+**Options:**
+- `id: <rule-id>` - Give this rule a unique identifier (optional, defaults to "asdf")
+- `after: <dependency>` - Execute after another rule (optional)
+
+**Behavior:**
+- Clones asdf from https://github.com/asdf-vm/asdf.git to `~/.asdf`
+- Automatically sources asdf in shell configuration files (`.bashrc`, `.bash_profile`, `.zshrc`, `.zsh_profile`)
+- If asdf is already installed, checks for updates and pulls latest changes
+- Tracks asdf version via commit SHA
+- Auto-uninstalls asdf if removed from blueprint (like packages)
+
+**Examples:**
+```
+# Simple asdf installation
+asdf on: [mac, linux]
+
+# With ID for dependencies
+asdf id: asdf-tool on: [mac]
+
+# asdf with package that depends on it
+asdf id: asdf-tool on: [mac]
+install nodejs on: [mac] after: asdf-tool
+```
+
+**Complete example with multiple tools:**
+```
+# Install asdf version manager
+asdf id: version-manager on: [mac, linux]
+
+# Install Node.js after asdf is ready
+install nodejs on: [mac] after: version-manager
+
+# Install Git
+install git on: [mac]
+```
+
 ### Automatic Cleanup
 
-Blueprint automatically removes packages that were previously installed but are no longer in your blueprint configuration. It uses execution history to track what was installed and compares it with the current blueprint:
+Blueprint automatically removes packages and tools that were previously installed but are no longer in your blueprint configuration. It uses execution history to track what was installed and compares it with the current blueprint:
 
 - When you remove a package from the blueprint and run `apply`, Blueprint will automatically uninstall it
+- When you remove an asdf rule and run `apply`, Blueprint will automatically uninstall asdf
 - Only packages that were successfully installed on the current OS will be removed
 - History is tracked per blueprint file and OS to ensure accuracy
+
+**Example:** If you have asdf installed and then remove the `asdf` rule from your blueprint:
+```
+# Before (old setup.bp)
+asdf on: [mac]
+install git on: [mac]
+
+# After (new setup.bp)
+install git on: [mac]
+
+# When you run: ./blueprint apply setup.bp
+# Result: asdf is automatically uninstalled, ~/.asdf directory removed,
+#         and shell configuration files cleaned up
+```
 
 ### Include Statements
 
@@ -468,6 +537,13 @@ include config/runtimes.bp
 include config/dev-tools.bp
 include config/runtimes.bp
 
+# Install asdf version manager
+asdf id: version-manager on: [mac, linux]
+
+# Install tools that depend on asdf
+install nodejs on: [mac] after: version-manager
+install python3 on: [mac, linux] after: version-manager
+
 # Install rules
 install brew on: [mac]
 install xcode-select on: [mac]
@@ -494,6 +570,53 @@ Blueprint automatically generates the correct package manager commands for both 
 - Auto-cleanup (removed packages) → `apt-get remove -y <packages>`
 
 The system also automatically adds `sudo` when needed on Linux (if not running as root).
+
+## Status Tracking
+
+Blueprint maintains a current status file at `~/.blueprint/status.json` that tracks what is currently installed and cloned on your system. This is updated after each `apply` operation.
+
+### Check Current Status
+
+View what is currently installed and cloned:
+
+```bash
+./blueprint status
+```
+
+**Output example:**
+```
+=== Blueprint Status ===
+
+Installed Packages:
+  ● git (2025-12-06 01:00:00) [mac, setup.bp]
+  ● curl (2025-12-06 01:05:00) [mac, setup.bp]
+  ● nodejs (2025-12-06 01:10:00) [mac, setup.bp]
+
+Cloned Repositories:
+  ● ~/.dotfiles (2025-12-06 01:15:00) [mac, setup.bp]
+     URL: https://github.com/user/dotfiles.git
+     SHA: abc123de
+  ● ~/.asdf (2025-12-06 01:20:00) [mac, setup.bp]
+     URL: https://github.com/asdf-vm/asdf.git
+     SHA: def456ab
+```
+
+**Status file location:**
+```
+~/.blueprint/status.json
+```
+
+### Status Information
+
+The status file tracks:
+- **Packages:** Name, installation timestamp, blueprint source, OS
+- **Cloned repositories:** URL, path, commit SHA, clone timestamp, blueprint source, OS
+
+This information is useful for:
+- Understanding what your current system setup includes
+- Tracking which blueprint file installed what
+- Seeing commit SHAs for cloned repositories
+- Auditing your system configuration
 
 ## History Tracking
 
@@ -584,6 +707,8 @@ setup.bp:
 - Saves results to `history.json`
 - Supports both local files and git repositories
 - Automatically filters rules by operating system
+- Handles asdf installation and shell integration
+- Manages asdf auto-uninstall when removed from blueprint
 
 ### Git Module (`internal/git/git.go`)
 - Clones repositories using pure Go (no git CLI required)
