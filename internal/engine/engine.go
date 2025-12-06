@@ -936,6 +936,7 @@ func executeClone(rule parser.Rule) (string, string, error) {
 // executeAsdf handles asdf installation and shell integration
 func executeAsdf(rule parser.Rule) (string, string, error) {
 	asdfPath := os.ExpandEnv("$HOME/.asdf")
+	var asdfStatusMsg string
 
 	// Check if asdf is already installed
 	if _, err := os.Stat(asdfPath); err == nil {
@@ -952,7 +953,9 @@ func executeAsdf(rule parser.Rule) (string, string, error) {
 
 		// Format status message
 		if oldSHA != "" && newSHA != "" && oldSHA != newSHA {
-			return "", fmt.Sprintf("Updated (SHA changed: %s → %s)", oldSHA[:8], newSHA[:8]), nil
+			asdfStatusMsg = fmt.Sprintf("Updated (SHA changed: %s → %s)", oldSHA[:8], newSHA[:8])
+		} else {
+			asdfStatusMsg = "Already installed"
 		}
 	} else {
 		// Clone asdf if not installed
@@ -973,14 +976,15 @@ func executeAsdf(rule parser.Rule) (string, string, error) {
 
 		// Format status message with SHA
 		if newSHA != "" && cloneStatus == "Cloned" {
-			return "", fmt.Sprintf("Installed (SHA: %s)", newSHA[:8]), nil
+			asdfStatusMsg = fmt.Sprintf("Installed (SHA: %s)", newSHA[:8])
+		} else {
+			asdfStatusMsg = cloneStatus
 		}
-		return "", cloneStatus, nil
 	}
 
 	// Now handle plugin installations if any
 	if len(rule.AsdfPackages) == 0 {
-		return "", "Initialized", nil
+		return "", asdfStatusMsg, nil
 	}
 
 	// Build shell source command to ensure asdf is available
@@ -1032,7 +1036,8 @@ func executeAsdf(rule parser.Rule) (string, string, error) {
 		}
 	}
 
-	statusMsg := fmt.Sprintf("Plugins installed:%s", pluginOutput.String())
+	// Combine asdf status with plugin installation status
+	statusMsg := fmt.Sprintf("%s, plugins installed:%s", asdfStatusMsg, pluginOutput.String())
 	return "", statusMsg, nil
 }
 
