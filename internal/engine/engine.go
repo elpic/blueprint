@@ -578,6 +578,10 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 		for _, pkg := range rules[i].Packages {
 			rulesByPackage[pkg.Name] = &rules[i]
 		}
+		// Also allow clone rules to be referenced by their path
+		if rules[i].Action == "clone" && rules[i].ClonePath != "" {
+			rulesByPackage[rules[i].ClonePath] = &rules[i]
+		}
 	}
 
 	// Track visited and recursion stack for cycle detection
@@ -593,6 +597,9 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 			// Use first package name as key if no ID
 			if len(rule.Packages) > 0 {
 				ruleKey = rule.Packages[0].Name
+			} else if rule.Action == "clone" {
+				// For clone rules without ID, use the clone path as key
+				ruleKey = rule.ClonePath
 			} else {
 				return nil
 			}
