@@ -273,7 +273,19 @@ func executeRules(rules []parser.Rule, blueprint string, osName string) []Execut
 			actualCmd = "sudo " + cmd
 		}
 
+		// Build package list string
+		packages := ""
+		for j, pkg := range rule.Packages {
+			if j > 0 {
+				packages += ", "
+			}
+			packages += pkg.Name
+		}
+
 		fmt.Printf("[%d/%d] %s", i+1, len(rules), ui.FormatHighlight(rule.Action))
+		if packages != "" {
+			fmt.Printf(" %s", ui.FormatInfo(packages))
+		}
 
 		// Execute the command
 		output, err := executeCommand(cmd)
