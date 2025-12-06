@@ -1,2 +1,0 @@
-# Base tools (included by dev-tools.bp)
-install wget vim on: [mac, linux]

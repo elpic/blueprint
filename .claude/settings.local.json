@@ -10,7 +10,16 @@
       "Bash(GOOS=windows GOARCH=amd64 go build:*)",
       "Bash(make help:*)",
       "Bash(just:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git add:*)",
+      "Read(//Users/elpic/.blueprint/**)",
+      "Bash(./blueprint apply:*)",
+      "Bash(cat:*)",
+      "Bash(timeout 30 /Users/elpic/development/workspace/personal/blueprint/blueprint apply:*)",
+      "Read(//private/tmp/**)",
+      "Bash(awk:*)",
+      "Bash(xargs kill -9)",
+      "Bash(./blueprint status:*)"
     ],
     "deny": [],
     "ask": []

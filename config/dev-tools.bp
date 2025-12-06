@@ -1,7 +1,0 @@
-# Development tools for macOS
-
-# Include base tools first
-include base.bp
-
-install git curl on: [mac]
-install make on: [mac]

@@ -26,6 +26,30 @@ type ExecutionRecord struct {
 	Error     string `json:"error,omitempty"`
 }
 
+// PackageStatus tracks an installed package
+type PackageStatus struct {
+	Name        string `json:"name"`
+	InstalledAt string `json:"installed_at"`
+	Blueprint   string `json:"blueprint"`
+	OS          string `json:"os"`
+}
+
+// CloneStatus tracks a cloned repository
+type CloneStatus struct {
+	URL       string `json:"url"`
+	Path      string `json:"path"`
+	SHA       string `json:"sha"`
+	ClonedAt  string `json:"cloned_at"`
+	Blueprint string `json:"blueprint"`
+	OS        string `json:"os"`
+}
+
+// Status represents the current state of installed packages and clones
+type Status struct {
+	Packages []PackageStatus `json:"packages"`
+	Clones   []CloneStatus   `json:"clones"`
+}
+
 func Run(file string, dry bool) {
 	var setupPath string
 	var err error
@@ -95,6 +119,9 @@ func Run(file string, dry bool) {
 		records := executeRules(allRules, file, currentOS)
 		if err := saveHistory(records); err != nil {
 			fmt.Printf("Warning: Failed to save history: %v\n", err)
+		}
+		if err := saveStatus(allRules, records, file, currentOS); err != nil {
+			fmt.Printf("Warning: Failed to save status: %v\n", err)
 		}
 	}
 }
@@ -341,12 +368,17 @@ func executeRules(rules []parser.Rule, blueprint string, osName string) []Execut
 		}
 
 		// Create execution record
+		recordOutput := strings.TrimSpace(output)
+		if cloneInfo != "" {
+			recordOutput = cloneInfo
+		}
+
 		record := ExecutionRecord{
 			Timestamp: time.Now().Format(time.RFC3339),
 			Blueprint: blueprint,
 			OS:        osName,
 			Command:   actualCmd,
-			Output:    strings.TrimSpace(output),
+			Output:    recordOutput,
 		}
 
 		if err != nil {
@@ -387,6 +419,23 @@ func getHistoryPath() (string, error) {
 	return filepath.Join(blueprintDir, "history.json"), nil
 }
 
+// getStatusPath returns the path to the status file in ~/.blueprint/
+func getStatusPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	blueprintDir := filepath.Join(homeDir, ".blueprint")
+
+	// Create directory if it doesn't exist
+	if err := os.MkdirAll(blueprintDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create .blueprint directory: %w", err)
+	}
+
+	return filepath.Join(blueprintDir, "status.json"), nil
+}
+
 // saveHistory saves execution records to ~/.blueprint/history.json
 func saveHistory(records []ExecutionRecord) error {
 	if len(records) == 0 {
@@ -418,6 +467,128 @@ func saveHistory(records []ExecutionRecord) error {
 	}
 
 	return nil
+}
+
+// saveStatus saves the current status of installed packages and clones to ~/.blueprint/status.json
+func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string, osName string) error {
+	statusPath, err := getStatusPath()
+	if err != nil {
+		return err
+	}
+
+	// Load existing status
+	var status Status
+	if data, err := os.ReadFile(statusPath); err == nil {
+		json.Unmarshal(data, &status)
+	}
+
+	// Create a map for quick lookup of succeeded records
+	succeededCommands := make(map[string]bool)
+	for _, record := range records {
+		if record.Status == "success" {
+			succeededCommands[record.Command] = true
+		}
+	}
+
+	// Process each rule
+	for _, rule := range rules {
+		if rule.Action == "install" {
+			// Check if this rule's command was executed successfully
+			cmd := buildCommand(rule)
+			if needsSudo(cmd) {
+				cmd = "sudo " + cmd
+			}
+
+			if succeededCommands[cmd] {
+				// Add or update package status
+				for _, pkg := range rule.Packages {
+					// Remove existing entry if present
+					status.Packages = removePackageStatus(status.Packages, pkg.Name, blueprint, osName)
+					// Add new entry
+					status.Packages = append(status.Packages, PackageStatus{
+						Name:        pkg.Name,
+						InstalledAt: time.Now().Format(time.RFC3339),
+						Blueprint:   blueprint,
+						OS:          osName,
+					})
+				}
+			}
+		} else if rule.Action == "clone" {
+			// Check if this rule's command was executed successfully
+			cloneCmd := fmt.Sprintf("git clone %s %s", rule.CloneURL, rule.ClonePath)
+			if rule.Branch != "" {
+				cloneCmd = fmt.Sprintf("git clone -b %s %s %s", rule.Branch, rule.CloneURL, rule.ClonePath)
+			}
+
+			if succeededCommands[cloneCmd] {
+				// Find the SHA from the records
+				var cloneSHA string
+				for _, record := range records {
+					if record.Status == "success" && record.Command == cloneCmd {
+						// Extract SHA from cloneInfo in output
+						if strings.Contains(record.Output, "SHA:") {
+							parts := strings.Split(record.Output, "SHA:")
+							if len(parts) > 1 {
+								cloneSHA = strings.TrimSpace(strings.Split(parts[1], ")")[0])
+								break
+							}
+						}
+					}
+				}
+
+				// Remove existing entry if present
+				status.Clones = removeCloneStatus(status.Clones, rule.ClonePath, blueprint, osName)
+				// Add new entry
+				status.Clones = append(status.Clones, CloneStatus{
+					URL:       rule.CloneURL,
+					Path:      rule.ClonePath,
+					SHA:       cloneSHA,
+					ClonedAt:  time.Now().Format(time.RFC3339),
+					Blueprint: blueprint,
+					OS:        osName,
+				})
+			}
+		} else if rule.Action == "uninstall" {
+			// Remove uninstalled packages
+			for _, pkg := range rule.Packages {
+				status.Packages = removePackageStatus(status.Packages, pkg.Name, blueprint, osName)
+			}
+		}
+	}
+
+	// Write status to file
+	data, err := json.MarshalIndent(status, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal status: %w", err)
+	}
+
+	if err := os.WriteFile(statusPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write status file: %w", err)
+	}
+
+	return nil
+}
+
+// removePackageStatus removes a package from the status packages list
+func removePackageStatus(packages []PackageStatus, name string, blueprint string, osName string) []PackageStatus {
+	var result []PackageStatus
+	for _, pkg := range packages {
+		if !(pkg.Name == name && pkg.Blueprint == blueprint && pkg.OS == osName) {
+			result = append(result, pkg)
+		}
+	}
+	return result
+}
+
+// removeCloneStatus removes a clone from the status clones list
+func removeCloneStatus(clones []CloneStatus, path string, blueprint string, osName string) []CloneStatus {
+	var result []CloneStatus
+	for _, clone := range clones {
+		if !(clone.Path == path && clone.Blueprint == blueprint && clone.OS == osName) {
+			result = append(result, clone)
+		}
+	}
+	return result
 }
 
 // getAutoUninstallRules compares history with current rules and generates uninstall rules for removed packages
@@ -666,5 +837,98 @@ func executeClone(rule parser.Rule) (string, string, error) {
 	}
 
 	return "", statusMsg, nil
+}
+
+// PrintStatus displays the current status of installed packages and clones
+func PrintStatus() {
+	statusPath, err := getStatusPath()
+	if err != nil {
+		fmt.Printf("%s\n", ui.FormatError("Error getting status path"))
+		return
+	}
+
+	// Read status file
+	data, err := os.ReadFile(statusPath)
+	if err != nil {
+		fmt.Printf("%s\n", ui.FormatInfo("No status file found. Run 'blueprint apply' to create one."))
+		return
+	}
+
+	// Parse status
+	var status Status
+	if err := json.Unmarshal(data, &status); err != nil {
+		fmt.Printf("%s\n", ui.FormatError("Error parsing status file"))
+		return
+	}
+
+	// Display header
+	fmt.Printf("\n%s\n", ui.FormatHighlight("=== Blueprint Status ==="))
+
+	// Display packages
+	if len(status.Packages) > 0 {
+		fmt.Printf("\n%s\n", ui.FormatHighlight("Installed Packages:"))
+		for _, pkg := range status.Packages {
+			// Parse timestamp for display
+			t, err := time.Parse(time.RFC3339, pkg.InstalledAt)
+			var timeStr string
+			if err == nil {
+				timeStr = t.Format("2006-01-02 15:04:05")
+			} else {
+				timeStr = pkg.InstalledAt
+			}
+
+			fmt.Printf("  %s %s (%s) [%s, %s]\n",
+				ui.FormatSuccess("●"),
+				ui.FormatInfo(pkg.Name),
+				ui.FormatDim(timeStr),
+				ui.FormatDim(pkg.OS),
+				ui.FormatDim(pkg.Blueprint),
+			)
+		}
+	}
+
+	// Display clones
+	if len(status.Clones) > 0 {
+		fmt.Printf("\n%s\n", ui.FormatHighlight("Cloned Repositories:"))
+		for _, clone := range status.Clones {
+			// Parse timestamp for display
+			t, err := time.Parse(time.RFC3339, clone.ClonedAt)
+			var timeStr string
+			if err == nil {
+				timeStr = t.Format("2006-01-02 15:04:05")
+			} else {
+				timeStr = clone.ClonedAt
+			}
+
+			shaStr := clone.SHA
+			if len(shaStr) > 8 {
+				shaStr = shaStr[:8]
+			}
+
+			fmt.Printf("  %s %s (%s) [%s, %s]\n",
+				ui.FormatSuccess("●"),
+				ui.FormatInfo(clone.Path),
+				ui.FormatDim(timeStr),
+				ui.FormatDim(clone.OS),
+				ui.FormatDim(clone.Blueprint),
+			)
+			fmt.Printf("     %s %s\n",
+				ui.FormatDim("URL:"),
+				ui.FormatInfo(clone.URL),
+			)
+			if shaStr != "" {
+				fmt.Printf("     %s %s\n",
+					ui.FormatDim("SHA:"),
+					ui.FormatDim(shaStr),
+				)
+			}
+		}
+	}
+
+	if len(status.Packages) == 0 && len(status.Clones) == 0 {
+		fmt.Printf("\n%s\n", ui.FormatInfo("No packages or repositories installed"))
+	}
+
+	fmt.Printf("\n")
 }
 
