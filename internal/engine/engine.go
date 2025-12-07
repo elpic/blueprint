@@ -46,10 +46,20 @@ type CloneStatus struct {
 	OS        string `json:"os"`
 }
 
-// Status represents the current state of installed packages and clones
+// DecryptStatus tracks a decrypted file
+type DecryptStatus struct {
+	SourceFile  string `json:"source_file"`
+	DestPath    string `json:"dest_path"`
+	DecryptedAt string `json:"decrypted_at"`
+	Blueprint   string `json:"blueprint"`
+	OS          string `json:"os"`
+}
+
+// Status represents the current state of installed packages, clones, and decrypts
 type Status struct {
 	Packages []PackageStatus `json:"packages"`
 	Clones   []CloneStatus   `json:"clones"`
+	Decrypts []DecryptStatus `json:"decrypts"`
 }
 
 // passwordCache stores decryption passwords by password-id to avoid re-prompting
@@ -741,6 +751,21 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 				asdfPath := "~/.asdf"
 				status.Clones = removeCloneStatus(status.Clones, asdfPath, blueprint, osName)
 			}
+		} else if rule.Action == "decrypt" {
+			// Check if this rule's command was executed successfully
+			decryptCmd := fmt.Sprintf("decrypt %s to %s", rule.DecryptFile, rule.DecryptPath)
+			if succeededCommands[decryptCmd] {
+				// Remove existing entry if present
+				status.Decrypts = removeDecryptStatus(status.Decrypts, rule.DecryptPath, blueprint, osName)
+				// Add new entry
+				status.Decrypts = append(status.Decrypts, DecryptStatus{
+					SourceFile:  rule.DecryptFile,
+					DestPath:    rule.DecryptPath,
+					DecryptedAt: time.Now().Format(time.RFC3339),
+					Blueprint:   blueprint,
+					OS:          osName,
+				})
+			}
 		}
 	}
 
@@ -774,6 +799,17 @@ func removeCloneStatus(clones []CloneStatus, path string, blueprint string, osNa
 	for _, clone := range clones {
 		if !(clone.Path == path && clone.Blueprint == blueprint && clone.OS == osName) {
 			result = append(result, clone)
+		}
+	}
+	return result
+}
+
+// removeDecryptStatus removes a decrypted file from the status decrypts list
+func removeDecryptStatus(decrypts []DecryptStatus, destPath string, blueprint string, osName string) []DecryptStatus {
+	var result []DecryptStatus
+	for _, decrypt := range decrypts {
+		if !(decrypt.DestPath == destPath && decrypt.Blueprint == blueprint && decrypt.OS == osName) {
+			result = append(result, decrypt)
 		}
 	}
 	return result
@@ -1713,8 +1749,35 @@ func PrintStatus() {
 		}
 	}
 
-	if len(status.Packages) == 0 && len(status.Clones) == 0 {
-		fmt.Printf("\n%s\n", ui.FormatInfo("No packages or repositories installed"))
+	// Display decrypted files
+	if len(status.Decrypts) > 0 {
+		fmt.Printf("\n%s\n", ui.FormatHighlight("Decrypted Files:"))
+		for _, decrypt := range status.Decrypts {
+			// Parse timestamp for display
+			t, err := time.Parse(time.RFC3339, decrypt.DecryptedAt)
+			var timeStr string
+			if err == nil {
+				timeStr = t.Format("2006-01-02 15:04:05")
+			} else {
+				timeStr = decrypt.DecryptedAt
+			}
+
+			fmt.Printf("  %s %s (%s) [%s, %s]\n",
+				ui.FormatSuccess("●"),
+				ui.FormatInfo(decrypt.DestPath),
+				ui.FormatDim(timeStr),
+				ui.FormatDim(decrypt.OS),
+				ui.FormatDim(decrypt.Blueprint),
+			)
+			fmt.Printf("     %s %s\n",
+				ui.FormatDim("From:"),
+				ui.FormatInfo(decrypt.SourceFile),
+			)
+		}
+	}
+
+	if len(status.Packages) == 0 && len(status.Clones) == 0 && len(status.Decrypts) == 0 {
+		fmt.Printf("\n%s\n", ui.FormatInfo("No packages, repositories, or decrypted files"))
 	}
 
 	fmt.Printf("\n")
