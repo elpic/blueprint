@@ -49,14 +49,8 @@ func (h *AsdfHandler) Up() (string, error) {
 
 		// Install version
 		installCmd := fmt.Sprintf("asdf install %s %s", plugin, version)
-		if output, err := exec.Command("sh", "-c", installCmd).CombinedOutput(); err != nil {
+		if err := exec.Command("sh", "-c", installCmd).Run(); err != nil {
 			return "", fmt.Errorf("failed to install %s@%s: %w", plugin, version, err)
-		} else {
-			// Extract SHA if available
-			sha := extractSHAFromOutput(string(output))
-			if sha != "" {
-				return fmt.Sprintf("Installed (SHA: %s)", sha), nil
-			}
 		}
 
 		// Set local version
