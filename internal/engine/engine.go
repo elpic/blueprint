@@ -75,27 +75,14 @@ func Run(file string, dry bool) {
 		setupPath = file
 	}
 
-	// Parse the setup file (with include support for local files)
+	// Parse the setup file (with include support for both local and git repositories)
 	var rules []parser.Rule
-	if gitpkg.IsGitURL(file) {
-		// For git URLs, read content and parse with string parsing
-		data, err := os.ReadFile(setupPath)
-		if err != nil {
-			fmt.Println("Error:", err)
-			return
-		}
-		rules, err = parser.Parse(string(data))
-		if err != nil {
-			fmt.Println("Parse error:", err)
-			return
-		}
-	} else {
-		// For local files, use ParseFile which supports includes
-		rules, err = parser.ParseFile(setupPath)
-		if err != nil {
-			fmt.Println("Parse error:", err)
-			return
-		}
+	// Use ParseFile for both local files and git repositories
+	// This enables include directive support in both cases
+	rules, err = parser.ParseFile(setupPath)
+	if err != nil {
+		fmt.Println("Parse error:", err)
+		return
 	}
 
 	// Filter rules by current OS
