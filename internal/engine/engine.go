@@ -1203,12 +1203,12 @@ func executeClone(rule parser.Rule) (string, string, error) {
 		return "", "", err
 	}
 
-	// Format status message with SHA info
+	// Format status message with SHA info (include full SHA for status tracking)
 	statusMsg := status
 	if oldSHA != "" && newSHA != "" && oldSHA != newSHA {
-		statusMsg = fmt.Sprintf("Updated (SHA changed: %s → %s)", oldSHA[:8], newSHA[:8])
+		statusMsg = fmt.Sprintf("Updated (SHA changed: %s → %s) (SHA: %s)", oldSHA[:8], newSHA[:8], newSHA)
 	} else if newSHA != "" && status == "Cloned" {
-		statusMsg = fmt.Sprintf("Cloned (SHA: %s)", newSHA[:8])
+		statusMsg = fmt.Sprintf("Cloned (SHA: %s)", newSHA)
 	}
 
 	return "", statusMsg, nil
@@ -1281,7 +1281,7 @@ func executeAsdf(rule parser.Rule) (string, string, error) {
 
 		// Format status message
 		if oldSHA != "" && newSHA != "" && oldSHA != newSHA {
-			asdfStatusMsg = fmt.Sprintf("Updated (SHA changed: %s → %s)", oldSHA[:8], newSHA[:8])
+			asdfStatusMsg = fmt.Sprintf("Updated (SHA changed: %s → %s) (SHA: %s)", oldSHA[:8], newSHA[:8], newSHA)
 		} else {
 			asdfStatusMsg = "Already installed"
 		}
@@ -1302,9 +1302,9 @@ func executeAsdf(rule parser.Rule) (string, string, error) {
 			return "", "", fmt.Errorf("asdf installed but failed to setup in shells: %w", err)
 		}
 
-		// Format status message with SHA
+		// Format status message with SHA (include full SHA for status tracking)
 		if newSHA != "" && cloneStatus == "Cloned" {
-			asdfStatusMsg = fmt.Sprintf("Installed (SHA: %s)", newSHA[:8])
+			asdfStatusMsg = fmt.Sprintf("Installed (SHA: %s)", newSHA)
 		} else {
 			asdfStatusMsg = cloneStatus
 		}
