@@ -1326,6 +1326,9 @@ func executeClone(rule parser.Rule) (string, string, error) {
 		statusMsg = fmt.Sprintf("Updated (SHA changed: %s → %s) (SHA: %s)", oldSHA[:8], newSHA[:8], newSHA)
 	} else if newSHA != "" && status == "Cloned" {
 		statusMsg = fmt.Sprintf("Cloned (SHA: %s)", newSHA)
+	} else if newSHA != "" {
+		// Already up to date or no changes, but still include SHA for status tracking
+		statusMsg = fmt.Sprintf("%s (SHA: %s)", status, newSHA)
 	}
 
 	return "", statusMsg, nil
@@ -1399,6 +1402,9 @@ func executeAsdf(rule parser.Rule) (string, string, error) {
 		// Format status message
 		if oldSHA != "" && newSHA != "" && oldSHA != newSHA {
 			asdfStatusMsg = fmt.Sprintf("Updated (SHA changed: %s → %s) (SHA: %s)", oldSHA[:8], newSHA[:8], newSHA)
+		} else if newSHA != "" {
+			// Already installed, include SHA for status tracking
+			asdfStatusMsg = fmt.Sprintf("Already installed (SHA: %s)", newSHA)
 		} else {
 			asdfStatusMsg = "Already installed"
 		}
@@ -1422,6 +1428,9 @@ func executeAsdf(rule parser.Rule) (string, string, error) {
 		// Format status message with SHA (include full SHA for status tracking)
 		if newSHA != "" && cloneStatus == "Cloned" {
 			asdfStatusMsg = fmt.Sprintf("Installed (SHA: %s)", newSHA)
+		} else if newSHA != "" {
+			// Include SHA even if not cloned status
+			asdfStatusMsg = fmt.Sprintf("%s (SHA: %s)", cloneStatus, newSHA)
 		} else {
 			asdfStatusMsg = cloneStatus
 		}
