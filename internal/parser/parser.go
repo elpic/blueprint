@@ -28,6 +28,11 @@ type Rule struct {
 
 	// ASDF-specific fields
 	AsdfPackages []string // List of "plugin@version" for asdf (e.g., "nodejs@21.4.0")
+
+	// Decrypt-specific fields
+	DecryptFile     string // Source encrypted file
+	DecryptPath     string // Destination path for decrypted file
+	DecryptPasswordID string // Password ID to use for decryption
 }
 
 // Parse parses content without include support
@@ -100,6 +105,12 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 		} else if strings.HasPrefix(line, "asdf") {
 			// Parse format: asdf [id: <id>] [after: <deps>] on: [<platforms>]
 			rule := parseAsdfRule(line)
+			if rule != nil {
+				rules = append(rules, *rule)
+			}
+		} else if strings.HasPrefix(line, "decrypt ") {
+			// Parse format: decrypt <file> to: <path> [group: <group>] [password-id: <id>] [id: <id>] [after: <deps>] on: [<platforms>]
+			rule := parseDecryptRule(line)
 			if rule != nil {
 				rules = append(rules, *rule)
 			}
@@ -434,6 +445,146 @@ func parseAsdfRule(line string) *Rule {
 		After:        dependencies,
 		Tool:         "asdf-vm",
 		AsdfPackages: asdfPackages,
+	}
+}
+
+func parseDecryptRule(line string) *Rule {
+	// Remove "decrypt " prefix
+	line = strings.TrimPrefix(line, "decrypt ")
+
+	// Split by "on:" to get OS list (on: is optional)
+	parts := strings.Split(line, "on:")
+	var osListStr string
+	var rulePart string
+
+	if len(parts) == 2 {
+		// "on:" clause is present
+		osListStr = strings.TrimSpace(parts[1])
+		rulePart = strings.TrimSpace(parts[0])
+	} else if len(parts) == 1 {
+		// No "on:" clause - rule applies to all systems
+		rulePart = strings.TrimSpace(parts[0])
+		osListStr = ""
+	} else {
+		return nil
+	}
+
+	// Parse OS list [linux, mac, windows]
+	var osList []string
+	if osListStr != "" {
+		osListStr = strings.Trim(osListStr, "[]")
+		osList = strings.Split(osListStr, ",")
+		for i := range osList {
+			osList[i] = strings.TrimSpace(osList[i])
+		}
+	}
+
+	// Parse rule part: extract encrypted file, to:, group:, password-id:, id:, and after: clauses
+	var encryptedFile string
+	var decryptPath string
+	var group string
+	var passwordID string
+	var id string
+	var dependencies []string
+
+	// Extract encrypted file (first token)
+	fields := strings.Fields(rulePart)
+	if len(fields) == 0 {
+		return nil
+	}
+	encryptedFile = fields[0]
+	rulePart = strings.Join(fields[1:], " ")
+
+	// Extract to: value
+	if strings.Contains(rulePart, "to:") {
+		toParts := strings.Split(rulePart, "to:")
+		if len(toParts) >= 2 {
+			toValue := strings.TrimSpace(toParts[1])
+			// Get the path (first word after to:)
+			toFields := strings.Fields(toValue)
+			if len(toFields) > 0 {
+				decryptPath = toFields[0]
+				// Reconstruct rulePart without the to: part
+				rulePart = toParts[0] + " " + strings.Join(toFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract group: value
+	if strings.Contains(rulePart, "group:") {
+		groupParts := strings.Split(rulePart, "group:")
+		if len(groupParts) >= 2 {
+			groupValue := strings.TrimSpace(groupParts[1])
+			// Get the group name (first word after group:)
+			groupFields := strings.Fields(groupValue)
+			if len(groupFields) > 0 {
+				group = groupFields[0]
+				// Reconstruct rulePart without the group: part
+				rulePart = groupParts[0] + " " + strings.Join(groupFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract password-id: value
+	if strings.Contains(rulePart, "password-id:") {
+		passwordParts := strings.Split(rulePart, "password-id:")
+		if len(passwordParts) >= 2 {
+			passwordValue := strings.TrimSpace(passwordParts[1])
+			// Get the password ID (first word after password-id:)
+			passwordFields := strings.Fields(passwordValue)
+			if len(passwordFields) > 0 {
+				passwordID = passwordFields[0]
+				// Reconstruct rulePart without the password-id: part
+				rulePart = passwordParts[0] + " " + strings.Join(passwordFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract id: value
+	if strings.Contains(rulePart, "id:") {
+		idParts := strings.Split(rulePart, "id:")
+		if len(idParts) >= 2 {
+			idValue := strings.TrimSpace(idParts[1])
+			// Get the ID (first word after id:)
+			idFields := strings.Fields(idValue)
+			if len(idFields) > 0 {
+				id = idFields[0]
+				// Reconstruct rulePart without the id: part
+				rulePart = idParts[0] + " " + strings.Join(idFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract after: value
+	if strings.Contains(rulePart, "after:") {
+		afterParts := strings.Split(rulePart, "after:")
+		if len(afterParts) >= 2 {
+			afterValue := strings.TrimSpace(afterParts[1])
+			// Parse comma-separated dependencies
+			deps := strings.Split(afterValue, ",")
+			for _, dep := range deps {
+				dep = strings.TrimSpace(dep)
+				if dep != "" {
+					dependencies = append(dependencies, dep)
+				}
+			}
+		}
+	}
+
+	if encryptedFile == "" || decryptPath == "" {
+		return nil
+	}
+
+	return &Rule{
+		ID:                id,
+		Action:            "decrypt",
+		DecryptFile:       encryptedFile,
+		DecryptPath:       decryptPath,
+		Group:             group,
+		DecryptPasswordID: passwordID,
+		OSList:            osList,
+		After:             dependencies,
+		Tool:              "decrypt",
 	}
 }
 

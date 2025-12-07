@@ -84,21 +84,28 @@ install python3 ruby on: [linux, mac]
 
 This shows all rules that will be executed without making any changes.
 
-3. **Apply the blueprint** (execute rules):
+3. **Encrypt sensitive files** (optional):
+```bash
+./blueprint encrypt ~/.ssh/id_rsa --password-id main
+```
+
+This creates `~/.ssh/id_rsa.enc` which can be decrypted in your blueprint.
+
+4. **Apply the blueprint** (execute rules):
 ```bash
 ./blueprint apply setup.bp
 ```
 
-This executes all rules and saves the execution history.
+This executes all rules and saves the execution history. If decrypt rules are present, you'll be prompted for passwords upfront.
 
-4. **Check current status** (what's installed):
+5. **Check current status** (what's installed):
 ```bash
 ./blueprint status
 ```
 
 Shows all packages and cloned repositories currently managed by Blueprint.
 
-5. **Check history** (audit log):
+6. **Check history** (audit log):
 ```bash
 cat ~/.blueprint/history.json | jq '.'
 ```
@@ -362,6 +369,82 @@ ssh-add ~/.ssh/id_rsa
 
 **Note:** SSH URLs automatically fall back to HTTPS for public repositories if SSH authentication fails.
 
+## Skip Options
+
+You can selectively skip rules during plan or apply operations using `--skip-group` and `--skip-id` flags:
+
+### Skip by Group
+
+Skip all rules in a specific group:
+
+```bash
+# Plan mode - show what would be executed without specific group
+./blueprint plan setup.bp --skip-group vim
+
+# Apply mode - execute all rules except those in the group
+./blueprint apply setup.bp --skip-group vim
+```
+
+**Behavior when skipping:**
+- Matching rules are not executed
+- Passwords are not prompted for (if decrypt rules)
+- State is not modified
+- Rules show as "skipped" in output
+
+### Skip by ID
+
+Skip a specific rule by its unique identifier:
+
+```bash
+# Skip a single rule
+./blueprint plan setup.bp --skip-id decrypt-ssh-key
+./blueprint apply setup.bp --skip-id my-custom-install
+```
+
+### Combine Skip Options
+
+You can use both flags together:
+
+```bash
+# Skip both a group and a specific rule
+./blueprint apply setup.bp --skip-group vim --skip-id backup-decrypt
+```
+
+### Use Cases
+
+- **Skip optional tools:** Skip a group when certain tools aren't needed
+- **Skip sensitive operations:** Skip decrypt rules if you're not ready to set up secrets
+- **Skip long-running tasks:** Skip time-consuming clones during quick updates
+- **Skip problematic rules:** Temporarily skip rules that are failing
+
+**Example blueprint with groups:**
+
+```blueprint
+install vim group: vim on: [mac]
+install neovim group: vim on: [mac]
+
+decrypt secrets.enc to: ~/.secrets group: security password-id: main on: [mac]
+decrypt ssh-key.enc to: ~/.ssh/id_rsa group: security password-id: main on: [mac]
+
+clone https://github.com/user/dotfiles.git to: ~/.dotfiles id: clone-dotfiles on: [mac]
+```
+
+**Usage examples:**
+
+```bash
+# Skip all vim tools
+./blueprint apply setup.bp --skip-group vim
+
+# Skip security decryption
+./blueprint apply setup.bp --skip-group security
+
+# Skip dotfiles clone
+./blueprint apply setup.bp --skip-id clone-dotfiles
+
+# Skip both vim tools and security decryption
+./blueprint apply setup.bp --skip-group vim --skip-group security
+```
+
 ## DSL Format
 
 The DSL format uses lines with keywords to define rules and include other files:
@@ -506,6 +589,75 @@ asdf versions nodejs
 # Change global version
 asdf global nodejs 21.4.0
 ```
+
+### Decrypt Rules
+
+Decrypt encrypted files to specified locations with optional password protection:
+
+```
+decrypt <encrypted-file> to: <destination> [group: <group>] [password-id: <id>] [id: <rule-id>] [after: <dependency>] on: [platform1, platform2, ...]
+```
+
+**What is this used for?**
+Safely store sensitive files (SSH keys, certificates, config files) in encrypted form in your repository, then decrypt them during blueprint execution.
+
+**Options:**
+- `to: <destination>` - Where to decrypt the file (supports `~/` for home directory)
+- `group: <group>` - Group name for grouping related decrypt rules (optional)
+- `password-id: <id>` - Unique identifier for password grouping (optional, defaults to "default")
+- `id: <rule-id>` - Give this rule a unique identifier (optional)
+- `after: <dependency>` - Execute after another rule (optional)
+- `on: [platforms]` - Target specific platforms (optional)
+
+**How it works:**
+1. Blueprint prompts for all unique `password-id` values at the start of execution
+2. Encrypted files are decrypted using the provided password
+3. Decrypted files are written with restricted permissions (0600)
+4. Multiple decrypt rules can share the same `password-id` (prompted only once)
+5. Works with both local files and git repository blueprints
+
+**Examples:**
+
+```blueprint
+# Simple decrypt
+decrypt id_rsa.enc to: ~/.ssh/id_rsa password-id: main on: [mac, linux]
+
+# Multiple decrypts with same password
+decrypt id_rsa.enc to: ~/.ssh/id_rsa password-id: main on: [mac, linux]
+decrypt config.enc to: ~/.config/app.conf password-id: main on: [mac, linux]
+
+# With group for organization
+decrypt ssh-key.enc to: ~/.ssh/id_rsa group: security password-id: main on: [mac]
+decrypt ssl-cert.enc to: ~/.certs/cert.pem group: security password-id: main on: [mac]
+
+# With dependencies
+asdf nodejs@18.19.0 id: setup-node on: [mac]
+decrypt npm-token.enc to: ~/.npmrc password-id: npm-creds after: setup-node on: [mac]
+```
+
+**Creating encrypted files:**
+
+Use the `encrypt` command to create encrypted files for your blueprint:
+
+```bash
+# Encrypt a file with default password-id
+./blueprint encrypt ~/.ssh/id_rsa
+
+# Encrypt with specific password-id
+./blueprint encrypt ~/.ssh/id_rsa --password-id main
+
+# Creates: ~/.ssh/id_rsa.enc
+```
+
+This creates `~/.ssh/id_rsa.enc` which can be added to version control safely.
+
+**Security notes:**
+- Encrypted files use AES-256-GCM encryption
+- Each encryption uses a random nonce
+- Passwords are derived using SHA-256
+- Decrypted files are written with 0600 permissions (user-only)
+- Passwords are cached during execution but never saved
+- Works with repository-based blueprints (clones to temp directory)
 
 ### Automatic Cleanup
 

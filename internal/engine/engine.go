@@ -11,9 +11,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	cryptopkg "github.com/elpic/blueprint/internal/crypto"
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
+	"golang.org/x/term"
 )
 
 type ExecutionRecord struct {
@@ -48,6 +50,99 @@ type CloneStatus struct {
 type Status struct {
 	Packages []PackageStatus `json:"packages"`
 	Clones   []CloneStatus   `json:"clones"`
+}
+
+// passwordCache stores decryption passwords by password-id to avoid re-prompting
+var passwordCache = make(map[string]string)
+
+// RunWithSkip runs blueprint with skip filters for group and id
+func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
+	var setupPath string
+	var err error
+
+	// Check if input is a git URL
+	if gitpkg.IsGitURL(file) {
+		// Clone the repository (show progress in dry run mode, hide in apply mode)
+		tempDir, setupFile, err := gitpkg.CloneRepository(file, dry)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return
+		}
+		defer gitpkg.CleanupRepository(tempDir)
+
+		// Find setup file in the cloned repo
+		setupPath, err = gitpkg.FindSetupFile(tempDir, setupFile)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return
+		}
+	} else {
+		// Local file
+		setupPath = file
+	}
+
+	// Parse the setup file (with include support for both local and git repositories)
+	var rules []parser.Rule
+	// Use ParseFile for both local files and git repositories
+	// This enables include directive support in both cases
+	rules, err = parser.ParseFile(setupPath)
+	if err != nil {
+		fmt.Println("Parse error:", err)
+		return
+	}
+
+	// Filter rules by skip group and id
+	var filteredRules []parser.Rule
+	for _, rule := range rules {
+		// Skip if matches skip-group
+		if skipGroup != "" && rule.Group == skipGroup {
+			continue
+		}
+		// Skip if matches skip-id
+		if skipID != "" && rule.ID == skipID {
+			continue
+		}
+		filteredRules = append(filteredRules, rule)
+	}
+	rules = filteredRules
+
+	// Filter rules by current OS
+	filteredRules = filterRulesByOS(rules)
+	currentOS := getOSName()
+
+	// Check history and add auto-uninstall rules for removed packages
+	autoUninstallRules := getAutoUninstallRules(filteredRules, file, currentOS)
+	allRules := append(filteredRules, autoUninstallRules...)
+
+	// Extract base directory from setupPath for resolving relative file paths
+	basePath := filepath.Dir(setupPath)
+
+	if dry {
+		ui.PrintExecutionHeader(false, currentOS, file, len(filteredRules), len(autoUninstallRules))
+		displayRules(filteredRules)
+		if len(autoUninstallRules) > 0 {
+			ui.PrintAutoUninstallSection()
+			displayRules(autoUninstallRules)
+		}
+		ui.PrintPlanFooter()
+	} else {
+		ui.PrintExecutionHeader(true, currentOS, file, len(filteredRules), len(autoUninstallRules))
+
+		// Prompt for all decrypt passwords upfront
+		err := promptForDecryptPasswords(allRules)
+		if err != nil {
+			fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error prompting for passwords: %v", err)))
+			return
+		}
+
+		records := executeRules(allRules, file, currentOS, basePath)
+		if err := saveHistory(records); err != nil {
+			fmt.Printf("Warning: Failed to save history: %v\n", err)
+		}
+		if err := saveStatus(allRules, records, file, currentOS); err != nil {
+			fmt.Printf("Warning: Failed to save status: %v\n", err)
+		}
+	}
 }
 
 func Run(file string, dry bool) {
@@ -93,6 +188,9 @@ func Run(file string, dry bool) {
 	autoUninstallRules := getAutoUninstallRules(filteredRules, file, currentOS)
 	allRules := append(filteredRules, autoUninstallRules...)
 
+	// Extract base directory from setupPath for resolving relative file paths
+	basePath := filepath.Dir(setupPath)
+
 	if dry {
 		ui.PrintExecutionHeader(false, currentOS, file, len(filteredRules), len(autoUninstallRules))
 		displayRules(filteredRules)
@@ -103,7 +201,15 @@ func Run(file string, dry bool) {
 		ui.PrintPlanFooter()
 	} else {
 		ui.PrintExecutionHeader(true, currentOS, file, len(filteredRules), len(autoUninstallRules))
-		records := executeRules(allRules, file, currentOS)
+
+		// Prompt for all decrypt passwords upfront
+		err := promptForDecryptPasswords(allRules)
+		if err != nil {
+			fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error prompting for passwords: %v", err)))
+			return
+		}
+
+		records := executeRules(allRules, file, currentOS, basePath)
 		if err := saveHistory(records); err != nil {
 			fmt.Printf("Warning: Failed to save history: %v\n", err)
 		}
@@ -182,6 +288,15 @@ func displayRules(rules []parser.Rule) {
 			}
 		} else if rule.Action == "uninstall-asdf" {
 			fmt.Printf("  Description: %s\n", ui.FormatError("Uninstalls asdf version manager"))
+		} else if rule.Action == "decrypt" {
+			fmt.Printf("  File: %s\n", ui.FormatInfo(rule.DecryptFile))
+			fmt.Printf("  Path: %s\n", ui.FormatInfo(rule.DecryptPath))
+			if rule.Group != "" {
+				fmt.Printf("  Group: %s\n", ui.FormatDim(rule.Group))
+			}
+			if rule.DecryptPasswordID != "" {
+				fmt.Printf("  Password ID: %s\n", ui.FormatDim(rule.DecryptPasswordID))
+			}
 		} else {
 			if len(rule.Packages) > 0 {
 				fmt.Print("  Packages: ")
@@ -222,12 +337,15 @@ func displayRules(rules []parser.Rule) {
 		}
 
 		// Display command that will be executed (for install/uninstall only)
-		if rule.Action != "clone" && rule.Action != "asdf" && rule.Action != "uninstall-asdf" {
+		if rule.Action != "clone" && rule.Action != "asdf" && rule.Action != "uninstall-asdf" && rule.Action != "decrypt" {
 			cmd := buildCommand(rule)
 			fmt.Printf("  Command: %s\n", ui.FormatDim(cmd))
 		} else if rule.Action == "uninstall-asdf" {
 			// For uninstall-asdf, show what command will be executed
 			fmt.Printf("  Command: %s\n", ui.FormatDim("Remove ~/.asdf directory and clean shell configs"))
+		} else if rule.Action == "decrypt" {
+			// For decrypt, show what will be decrypted
+			fmt.Printf("  Command: %s\n", ui.FormatDim(fmt.Sprintf("decrypt %s to %s", rule.DecryptFile, rule.DecryptPath)))
 		}
 		fmt.Println()
 	}
@@ -331,7 +449,7 @@ func executeCommand(cmdStr string) (string, error) {
 	return string(output), err
 }
 
-func executeRules(rules []parser.Rule, blueprint string, osName string) []ExecutionRecord {
+func executeRules(rules []parser.Rule, blueprint string, osName string, basePath string) []ExecutionRecord {
 	var records []ExecutionRecord
 
 	// Sort rules by dependencies
@@ -366,6 +484,11 @@ func executeRules(rules []parser.Rule, blueprint string, osName string) []Execut
 			fmt.Printf(" %s", ui.FormatError("asdf"))
 			output, err = executeUninstallAsdf()
 			actualCmd = "asdf-uninstall"
+		} else if rule.Action == "decrypt" {
+			// Handle decrypt operation
+			fmt.Printf(" %s", ui.FormatInfo(rule.DecryptPath))
+			output, err = executeDecrypt(rule, basePath)
+			actualCmd = fmt.Sprintf("decrypt %s to %s", rule.DecryptFile, rule.DecryptPath)
 		} else {
 			// Handle install/uninstall operation
 			cmd := buildCommand(rule)
@@ -889,6 +1012,12 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 			} else if rule.Action == "uninstall-asdf" {
 				// For uninstall-asdf rules, use action as key
 				ruleKey = "uninstall-asdf"
+			} else if rule.Action == "asdf" {
+				// For asdf rules without ID, use action as key
+				ruleKey = "asdf"
+			} else if rule.Action == "decrypt" {
+				// For decrypt rules without ID, use the destination path as key
+				ruleKey = rule.DecryptPath
 			} else {
 				return nil
 			}
@@ -1238,6 +1367,81 @@ func executeUninstallAsdf() (string, error) {
 	return "asdf uninstalled", nil
 }
 
+// executeDecrypt handles decryption of encrypted files
+func executeDecrypt(rule parser.Rule, basePath string) (string, error) {
+	// Expand home directory in source file path
+	sourceFile := os.ExpandEnv(rule.DecryptFile)
+	if strings.HasPrefix(sourceFile, "~") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		sourceFile = filepath.Join(homeDir, sourceFile[1:])
+	}
+
+	// Check if source file exists (first check relative to basePath)
+	if !filepath.IsAbs(sourceFile) {
+		relativeSourceFile := filepath.Join(basePath, sourceFile)
+		if _, err := os.Stat(relativeSourceFile); err == nil {
+			sourceFile = relativeSourceFile
+		}
+	}
+
+	// Check if source file exists
+	if _, err := os.Stat(sourceFile); err != nil {
+		return "", fmt.Errorf("encrypted file not found: %s (looked in %s and current directory)", sourceFile, basePath)
+	}
+
+	// Expand home directory in destination path
+	destPath := os.ExpandEnv(rule.DecryptPath)
+	if strings.HasPrefix(destPath, "~") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		destPath = filepath.Join(homeDir, destPath[1:])
+	}
+
+	// Create parent directory if it doesn't exist
+	destDir := filepath.Dir(destPath)
+	if _, err := os.Stat(destDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(destDir, 0700); err != nil {
+			return "", fmt.Errorf("failed to create destination directory: %w", err)
+		}
+	}
+
+	// Read encrypted file
+	encryptedData, err := os.ReadFile(sourceFile)
+	if err != nil {
+		return "", fmt.Errorf("failed to read encrypted file: %w", err)
+	}
+
+	// Get password using password-id (should be cached from upfront prompting)
+	passwordID := rule.DecryptPasswordID
+	if passwordID == "" {
+		passwordID = "default"
+	}
+
+	// Get password from cache (should have been populated during upfront prompting)
+	password, exists := passwordCache[passwordID]
+	if !exists {
+		return "", fmt.Errorf("password for password-id '%s' not found in cache (should have been prompted at startup)", passwordID)
+	}
+
+	// Decrypt file
+	plaintext, err := cryptopkg.DecryptFile(encryptedData, password)
+	if err != nil {
+		return "", fmt.Errorf("decryption failed: %w", err)
+	}
+
+	// Write decrypted data to destination with restricted permissions
+	if err := os.WriteFile(destPath, plaintext, 0600); err != nil {
+		return "", fmt.Errorf("failed to write decrypted file: %w", err)
+	}
+
+	return fmt.Sprintf("Decrypted to %s", destPath), nil
+}
+
 // removeAsdfFromShells removes asdf initialization from shell configuration files
 func removeAsdfFromShells() error {
 	homeDir, err := os.UserHomeDir()
@@ -1330,6 +1534,97 @@ func removeAsdfSourceFromFile(filePath string) error {
 	}
 
 	return os.WriteFile(filePath, []byte(newContent), 0644)
+}
+
+// EncryptFile encrypts a file and saves it with .enc extension
+func EncryptFile(filePath string, passwordID string) {
+	// Check if file exists
+	if _, err := os.Stat(filePath); err != nil {
+		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("File not found: %s", filePath)))
+		os.Exit(1)
+	}
+
+	// Read file content
+	plaintext, err := os.ReadFile(filePath)
+	if err != nil {
+		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Failed to read file: %v", err)))
+		os.Exit(1)
+	}
+
+	// Prompt for password
+	fmt.Printf("Enter password for %s: ", filePath)
+	password, err := readPassword()
+	if err != nil {
+		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Failed to read password: %v", err)))
+		os.Exit(1)
+	}
+
+	// Encrypt file
+	encryptedData, err := cryptopkg.EncryptFile(plaintext, password)
+	if err != nil {
+		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Encryption failed: %v", err)))
+		os.Exit(1)
+	}
+
+	// Write encrypted file with .enc extension
+	encryptedPath := filePath + ".enc"
+	if err := os.WriteFile(encryptedPath, encryptedData, 0600); err != nil {
+		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Failed to write encrypted file: %v", err)))
+		os.Exit(1)
+	}
+
+	fmt.Printf("%s\n", ui.FormatSuccess(fmt.Sprintf("File encrypted: %s -> %s", filePath, encryptedPath)))
+}
+
+// promptForDecryptPasswords collects all unique password-ids from decrypt rules and prompts for passwords upfront
+func promptForDecryptPasswords(rules []parser.Rule) error {
+	// Collect unique password-ids from decrypt rules
+	passwordIDsMap := make(map[string]bool)
+	var passwordIDs []string
+
+	for _, rule := range rules {
+		if rule.Action == "decrypt" {
+			passwordID := rule.DecryptPasswordID
+			if passwordID == "" {
+				passwordID = "default"
+			}
+
+			// Only add if we haven't seen this password-id before
+			if !passwordIDsMap[passwordID] {
+				passwordIDsMap[passwordID] = true
+				passwordIDs = append(passwordIDs, passwordID)
+			}
+		}
+	}
+
+	// If there are no decrypt rules, return early
+	if len(passwordIDs) == 0 {
+		return nil
+	}
+
+	// Prompt for each unique password-id
+	for _, passwordID := range passwordIDs {
+		fmt.Printf("Enter password for %s: ", ui.FormatHighlight(passwordID))
+		password, err := readPassword()
+		if err != nil {
+			return fmt.Errorf("failed to read password for %s: %w", passwordID, err)
+		}
+		// Cache the password
+		passwordCache[passwordID] = password
+	}
+
+	return nil
+}
+
+// readPassword reads a password from stdin without echoing using x/term
+func readPassword() (string, error) {
+	// Read password from stdin with terminal echo disabled
+	bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
+	if err != nil {
+		return "", err
+	}
+	fmt.Println() // Print newline after password prompt
+	return string(bytePassword), nil
 }
 
 // PrintStatus displays the current status of installed packages and clones
