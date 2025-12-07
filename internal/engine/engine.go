@@ -124,6 +124,9 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 	autoUninstallRules := getAutoUninstallRules(filteredRules, file, currentOS)
 	allRules := append(filteredRules, autoUninstallRules...)
 
+	// Delete decrypted files that are no longer in the blueprint
+	deleteRemovedDecryptFiles(filteredRules, file, currentOS)
+
 	// Extract base directory from setupPath for resolving relative file paths
 	basePath := filepath.Dir(setupPath)
 
@@ -197,6 +200,9 @@ func Run(file string, dry bool) {
 	// Check history and add auto-uninstall rules for removed packages
 	autoUninstallRules := getAutoUninstallRules(filteredRules, file, currentOS)
 	allRules := append(filteredRules, autoUninstallRules...)
+
+	// Delete decrypted files that are no longer in the blueprint
+	deleteRemovedDecryptFiles(filteredRules, file, currentOS)
 
 	// Extract base directory from setupPath for resolving relative file paths
 	basePath := filepath.Dir(setupPath)
@@ -939,6 +945,93 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 	}
 
 	return autoUninstallRules
+}
+
+// deleteRemovedDecryptFiles checks status for decrypted files that are no longer in the blueprint and deletes them
+func deleteRemovedDecryptFiles(currentRules []parser.Rule, blueprintFile string, osName string) {
+	// Load status
+	statusPath, err := getStatusPath()
+	if err != nil {
+		return
+	}
+
+	// Read status file
+	data, err := os.ReadFile(statusPath)
+	if err != nil {
+		// No status yet, nothing to delete
+		return
+	}
+
+	// Parse status
+	var status Status
+	if err := json.Unmarshal(data, &status); err != nil {
+		return
+	}
+
+	// Normalize the blueprint file path for comparison
+	normalizedBlueprintFile := normalizePath(blueprintFile)
+
+	// Get current decrypt file paths from blueprint rules
+	currentDecryptPaths := make(map[string]bool)
+	for _, rule := range currentRules {
+		if rule.Action == "decrypt" {
+			currentDecryptPaths[rule.DecryptPath] = true
+		}
+	}
+
+	// Find decrypted files to delete (in status but not in current rules)
+	var filesToDelete []DecryptStatus
+	var decryptsToKeep []DecryptStatus
+
+	// Handle nil decrypts slice
+	if status.Decrypts == nil {
+		return
+	}
+
+	for _, decrypt := range status.Decrypts {
+		normalizedStatusBlueprint := normalizePath(decrypt.Blueprint)
+		// Only consider files from this blueprint on this OS
+		if normalizedStatusBlueprint == normalizedBlueprintFile && decrypt.OS == osName {
+			// If this file is not in current decrypt rules, mark it for deletion
+			if !currentDecryptPaths[decrypt.DestPath] {
+				filesToDelete = append(filesToDelete, decrypt)
+			} else {
+				decryptsToKeep = append(decryptsToKeep, decrypt)
+			}
+		} else {
+			// Keep decrypts from other blueprints or OSes
+			decryptsToKeep = append(decryptsToKeep, decrypt)
+		}
+	}
+
+	// Delete the files from filesystem
+	for _, fileToDelete := range filesToDelete {
+		// Expand home directory
+		path := fileToDelete.DestPath
+		if strings.HasPrefix(path, "~") {
+			usr, err := user.Current()
+			if err == nil {
+				path = strings.Replace(path, "~", usr.HomeDir, 1)
+			}
+		}
+
+		// Delete the file
+		if err := os.Remove(path); err == nil {
+			fmt.Printf("%s Removed decrypted file: %s\n",
+				ui.FormatSuccess("✓"),
+				ui.FormatInfo(fileToDelete.DestPath))
+		}
+		// Silently ignore errors (file might already be deleted)
+	}
+
+	// Update status file with remaining decrypts
+	status.Decrypts = decryptsToKeep
+
+	// Write updated status to file
+	updatedData, err := json.MarshalIndent(status, "", "  ")
+	if err == nil {
+		os.WriteFile(statusPath, updatedData, 0644)
+	}
 }
 
 // normalizePath normalizes a file path to allow comparison of relative and absolute paths
