@@ -125,13 +125,13 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 	allRules := append(filteredRules, autoUninstallRules...)
 
 	// Delete decrypted files that are no longer in the blueprint
-	deleteRemovedDecryptFiles(filteredRules, file, currentOS)
+	numCleanups := deleteRemovedDecryptFiles(filteredRules, file, currentOS)
 
 	// Extract base directory from setupPath for resolving relative file paths
 	basePath := filepath.Dir(setupPath)
 
 	if dry {
-		ui.PrintExecutionHeader(false, currentOS, file, len(filteredRules), len(autoUninstallRules))
+		ui.PrintExecutionHeader(false, currentOS, file, len(filteredRules), len(autoUninstallRules), numCleanups)
 		displayRules(filteredRules)
 		if len(autoUninstallRules) > 0 {
 			ui.PrintAutoUninstallSection()
@@ -139,7 +139,7 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 		}
 		ui.PrintPlanFooter()
 	} else {
-		ui.PrintExecutionHeader(true, currentOS, file, len(filteredRules), len(autoUninstallRules))
+		ui.PrintExecutionHeader(true, currentOS, file, len(filteredRules), len(autoUninstallRules), numCleanups)
 
 		// Prompt for all decrypt passwords upfront
 		err := promptForDecryptPasswords(allRules)
@@ -202,13 +202,13 @@ func Run(file string, dry bool) {
 	allRules := append(filteredRules, autoUninstallRules...)
 
 	// Delete decrypted files that are no longer in the blueprint
-	deleteRemovedDecryptFiles(filteredRules, file, currentOS)
+	numCleanups := deleteRemovedDecryptFiles(filteredRules, file, currentOS)
 
 	// Extract base directory from setupPath for resolving relative file paths
 	basePath := filepath.Dir(setupPath)
 
 	if dry {
-		ui.PrintExecutionHeader(false, currentOS, file, len(filteredRules), len(autoUninstallRules))
+		ui.PrintExecutionHeader(false, currentOS, file, len(filteredRules), len(autoUninstallRules), numCleanups)
 		displayRules(filteredRules)
 		if len(autoUninstallRules) > 0 {
 			ui.PrintAutoUninstallSection()
@@ -216,7 +216,7 @@ func Run(file string, dry bool) {
 		}
 		ui.PrintPlanFooter()
 	} else {
-		ui.PrintExecutionHeader(true, currentOS, file, len(filteredRules), len(autoUninstallRules))
+		ui.PrintExecutionHeader(true, currentOS, file, len(filteredRules), len(autoUninstallRules), numCleanups)
 
 		// Prompt for all decrypt passwords upfront
 		err := promptForDecryptPasswords(allRules)
@@ -948,24 +948,25 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 }
 
 // deleteRemovedDecryptFiles checks status for decrypted files that are no longer in the blueprint and deletes them
-func deleteRemovedDecryptFiles(currentRules []parser.Rule, blueprintFile string, osName string) {
+// Returns the count of deleted files
+func deleteRemovedDecryptFiles(currentRules []parser.Rule, blueprintFile string, osName string) int {
 	// Load status
 	statusPath, err := getStatusPath()
 	if err != nil {
-		return
+		return 0
 	}
 
 	// Read status file
 	data, err := os.ReadFile(statusPath)
 	if err != nil {
 		// No status yet, nothing to delete
-		return
+		return 0
 	}
 
 	// Parse status
 	var status Status
 	if err := json.Unmarshal(data, &status); err != nil {
-		return
+		return 0
 	}
 
 	// Normalize the blueprint file path for comparison
@@ -985,7 +986,7 @@ func deleteRemovedDecryptFiles(currentRules []parser.Rule, blueprintFile string,
 
 	// Handle nil decrypts slice
 	if status.Decrypts == nil {
-		return
+		return 0
 	}
 
 	for _, decrypt := range status.Decrypts {
@@ -1004,7 +1005,8 @@ func deleteRemovedDecryptFiles(currentRules []parser.Rule, blueprintFile string,
 		}
 	}
 
-	// Delete the files from filesystem
+	// Delete the files from filesystem and count deletions
+	deletedCount := 0
 	for _, fileToDelete := range filesToDelete {
 		// Expand home directory
 		path := fileToDelete.DestPath
@@ -1017,9 +1019,7 @@ func deleteRemovedDecryptFiles(currentRules []parser.Rule, blueprintFile string,
 
 		// Delete the file
 		if err := os.Remove(path); err == nil {
-			fmt.Printf("%s Removed decrypted file: %s\n",
-				ui.FormatSuccess("✓"),
-				ui.FormatInfo(fileToDelete.DestPath))
+			deletedCount++
 		}
 		// Silently ignore errors (file might already be deleted)
 	}
@@ -1032,6 +1032,8 @@ func deleteRemovedDecryptFiles(currentRules []parser.Rule, blueprintFile string,
 	if err == nil {
 		os.WriteFile(statusPath, updatedData, 0644)
 	}
+
+	return deletedCount
 }
 
 // normalizePath normalizes a file path to allow comparison of relative and absolute paths

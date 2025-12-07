@@ -64,20 +64,33 @@ func PrintRuleSummary(index, total int, action, command string, status string) {
 }
 
 // PrintExecutionHeader prints the execution header with styling
-func PrintExecutionHeader(isApplyMode bool, currentOS string, blueprintFile string, numRules, numAutoUninstall int) {
+func PrintExecutionHeader(isApplyMode bool, currentOS string, blueprintFile string, numRules, numAutoUninstall, numCleanups int) {
 	if isApplyMode {
 		fmt.Println(Header.Render("═══ [APPLY MODE] ═══") + "\n")
 		fmt.Printf("OS: %s\n", FormatHighlight(currentOS))
-		if numAutoUninstall > 0 {
-			fmt.Printf("Executing %s rules + %s auto-uninstall from %s\n\n",
+		var executionInfo string
+		if numAutoUninstall > 0 && numCleanups > 0 {
+			executionInfo = fmt.Sprintf("Executing %s rules + %s auto-uninstall + %s cleanups from %s",
+				FormatHighlight(fmt.Sprint(numRules)),
+				FormatHighlight(fmt.Sprint(numAutoUninstall)),
+				FormatHighlight(fmt.Sprint(numCleanups)),
+				FormatHighlight(blueprintFile))
+		} else if numAutoUninstall > 0 {
+			executionInfo = fmt.Sprintf("Executing %s rules + %s auto-uninstall from %s",
 				FormatHighlight(fmt.Sprint(numRules)),
 				FormatHighlight(fmt.Sprint(numAutoUninstall)),
 				FormatHighlight(blueprintFile))
+		} else if numCleanups > 0 {
+			executionInfo = fmt.Sprintf("Executing %s rules + %s cleanups from %s",
+				FormatHighlight(fmt.Sprint(numRules)),
+				FormatHighlight(fmt.Sprint(numCleanups)),
+				FormatHighlight(blueprintFile))
 		} else {
-			fmt.Printf("Executing %s rules from %s\n\n",
+			executionInfo = fmt.Sprintf("Executing %s rules from %s",
 				FormatHighlight(fmt.Sprint(numRules)),
 				FormatHighlight(blueprintFile))
 		}
+		fmt.Printf("%s\n\n", executionInfo)
 	} else {
 		fmt.Println(Header.Render("═══ [PLAN MODE - DRY RUN] ═══") + "\n")
 		fmt.Printf("Blueprint: %s\n", FormatHighlight(blueprintFile))
@@ -85,6 +98,9 @@ func PrintExecutionHeader(isApplyMode bool, currentOS string, blueprintFile stri
 		fmt.Printf("Applicable Rules: %s\n", FormatHighlight(fmt.Sprint(numRules)))
 		if numAutoUninstall > 0 {
 			fmt.Printf("Auto-uninstall Rules: %s\n", FormatHighlight(fmt.Sprint(numAutoUninstall)))
+		}
+		if numCleanups > 0 {
+			fmt.Printf("Cleanups: %s\n", FormatHighlight(fmt.Sprint(numCleanups)))
 		}
 		fmt.Printf("\n")
 	}
