@@ -125,11 +125,19 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 	autoUninstallRules := getAutoUninstallRules(filteredRules, file, currentOS)
 	allRules := append(filteredRules, autoUninstallRules...)
 
+	// Delete cloned repos and decrypted files only if not using skip options
+	var numCleanups int
+	if skipGroup == "" && skipID == "" {
+		numClonedDeletions := deleteRemovedClones(filteredRules, file, currentOS)
+		numDecryptedDeletions := deleteRemovedDecryptFiles(filteredRules, file, currentOS)
+		numCleanups = numClonedDeletions + numDecryptedDeletions
+	}
+
 	// Extract base directory from setupPath for resolving relative file paths
 	basePath := filepath.Dir(setupPath)
 
 	if dry {
-		ui.PrintExecutionHeader(false, currentOS, file, len(filteredRules), len(autoUninstallRules), 0)
+		ui.PrintExecutionHeader(false, currentOS, file, len(filteredRules), len(autoUninstallRules), numCleanups)
 		displayRules(filteredRules)
 		if len(autoUninstallRules) > 0 {
 			ui.PrintAutoUninstallSection()
@@ -137,7 +145,7 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 		}
 		ui.PrintPlanFooter()
 	} else {
-		ui.PrintExecutionHeader(true, currentOS, file, len(filteredRules), len(autoUninstallRules), 0)
+		ui.PrintExecutionHeader(true, currentOS, file, len(filteredRules), len(autoUninstallRules), numCleanups)
 
 		// Prompt for all decrypt passwords upfront
 		err := promptForDecryptPasswords(allRules)
@@ -199,8 +207,10 @@ func Run(file string, dry bool) {
 	autoUninstallRules := getAutoUninstallRules(filteredRules, file, currentOS)
 	allRules := append(filteredRules, autoUninstallRules...)
 
-	// Delete decrypted files that are no longer in the blueprint
-	numCleanups := deleteRemovedDecryptFiles(filteredRules, file, currentOS)
+	// Delete cloned repos and decrypted files that are no longer in the blueprint
+	numClonedDeletions := deleteRemovedClones(filteredRules, file, currentOS)
+	numDecryptedDeletions := deleteRemovedDecryptFiles(filteredRules, file, currentOS)
+	numCleanups := numClonedDeletions + numDecryptedDeletions
 
 	// Extract base directory from setupPath for resolving relative file paths
 	basePath := filepath.Dir(setupPath)
@@ -937,6 +947,106 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 	}
 
 	return autoUninstallRules
+}
+
+// deleteRemovedClones checks status for cloned repos that are no longer in the blueprint and deletes them
+// Returns the count of deleted directories
+func deleteRemovedClones(currentRules []parser.Rule, blueprintFile string, osName string) int {
+	// Load status
+	statusPath, err := getStatusPath()
+	if err != nil {
+		return 0
+	}
+
+	// Read status file
+	data, err := os.ReadFile(statusPath)
+	if err != nil {
+		// No status yet, nothing to delete
+		return 0
+	}
+
+	// Parse status
+	var status Status
+	if err := json.Unmarshal(data, &status); err != nil {
+		return 0
+	}
+
+	// Normalize the blueprint file path for comparison
+	normalizedBlueprintFile := normalizePath(blueprintFile)
+
+	// Get current clone paths from blueprint rules (including asdf)
+	currentClonePaths := make(map[string]bool)
+	for _, rule := range currentRules {
+		if rule.Action == "clone" {
+			currentClonePaths[rule.ClonePath] = true
+		} else if rule.Action == "asdf" {
+			// asdf uses ~/.asdf as the path
+			currentClonePaths["~/.asdf"] = true
+		}
+	}
+
+	// Find cloned directories to delete (in status but not in current rules)
+	var directoriesToDelete []CloneStatus
+	var clonesToKeep []CloneStatus
+
+	// Handle nil clones slice
+	if status.Clones == nil {
+		return 0
+	}
+
+	for _, clone := range status.Clones {
+		normalizedStatusBlueprint := normalizePath(clone.Blueprint)
+		// Only consider clones from this blueprint on this OS
+		if normalizedStatusBlueprint == normalizedBlueprintFile && clone.OS == osName {
+			// If this clone path is not in current rules, mark it for deletion
+			if !currentClonePaths[clone.Path] {
+				directoriesToDelete = append(directoriesToDelete, clone)
+			} else {
+				clonesToKeep = append(clonesToKeep, clone)
+			}
+		} else {
+			// Keep clones from other blueprints or OSes
+			clonesToKeep = append(clonesToKeep, clone)
+		}
+	}
+
+	// Delete the directories from filesystem and count deletions
+	deletedCount := 0
+	for _, cloneToDelete := range directoriesToDelete {
+		// Expand home directory
+		path := cloneToDelete.Path
+		if strings.HasPrefix(path, "~") {
+			usr, err := user.Current()
+			if err == nil {
+				path = strings.Replace(path, "~", usr.HomeDir, 1)
+			}
+		}
+
+		// Delete the directory recursively
+		if err := os.RemoveAll(path); err == nil {
+			deletedCount++
+			fmt.Printf("%s Removed cloned directory: %s\n",
+				ui.FormatSuccess("✓"),
+				ui.FormatInfo(cloneToDelete.Path))
+		} else {
+			// Log error for debugging
+			fmt.Printf("%s Failed to remove cloned directory %s: %v\n",
+				ui.FormatError("✗"),
+				ui.FormatInfo(cloneToDelete.Path),
+				err)
+		}
+	}
+
+	// Update status file with remaining clones
+	status.Clones = clonesToKeep
+
+	// Write updated status to file
+	updatedData, err := json.MarshalIndent(status, "", "  ")
+	if err == nil {
+		os.WriteFile(statusPath, updatedData, 0644)
+	}
+
+	return deletedCount
 }
 
 // deleteRemovedDecryptFiles checks status for decrypted files that are no longer in the blueprint and deletes them
