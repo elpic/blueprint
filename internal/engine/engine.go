@@ -14,6 +14,7 @@ import (
 	"time"
 	cryptopkg "github.com/elpic/blueprint/internal/crypto"
 	gitpkg "github.com/elpic/blueprint/internal/git"
+	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
 	"golang.org/x/term"
@@ -503,8 +504,13 @@ func executeCommand(cmdStr string) (string, error) {
 	return string(output), err
 }
 
-func executeRules(rules []parser.Rule, blueprint string, osName string, basePath string) []ExecutionRecord {
+// executeRulesWithHandlers executes rules using the handler pattern
+// This is the refactored version that uses the handlers package
+func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName string, basePath string) []ExecutionRecord {
 	var records []ExecutionRecord
+
+	// Set up the handler package with our executeCommand function
+	handlerskg.SetExecuteCommandFunc(executeCommand)
 
 	// Sort rules by dependencies
 	sortedRules, err := resolveDependencies(rules)
@@ -516,38 +522,39 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 	for i, rule := range sortedRules {
 		fmt.Printf("[%d/%d] %s", i+1, len(sortedRules), ui.FormatHighlight(rule.Action))
 
+		var handler handlerskg.Handler
 		var output string
 		var err error
 		var actualCmd string
-		var cloneInfo string
 
-		if rule.Action == "clone" {
-			// Handle clone operation
+		// Create appropriate handler based on rule action
+		switch rule.Action {
+		case "clone":
 			fmt.Printf(" %s", ui.FormatInfo(rule.ClonePath))
-			output, cloneInfo, err = executeClone(rule)
+			handler = handlerskg.NewCloneHandler(rule, basePath)
 			actualCmd = fmt.Sprintf("git clone %s %s", rule.CloneURL, rule.ClonePath)
 			if rule.Branch != "" {
 				actualCmd = fmt.Sprintf("git clone -b %s %s %s", rule.Branch, rule.CloneURL, rule.ClonePath)
 			}
-		} else if rule.Action == "asdf" {
-			// Handle asdf installation
-			output, cloneInfo, err = executeAsdf(rule)
-			actualCmd = "asdf-init"
-		} else if rule.Action == "uninstall-asdf" {
-			// Handle asdf uninstallation
-			fmt.Printf(" %s", ui.FormatError("asdf"))
-			output, err = executeUninstallAsdf()
-			actualCmd = "asdf-uninstall"
-		} else if rule.Action == "decrypt" {
-			// Handle decrypt operation
-			fmt.Printf(" %s", ui.FormatInfo(rule.DecryptPath))
-			output, err = executeDecrypt(rule, basePath)
-			actualCmd = fmt.Sprintf("decrypt %s to %s", rule.DecryptFile, rule.DecryptPath)
-		} else {
-			// Handle install/uninstall operation
-			cmd := buildCommand(rule)
 
-			// Show actual command including sudo if needed
+		case "asdf":
+			handler = handlerskg.NewAsdfHandler(rule, basePath)
+			actualCmd = "asdf-init"
+
+		case "uninstall-asdf":
+			fmt.Printf(" %s", ui.FormatError("asdf"))
+			actualCmd = "asdf-uninstall"
+			// For uninstall-asdf, create an asdf handler and call Down
+			handler = handlerskg.NewAsdfHandler(rule, basePath)
+
+		case "decrypt":
+			fmt.Printf(" %s", ui.FormatInfo(rule.DecryptPath))
+			handler = handlerskg.NewDecryptHandler(rule, basePath, passwordCache)
+			actualCmd = fmt.Sprintf("decrypt %s to %s", rule.DecryptFile, rule.DecryptPath)
+
+		case "install", "uninstall":
+			handler = handlerskg.NewInstallHandler(rule, basePath)
+			cmd := buildCommand(rule)
 			actualCmd = cmd
 			if needsSudo(cmd) {
 				actualCmd = "sudo " + cmd
@@ -565,37 +572,35 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 			if packages != "" {
 				fmt.Printf(" %s", ui.FormatInfo(packages))
 			}
+		}
 
-			// Execute the command
-			output, err = executeCommand(cmd)
+		// Execute handler
+		if handler != nil {
+			if rule.Action == "uninstall-asdf" {
+				output, err = handler.Down()
+			} else if rule.Action == "uninstall" && rule.Packages != nil {
+				output, err = handler.Down()
+			} else {
+				output, err = handler.Up()
+			}
 		}
 
 		// Create execution record
-		recordOutput := strings.TrimSpace(output)
-		if cloneInfo != "" {
-			recordOutput = cloneInfo
-		}
-
 		record := ExecutionRecord{
 			Timestamp: time.Now().Format(time.RFC3339),
 			Blueprint: blueprint,
 			OS:        osName,
 			Command:   actualCmd,
-			Output:    recordOutput,
+			Output:    strings.TrimSpace(output),
 		}
 
 		if err != nil {
 			fmt.Printf(" %s\n", ui.FormatError("Failed"))
-			// Print error details on next line
 			fmt.Printf("       %s\n", ui.FormatError(err.Error()))
 			record.Status = "error"
 			record.Error = err.Error()
 		} else {
-			if cloneInfo != "" {
-				fmt.Printf(" %s\n", ui.FormatSuccess(cloneInfo))
-			} else {
-				fmt.Printf(" %s\n", ui.FormatSuccess("Done"))
-			}
+			fmt.Printf(" %s\n", ui.FormatSuccess("Done"))
 			record.Status = "success"
 		}
 
@@ -603,6 +608,11 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 	}
 
 	return records
+}
+
+func executeRules(rules []parser.Rule, blueprint string, osName string, basePath string) []ExecutionRecord {
+	// Use the refactored version with handlers
+	return executeRulesWithHandlers(rules, blueprint, osName, basePath)
 }
 
 // getHistoryPath returns the path to the history file in ~/.blueprint/
