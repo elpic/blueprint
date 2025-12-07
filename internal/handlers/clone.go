@@ -3,11 +3,10 @@ package handlers
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 
+	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
 )
 
@@ -26,30 +25,48 @@ func NewCloneHandler(rule parser.Rule, basePath string) *CloneHandler {
 	}
 }
 
-// Up clones the repository
+// Up clones or updates the repository using go-git library
 func (h *CloneHandler) Up() (string, error) {
 	// Expand home directory if needed
 	clonePath := expandPath(h.Rule.ClonePath)
 
-	// Check if already cloned
-	if _, err := os.Stat(clonePath); err == nil {
-		// Already exists, try to update
-		return h.updateRepository(clonePath)
-	}
-
-	// Clone the repository
-	cmd := h.buildCloneCommand(clonePath)
-	cloneOutput, err := exec.Command("sh", "-c", cmd).CombinedOutput()
+	// Use go-git library to clone or update repository
+	oldSHA, newSHA, status, err := gitpkg.CloneOrUpdateRepository(
+		h.Rule.CloneURL,
+		clonePath,
+		h.Rule.Branch,
+	)
 	if err != nil {
-		return "", fmt.Errorf("clone failed: %w", err)
+		return "", fmt.Errorf("failed to clone/update repository: %w", err)
 	}
 
-	// Extract SHA from output
-	sha := extractSHAFromOutput(string(cloneOutput))
-	if sha != "" {
-		return fmt.Sprintf("Cloned (SHA: %s)", sha), nil
+	// Format output message with SHA tracking
+	switch status {
+	case "Cloned":
+		if newSHA != "" {
+			return fmt.Sprintf("Cloned (SHA: %s)", newSHA), nil
+		}
+		return "Cloned", nil
+
+	case "Updated":
+		if oldSHA != "" && newSHA != "" {
+			return fmt.Sprintf("Updated (SHA changed: %s → %s) (SHA: %s)",
+				oldSHA[:8], newSHA[:8], newSHA), nil
+		}
+		if newSHA != "" {
+			return fmt.Sprintf("Updated (SHA: %s)", newSHA), nil
+		}
+		return "Updated", nil
+
+	case "Already up to date":
+		if newSHA != "" {
+			return fmt.Sprintf("Already up to date (SHA: %s)", newSHA), nil
+		}
+		return "Already up to date", nil
+
+	default:
+		return status, nil
 	}
-	return "Cloned", nil
 }
 
 // Down removes the cloned repository
@@ -68,41 +85,6 @@ func (h *CloneHandler) Down() (string, error) {
 	return "Repository not found", nil
 }
 
-// buildCloneCommand builds the git clone command
-func (h *CloneHandler) buildCloneCommand(clonePath string) string {
-	if h.Rule.Branch != "" {
-		return fmt.Sprintf("git clone -b %s %s %s", h.Rule.Branch, h.Rule.CloneURL, clonePath)
-	}
-	return fmt.Sprintf("git clone %s %s", h.Rule.CloneURL, clonePath)
-}
-
-// updateRepository updates an existing repository
-func (h *CloneHandler) updateRepository(clonePath string) (string, error) {
-	// Get current SHA
-	getSHACmd := fmt.Sprintf("cd %s && git rev-parse HEAD", clonePath)
-	oldSHAOutput, _ := exec.Command("sh", "-c", getSHACmd).CombinedOutput()
-	oldSHA := strings.TrimSpace(string(oldSHAOutput))
-
-	// Pull updates
-	pullCmd := fmt.Sprintf("cd %s && git pull", clonePath)
-	if err := exec.Command("sh", "-c", pullCmd).Run(); err != nil {
-		return "", fmt.Errorf("pull failed: %w", err)
-	}
-
-	// Get new SHA
-	newSHAOutput, _ := exec.Command("sh", "-c", getSHACmd).CombinedOutput()
-	newSHA := strings.TrimSpace(string(newSHAOutput))
-
-	// Check if SHA changed
-	if oldSHA != "" && newSHA != "" && oldSHA != newSHA {
-		return fmt.Sprintf("Updated (SHA changed: %s → %s) (SHA: %s)", oldSHA[:8], newSHA[:8], newSHA), nil
-	} else if newSHA != "" {
-		return fmt.Sprintf("Already up to date (SHA: %s)", newSHA), nil
-	}
-
-	return "Already up to date", nil
-}
-
 // expandPath expands ~ to home directory
 func expandPath(path string) string {
 	if strings.HasPrefix(path, "~") {
@@ -113,23 +95,4 @@ func expandPath(path string) string {
 		return filepath.Join(homeDir, path[1:])
 	}
 	return path
-}
-
-// extractSHAFromOutput extracts the SHA from git output
-func extractSHAFromOutput(output string) string {
-	// Look for patterns like "SHA: abc123def456..."
-	re := regexp.MustCompile(`\(SHA:\s*([a-fA-F0-9]+)\)`)
-	matches := re.FindStringSubmatch(output)
-	if len(matches) > 1 {
-		return matches[1]
-	}
-
-	// Also look for direct SHA (40 hex characters)
-	re2 := regexp.MustCompile(`\b([a-fA-F0-9]{40})\b`)
-	matches = re2.FindStringSubmatch(output)
-	if len(matches) > 1 {
-		return matches[1]
-	}
-
-	return ""
 }
