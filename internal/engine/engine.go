@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -687,13 +688,10 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 				var cloneSHA string
 				for _, record := range records {
 					if record.Status == "success" && record.Command == cloneCmd {
-						// Extract SHA from cloneInfo in output
-						if strings.Contains(record.Output, "SHA:") {
-							parts := strings.Split(record.Output, "SHA:")
-							if len(parts) > 1 {
-								cloneSHA = strings.TrimSpace(strings.Split(parts[1], ")")[0])
-								break
-							}
+						// Extract SHA from cloneInfo in output using regex
+						cloneSHA = extractSHAFromOutput(record.Output)
+						if cloneSHA != "" {
+							break
 						}
 					}
 				}
@@ -722,13 +720,10 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 				var asdfSHA string
 				for _, record := range records {
 					if record.Status == "success" && record.Command == "asdf-init" {
-						// Extract SHA from output
-						if strings.Contains(record.Output, "SHA:") {
-							parts := strings.Split(record.Output, "SHA:")
-							if len(parts) > 1 {
-								asdfSHA = strings.TrimSpace(strings.Split(parts[1], ")")[0])
-								break
-							}
+						// Extract SHA from output using regex
+						asdfSHA = extractSHAFromOutput(record.Output)
+						if asdfSHA != "" {
+							break
 						}
 					}
 				}
@@ -1043,6 +1038,18 @@ func normalizePath(filePath string) string {
 		return filepath.Clean(filePath)
 	}
 	return filepath.Clean(absPath)
+}
+
+// extractSHAFromOutput extracts the SHA from clone operation output using regex
+// Handles formats like: "Cloned (SHA: abc123def)" or "Updated (SHA: abc123def)"
+func extractSHAFromOutput(output string) string {
+	// Look for pattern "(SHA: <sha>)" where sha is hex characters (case-insensitive)
+	re := regexp.MustCompile(`\(SHA:\s*([a-fA-F0-9]+)\)`)
+	matches := re.FindStringSubmatch(output)
+	if len(matches) > 1 {
+		return matches[1]
+	}
+	return ""
 }
 
 // extractPackagesFromCommand extracts package names from a command string
