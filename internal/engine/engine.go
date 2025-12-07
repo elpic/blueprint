@@ -124,14 +124,11 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 	autoUninstallRules := getAutoUninstallRules(filteredRules, file, currentOS)
 	allRules := append(filteredRules, autoUninstallRules...)
 
-	// Delete decrypted files that are no longer in the blueprint
-	numCleanups := deleteRemovedDecryptFiles(filteredRules, file, currentOS)
-
 	// Extract base directory from setupPath for resolving relative file paths
 	basePath := filepath.Dir(setupPath)
 
 	if dry {
-		ui.PrintExecutionHeader(false, currentOS, file, len(filteredRules), len(autoUninstallRules), numCleanups)
+		ui.PrintExecutionHeader(false, currentOS, file, len(filteredRules), len(autoUninstallRules), 0)
 		displayRules(filteredRules)
 		if len(autoUninstallRules) > 0 {
 			ui.PrintAutoUninstallSection()
@@ -139,7 +136,7 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 		}
 		ui.PrintPlanFooter()
 	} else {
-		ui.PrintExecutionHeader(true, currentOS, file, len(filteredRules), len(autoUninstallRules), numCleanups)
+		ui.PrintExecutionHeader(true, currentOS, file, len(filteredRules), len(autoUninstallRules), 0)
 
 		// Prompt for all decrypt passwords upfront
 		err := promptForDecryptPasswords(allRules)
