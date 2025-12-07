@@ -147,8 +147,16 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 	} else {
 		ui.PrintExecutionHeader(true, currentOS, file, len(filteredRules), len(autoUninstallRules), numCleanups)
 
+		// Prompt for sudo password upfront (before decrypt passwords)
+		// Check all rules including auto-uninstall rules
+		err := promptForSudoPasswordWithOS(allRules, currentOS)
+		if err != nil {
+			fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error prompting for sudo password: %v", err)))
+			return
+		}
+
 		// Prompt for all decrypt passwords upfront
-		err := promptForDecryptPasswords(allRules)
+		err = promptForDecryptPasswords(allRules)
 		if err != nil {
 			fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error prompting for passwords: %v", err)))
 			return
@@ -226,8 +234,16 @@ func Run(file string, dry bool) {
 	} else {
 		ui.PrintExecutionHeader(true, currentOS, file, len(filteredRules), len(autoUninstallRules), numCleanups)
 
+		// Prompt for sudo password upfront (before decrypt passwords)
+		// Check all rules including auto-uninstall rules
+		err := promptForSudoPasswordWithOS(allRules, currentOS)
+		if err != nil {
+			fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error prompting for sudo password: %v", err)))
+			return
+		}
+
 		// Prompt for all decrypt passwords upfront
-		err := promptForDecryptPasswords(allRules)
+		err = promptForDecryptPasswords(allRules)
 		if err != nil {
 			fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error prompting for passwords: %v", err)))
 			return
@@ -455,7 +471,21 @@ func needsSudo(command string) bool {
 func executeCommand(cmdStr string) (string, error) {
 	// Check if sudo is needed
 	if needsSudo(cmdStr) {
-		cmdStr = "sudo " + cmdStr
+		// Check if user has passwordless sudo
+		if exec.Command("sudo", "-n", "true").Run() == nil {
+			// User has passwordless sudo, use -n flag
+			cmdStr = "sudo -n " + cmdStr
+		} else if sudoPassword, ok := passwordCache["sudo"]; ok {
+			// Use cached sudo password if available
+			// Use echo to pipe password to sudo with -S flag
+			// This avoids interactive password prompts during execution
+			cmd := exec.Command("sh", "-c", fmt.Sprintf("echo %s | sudo -S %s", shellEscape(sudoPassword), cmdStr))
+			output, err := cmd.CombinedOutput()
+			return string(output), err
+		} else {
+			// Fallback to regular sudo if no password cached
+			cmdStr = "sudo " + cmdStr
+		}
 	}
 
 	// Parse command string into parts
@@ -1879,6 +1909,65 @@ func readPassword() (string, error) {
 	}
 	fmt.Println() // Print newline after password prompt
 	return string(bytePassword), nil
+}
+
+// shellEscape escapes a string for safe use in shell commands
+func shellEscape(s string) string {
+	// Use single quotes to prevent shell interpretation
+	// Replace single quotes with '\'' (end quote, escaped quote, start quote)
+	escaped := strings.ReplaceAll(s, "'", "'\\''")
+	return fmt.Sprintf("'%s'", escaped)
+}
+
+// promptForSudoPassword checks if any rules need sudo and prompts for password upfront
+func promptForSudoPasswordWithOS(rules []parser.Rule, currentOS string) error {
+	// Check if we're on Linux and not root
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+
+	currentUser, err := user.Current()
+	if err == nil {
+		uid, err := strconv.Atoi(currentUser.Uid)
+		if err == nil && uid == 0 {
+			// Already root, no sudo needed
+			return nil
+		}
+	}
+
+	// Check if user has passwordless sudo (sudo -n true)
+	// If this succeeds, user can run sudo without password
+	if cmd := exec.Command("sudo", "-n", "true"); cmd.Run() == nil {
+		// User has passwordless sudo, no need to prompt
+		return nil
+	}
+
+	// Check if any rule needs sudo by building the actual command
+	// Note: rules passed in are already filtered by OS, so we don't need to check ruleAppliesToOS()
+	needsSudoPassword := false
+	for _, rule := range rules {
+		// Check install/uninstall rules
+		if rule.Action == "install" || rule.Action == "uninstall" {
+			cmd := buildCommand(rule)
+			if needsSudo(cmd) {
+				needsSudoPassword = true
+				break
+			}
+		}
+	}
+
+	// If sudo is needed, prompt for password upfront
+	if needsSudoPassword {
+		fmt.Printf("Enter sudo password: ")
+		password, err := readPassword()
+		if err != nil {
+			return fmt.Errorf("failed to read sudo password: %w", err)
+		}
+		// Cache the sudo password
+		passwordCache["sudo"] = password
+	}
+
+	return nil
 }
 
 // PrintStatus displays the current status of installed packages and clones
