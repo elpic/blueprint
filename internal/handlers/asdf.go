@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 
+	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
 )
 
@@ -153,76 +154,63 @@ func (h *AsdfHandler) installAsdfMacOS() error {
 	return nil
 }
 
-// installAsdfLinux installs asdf on Linux using pre-compiled binary
-// Pre-compiled binary method is used to avoid Go dependency
-// Downloads from: https://github.com/asdf-vm/asdf/releases
+// installAsdfLinux installs asdf on Linux by cloning the repository
+// Clones asdf to ~/.asdf and configures shell initialization
 func (h *AsdfHandler) installAsdfLinux() error {
-	// Install dependencies: git and bash
-	dependencyCmds := []string{
-		"DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/dev/null || true",
-		"DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git bash 2>/dev/null || true",
+	// Install dependencies: bash
+	depCmd := "DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq bash 2>/dev/null || true"
+	if _, err := executeCommandWithCache(depCmd); err != nil {
+		// Don't fail - bash might already be installed
 	}
 
-	for _, depCmd := range dependencyCmds {
-		executeCommandWithCache(depCmd)
+	// Get home directory
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	// Detect architecture
-	arch := getLinuxArchitecture()
-	if arch == "" {
-		return fmt.Errorf("unable to detect system architecture")
+	// Clone asdf repository to ~/.asdf using go-git library
+	asdfPath := filepath.Join(homeDir, ".asdf")
+	_, _, _, err = gitpkg.CloneOrUpdateRepository(
+		"https://github.com/asdf-vm/asdf.git",
+		asdfPath,
+		"master",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to clone asdf repository: %w", err)
 	}
 
-	// Download latest asdf release from GitHub
-	// We use the latest release which is typically stable
-	downloadCmd := fmt.Sprintf(`
-curl -fsSL https://api.github.com/repos/asdf-vm/asdf/releases/latest \
-  | grep 'browser_download_url.*linux-%s' | grep -v md5 \
-  | head -1 | grep -o 'https://[^"]*' | xargs -I {} wget -q {} -O /tmp/asdf.tar.gz
-`, arch)
-
-	if _, err := executeCommandWithCache(downloadCmd); err != nil {
-		return fmt.Errorf("failed to download asdf: %w", err)
+	// Add asdf.sh to bashrc if not already present
+	bashrcPath := filepath.Join(homeDir, ".bashrc")
+	content, err := os.ReadFile(bashrcPath)
+	if err == nil {
+		contentStr := string(content)
+		if !strings.Contains(contentStr, ". $HOME/.asdf/asdf.sh") {
+			// Append asdf initialization
+			if !strings.HasSuffix(contentStr, "\n") {
+				contentStr += "\n"
+			}
+			contentStr += ". $HOME/.asdf/asdf.sh\n"
+			if err := os.WriteFile(bashrcPath, []byte(contentStr), 0644); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not update %s: %v\n", bashrcPath, err)
+			}
+		}
+	} else {
+		// Create bashrc if it doesn't exist
+		asdfInit := ". $HOME/.asdf/asdf.sh\n"
+		if err := os.WriteFile(bashrcPath, []byte(asdfInit), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not create %s: %v\n", bashrcPath, err)
+		}
 	}
 
-	// Extract and install to /usr/local/bin
-	extractCmd := `
-cd /tmp && \
-tar -xzf asdf.tar.gz && \
-mv asdf /usr/local/bin/ && \
-rm -f asdf.tar.gz
-`
-
-	if _, err := executeCommandWithCache(extractCmd); err != nil {
-		return fmt.Errorf("failed to extract and install asdf: %w", err)
+	// Source bashrc to load asdf in current shell
+	sourceCmd := fmt.Sprintf("bash -c 'source %s'", bashrcPath)
+	if _, err := executeCommandWithCache(sourceCmd); err != nil {
+		// Don't fail if sourcing fails - asdf will be available in new shell
+		fmt.Fprintf(os.Stderr, "Warning: could not source %s\n", bashrcPath)
 	}
 
 	return nil
-}
-
-// getLinuxArchitecture detects the Linux system architecture
-// Returns the architecture name as used in asdf GitHub releases
-func getLinuxArchitecture() string {
-	// Use uname -m to get architecture
-	output, err := exec.Command("uname", "-m").Output()
-	if err != nil {
-		return ""
-	}
-
-	arch := strings.TrimSpace(string(output))
-	switch arch {
-	case "x86_64":
-		return "amd64"
-	case "aarch64", "arm64":
-		return "arm64"
-	case "armv7l", "armv6l":
-		return "armv7"
-	case "386", "i386", "i686":
-		return "386"
-	default:
-		// Return as-is if not recognized - might match GitHub release name
-		return arch
-	}
 }
 
 // uninstallAsdf completely removes asdf from the system
@@ -259,23 +247,35 @@ func (h *AsdfHandler) uninstallAsdfMacOS() error {
 	return nil
 }
 
-// uninstallAsdfLinux removes asdf from Linux (installed via pre-compiled binary)
+// uninstallAsdfLinux removes asdf from Linux (cloned from GitHub repository)
 func (h *AsdfHandler) uninstallAsdfLinux() error {
 	homeDir, err := os.UserHomeDir()
-	if err == nil {
-		// Remove asdf data directory
-		asdfDir := filepath.Join(homeDir, ".asdf")
-		if err := os.RemoveAll(asdfDir); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to remove %s: %v\n", asdfDir, err)
-		}
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	// Remove asdf binary from /usr/local/bin (requires sudo)
-	removeCmd := "rm -f /usr/local/bin/asdf"
+	// Remove asdf directory that was cloned from GitHub
+	asdfDir := filepath.Join(homeDir, ".asdf")
+	if err := os.RemoveAll(asdfDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to remove %s: %v\n", asdfDir, err)
+	}
 
-	if _, err := executeCommandWithCache(removeCmd); err != nil {
-		// Log but don't fail - file might not exist or insufficient permissions
-		fmt.Fprintf(os.Stderr, "Note: asdf binary at /usr/local/bin/asdf could not be removed\n")
+	// Remove asdf initialization from bashrc
+	bashrcPath := filepath.Join(homeDir, ".bashrc")
+	content, err := os.ReadFile(bashrcPath)
+	if err == nil {
+		// Remove the line that sources asdf.sh
+		lines := strings.Split(string(content), "\n")
+		var newLines []string
+		for _, line := range lines {
+			if !strings.Contains(line, ". $HOME/.asdf/asdf.sh") {
+				newLines = append(newLines, line)
+			}
+		}
+		updatedContent := strings.Join(newLines, "\n")
+		if err := os.WriteFile(bashrcPath, []byte(updatedContent), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to update %s: %v\n", bashrcPath, err)
+		}
 	}
 
 	return nil
