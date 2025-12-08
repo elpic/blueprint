@@ -181,6 +181,12 @@ func (h *AsdfHandler) installAsdfLinux() error {
 	}
 
 	// Add asdf.sh to bashrc if not already present
+	// First ensure bashrc exists
+	touchCmd := `touch ~/.bashrc`
+	if _, err := executeCommandWithCache(touchCmd); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not create ~/.bashrc\n")
+	}
+
 	// Check if already present using grep
 	checkCmd := `grep -q '. $HOME/.asdf/asdf.sh' ~/.bashrc 2>/dev/null`
 	_, checkErr := executeCommandWithCache(checkCmd)
@@ -190,16 +196,16 @@ func (h *AsdfHandler) installAsdfLinux() error {
 		// Add asdf initialization to bashrc
 		addCmd := `echo ". $HOME/.asdf/asdf.sh" >> ~/.bashrc`
 		if _, err := executeCommandWithCache(addCmd); err != nil {
-			// Don't fail if bashrc update fails - might not exist yet
+			// Don't fail if bashrc update fails
 			fmt.Fprintf(os.Stderr, "Warning: could not update ~/.bashrc\n")
 		}
 	}
 
 	// Source bashrc to load asdf in current shell
-	sourceCmd := `. $HOME/.asdf/asdf.sh`
+	sourceCmd := `bash -c 'source ~/.bashrc'`
 	if _, err := executeCommandWithCache(sourceCmd); err != nil {
 		// Don't fail if sourcing fails - asdf will be available in new shell
-		fmt.Fprintf(os.Stderr, "Warning: could not source ~/.bashrc\n")
+		fmt.Fprintf(os.Stderr, "Warning: asdf will be available in your next shell session\n")
 	}
 
 	return nil
