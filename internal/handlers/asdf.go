@@ -181,33 +181,25 @@ func (h *AsdfHandler) installAsdfLinux() error {
 	}
 
 	// Add asdf.sh to bashrc if not already present
-	bashrcPath := filepath.Join(homeDir, ".bashrc")
-	content, err := os.ReadFile(bashrcPath)
-	if err == nil {
-		contentStr := string(content)
-		if !strings.Contains(contentStr, ". $HOME/.asdf/asdf.sh") {
-			// Append asdf initialization
-			if !strings.HasSuffix(contentStr, "\n") {
-				contentStr += "\n"
-			}
-			contentStr += ". $HOME/.asdf/asdf.sh\n"
-			if err := os.WriteFile(bashrcPath, []byte(contentStr), 0644); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not update %s: %v\n", bashrcPath, err)
-			}
-		}
-	} else {
-		// Create bashrc if it doesn't exist
-		asdfInit := ". $HOME/.asdf/asdf.sh\n"
-		if err := os.WriteFile(bashrcPath, []byte(asdfInit), 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not create %s: %v\n", bashrcPath, err)
+	// Check if already present using grep
+	checkCmd := `grep -q '. $HOME/.asdf/asdf.sh' ~/.bashrc 2>/dev/null`
+	_, checkErr := executeCommandWithCache(checkCmd)
+	hasAsdfInit := checkErr == nil
+
+	if !hasAsdfInit {
+		// Add asdf initialization to bashrc
+		addCmd := `echo ". $HOME/.asdf/asdf.sh" >> ~/.bashrc`
+		if _, err := executeCommandWithCache(addCmd); err != nil {
+			// Don't fail if bashrc update fails - might not exist yet
+			fmt.Fprintf(os.Stderr, "Warning: could not update ~/.bashrc\n")
 		}
 	}
 
 	// Source bashrc to load asdf in current shell
-	sourceCmd := fmt.Sprintf("bash -c 'source %s'", bashrcPath)
+	sourceCmd := `. $HOME/.asdf/asdf.sh`
 	if _, err := executeCommandWithCache(sourceCmd); err != nil {
 		// Don't fail if sourcing fails - asdf will be available in new shell
-		fmt.Fprintf(os.Stderr, "Warning: could not source %s\n", bashrcPath)
+		fmt.Fprintf(os.Stderr, "Warning: could not source ~/.bashrc\n")
 	}
 
 	return nil
@@ -236,12 +228,9 @@ func (h *AsdfHandler) uninstallAsdfMacOS() error {
 	}
 
 	// Remove asdf data directory
-	homeDir, err := os.UserHomeDir()
-	if err == nil {
-		asdfDir := filepath.Join(homeDir, ".asdf")
-		if err := os.RemoveAll(asdfDir); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to remove %s: %v\n", asdfDir, err)
-		}
+	removeAsdfCmd := `rm -rf ~/.asdf`
+	if _, err := executeCommandWithCache(removeAsdfCmd); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to remove ~/.asdf\n")
 	}
 
 	return nil
@@ -249,33 +238,22 @@ func (h *AsdfHandler) uninstallAsdfMacOS() error {
 
 // uninstallAsdfLinux removes asdf from Linux (cloned from GitHub repository)
 func (h *AsdfHandler) uninstallAsdfLinux() error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
-	}
-
 	// Remove asdf directory that was cloned from GitHub
-	asdfDir := filepath.Join(homeDir, ".asdf")
-	if err := os.RemoveAll(asdfDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to remove %s: %v\n", asdfDir, err)
+	removeAsdfCmd := `rm -rf ~/.asdf`
+	if _, err := executeCommandWithCache(removeAsdfCmd); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to remove ~/.asdf\n")
 	}
 
-	// Remove asdf initialization from bashrc
-	bashrcPath := filepath.Join(homeDir, ".bashrc")
-	content, err := os.ReadFile(bashrcPath)
-	if err == nil {
-		// Remove the line that sources asdf.sh
-		lines := strings.Split(string(content), "\n")
-		var newLines []string
-		for _, line := range lines {
-			if !strings.Contains(line, ". $HOME/.asdf/asdf.sh") {
-				newLines = append(newLines, line)
-			}
-		}
-		updatedContent := strings.Join(newLines, "\n")
-		if err := os.WriteFile(bashrcPath, []byte(updatedContent), 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to update %s: %v\n", bashrcPath, err)
-		}
+	// Remove asdf initialization from bashrc using sed
+	removeBashrcCmd := `sed -i.bak '/. $HOME\/.asdf\/asdf.sh/d' ~/.bashrc 2>/dev/null || true`
+	if _, err := executeCommandWithCache(removeBashrcCmd); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not remove asdf initialization from ~/.bashrc\n")
+	}
+
+	// Clean up sed backup file if it was created
+	cleanupCmd := `rm -f ~/.bashrc.bak`
+	if _, err := executeCommandWithCache(cleanupCmd); err != nil {
+		// Ignore errors on cleanup
 	}
 
 	return nil
