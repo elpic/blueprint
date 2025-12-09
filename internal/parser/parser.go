@@ -35,7 +35,8 @@ type Rule struct {
 	DecryptPasswordID string // Password ID to use for decryption
 
 	// KnownHosts-specific fields
-	KnownHosts string // SSH host to add to known_hosts (hostname or IP)
+	KnownHosts    string // SSH host to add to known_hosts (hostname or IP)
+	KnownHostsKey string // Key type for ssh-keyscan (ed25519, ecdsa, rsa, etc.) - optional
 }
 
 // Parse parses content without include support
@@ -628,8 +629,9 @@ func parseKnownHostsRule(line string) *Rule {
 		}
 	}
 
-	// Parse rule part: extract host, id:, and after: clauses
+	// Parse rule part: extract host, key-type:, id:, and after: clauses
 	var host string
+	var keyType string
 	var id string
 	var dependencies []string
 
@@ -640,6 +642,21 @@ func parseKnownHostsRule(line string) *Rule {
 	}
 	host = fields[0]
 	rulePart = strings.Join(fields[1:], " ")
+
+	// Extract key-type: value
+	if strings.Contains(rulePart, "key-type:") {
+		keyParts := strings.Split(rulePart, "key-type:")
+		if len(keyParts) >= 2 {
+			keyValue := strings.TrimSpace(keyParts[1])
+			// Get the key type (first word after key-type:)
+			keyFields := strings.Fields(keyValue)
+			if len(keyFields) > 0 {
+				keyType = keyFields[0]
+				// Reconstruct rulePart without the key-type: part
+				rulePart = keyParts[0] + " " + strings.Join(keyFields[1:], " ")
+			}
+		}
+	}
 
 	// Extract id: value
 	if strings.Contains(rulePart, "id:") {
@@ -677,12 +694,13 @@ func parseKnownHostsRule(line string) *Rule {
 	}
 
 	return &Rule{
-		ID:         id,
-		Action:     "known_hosts",
-		KnownHosts: host,
-		OSList:     osList,
-		After:      dependencies,
-		Tool:       "known_hosts",
+		ID:            id,
+		Action:        "known_hosts",
+		KnownHosts:    host,
+		KnownHostsKey: keyType, // Will be empty if not specified
+		OSList:        osList,
+		After:         dependencies,
+		Tool:          "known_hosts",
 	}
 }
 

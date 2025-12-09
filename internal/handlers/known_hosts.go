@@ -47,19 +47,39 @@ func (h *KnownHostsHandler) Up() (string, error) {
 		}
 	}
 
-	// Add the host to known_hosts
-	addHostCmd := fmt.Sprintf(`
-content=$(ssh-keyscan -t ed25519 %s 2>/dev/null)
-if [ -n "$content" ]; then
-  grep -q "$content" ~/.ssh/known_hosts || echo "$content" >> ~/.ssh/known_hosts
-fi
-`, h.Rule.KnownHosts)
-
-	if _, err := executeCommandWithCache(addHostCmd); err != nil {
-		return "", fmt.Errorf("failed to add host to known_hosts: %w", err)
+	// Determine which key types to try
+	keyTypes := []string{}
+	if h.Rule.KnownHostsKey != "" {
+		// If a specific key type was specified, use only that
+		keyTypes = []string{h.Rule.KnownHostsKey}
+	} else {
+		// Default to trying multiple key types in order of preference
+		keyTypes = []string{"ed25519", "ecdsa", "rsa"}
 	}
 
-	return fmt.Sprintf("Added %s to known_hosts", h.Rule.KnownHosts), nil
+	// Try each key type until one succeeds
+	var addHostCmd string
+	for _, keyType := range keyTypes {
+		addHostCmd = fmt.Sprintf(`
+content=$(ssh-keyscan -t %s %s 2>/dev/null)
+if [ -n "$content" ]; then
+  grep -q "$content" ~/.ssh/known_hosts || echo "$content" >> ~/.ssh/known_hosts
+  exit 0
+fi
+exit 1
+`, keyType, h.Rule.KnownHosts)
+
+		if _, err := executeCommandWithCache(addHostCmd); err == nil {
+			// Successfully added the host
+			return fmt.Sprintf("Added %s to known_hosts (key type: %s)", h.Rule.KnownHosts, keyType), nil
+		}
+	}
+
+	// If we got here, none of the key types worked
+	if len(keyTypes) == 1 {
+		return "", fmt.Errorf("failed to add host to known_hosts with key type %s", keyTypes[0])
+	}
+	return "", fmt.Errorf("failed to add host to known_hosts - no suitable key types found (tried: %s)", strings.Join(keyTypes, ", "))
 }
 
 // Down removes the host from known_hosts file

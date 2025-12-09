@@ -340,6 +340,11 @@ func displayRules(rules []parser.Rule) {
 			}
 		} else if rule.Action == "known_hosts" {
 			fmt.Printf("  Host: %s\n", ui.FormatInfo(rule.KnownHosts))
+			if rule.KnownHostsKey != "" {
+				fmt.Printf("  Key Type: %s\n", ui.FormatDim(rule.KnownHostsKey))
+			} else {
+				fmt.Printf("  Key Type: %s\n", ui.FormatDim("auto-detect (ed25519, ecdsa, rsa)"))
+			}
 		} else {
 			if len(rule.Packages) > 0 {
 				fmt.Print("  Packages: ")
@@ -391,7 +396,11 @@ func displayRules(rules []parser.Rule) {
 			fmt.Printf("  Command: %s\n", ui.FormatDim(fmt.Sprintf("decrypt %s to %s", rule.DecryptFile, rule.DecryptPath)))
 		} else if rule.Action == "known_hosts" {
 			// For known_hosts, show what will be added
-			fmt.Printf("  Command: %s\n", ui.FormatDim(fmt.Sprintf("ssh-keyscan -t ed25519 %s >> ~/.ssh/known_hosts", rule.KnownHosts)))
+			if rule.KnownHostsKey != "" {
+				fmt.Printf("  Command: %s\n", ui.FormatDim(fmt.Sprintf("ssh-keyscan -t %s %s >> ~/.ssh/known_hosts", rule.KnownHostsKey, rule.KnownHosts)))
+			} else {
+				fmt.Printf("  Command: %s\n", ui.FormatDim(fmt.Sprintf("ssh-keyscan -t [ed25519|ecdsa|rsa] %s >> ~/.ssh/known_hosts", rule.KnownHosts)))
+			}
 		}
 		fmt.Println()
 	}
