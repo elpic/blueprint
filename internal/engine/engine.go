@@ -338,6 +338,8 @@ func displayRules(rules []parser.Rule) {
 			if rule.DecryptPasswordID != "" {
 				fmt.Printf("  Password ID: %s\n", ui.FormatDim(rule.DecryptPasswordID))
 			}
+		} else if rule.Action == "known_hosts" {
+			fmt.Printf("  Host: %s\n", ui.FormatInfo(rule.KnownHosts))
 		} else {
 			if len(rule.Packages) > 0 {
 				fmt.Print("  Packages: ")
@@ -378,7 +380,7 @@ func displayRules(rules []parser.Rule) {
 		}
 
 		// Display command that will be executed (for install/uninstall only)
-		if rule.Action != "clone" && rule.Action != "asdf" && rule.Action != "uninstall-asdf" && rule.Action != "decrypt" {
+		if rule.Action != "clone" && rule.Action != "asdf" && rule.Action != "uninstall-asdf" && rule.Action != "decrypt" && rule.Action != "known_hosts" {
 			cmd := buildCommand(rule)
 			fmt.Printf("  Command: %s\n", ui.FormatDim(cmd))
 		} else if rule.Action == "uninstall-asdf" {
@@ -387,6 +389,9 @@ func displayRules(rules []parser.Rule) {
 		} else if rule.Action == "decrypt" {
 			// For decrypt, show what will be decrypted
 			fmt.Printf("  Command: %s\n", ui.FormatDim(fmt.Sprintf("decrypt %s to %s", rule.DecryptFile, rule.DecryptPath)))
+		} else if rule.Action == "known_hosts" {
+			// For known_hosts, show what will be added
+			fmt.Printf("  Command: %s\n", ui.FormatDim(fmt.Sprintf("ssh-keyscan -t ed25519 %s >> ~/.ssh/known_hosts", rule.KnownHosts)))
 		}
 		fmt.Println()
 	}
