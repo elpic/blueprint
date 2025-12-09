@@ -591,6 +591,12 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 			if packages != "" {
 				fmt.Printf(" %s", ui.FormatInfo(packages))
 			}
+
+		default:
+			// Unknown action - this shouldn't happen if parsing is correct
+			fmt.Printf(" %s", ui.FormatError("unknown action"))
+			output = fmt.Sprintf("unknown action: %s", rule.Action)
+			err = fmt.Errorf("unknown action type")
 		}
 
 		// Execute handler
@@ -1322,8 +1328,12 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 			} else if rule.Action == "decrypt" {
 				// For decrypt rules without ID, use the destination path as key
 				ruleKey = rule.DecryptPath
+			} else if rule.Action == "known_hosts" {
+				// For known_hosts rules without ID, use the host as key
+				ruleKey = rule.KnownHosts
 			} else {
-				return nil
+				// For other actions without ID, use action as key
+				ruleKey = rule.Action
 			}
 		}
 
