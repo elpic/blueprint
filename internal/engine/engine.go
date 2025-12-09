@@ -552,6 +552,11 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 			handler = handlerskg.NewDecryptHandler(rule, basePath, passwordCache)
 			actualCmd = fmt.Sprintf("decrypt %s to %s", rule.DecryptFile, rule.DecryptPath)
 
+		case "known_hosts":
+			fmt.Printf(" %s", ui.FormatInfo(rule.KnownHosts))
+			handler = handlerskg.NewKnownHostsHandler(rule, basePath)
+			actualCmd = fmt.Sprintf("known_hosts %s", rule.KnownHosts)
+
 		case "install", "uninstall":
 			handler = handlerskg.NewInstallHandler(rule, basePath)
 			cmd := buildCommand(rule)

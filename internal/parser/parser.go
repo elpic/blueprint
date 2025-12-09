@@ -33,6 +33,9 @@ type Rule struct {
 	DecryptFile     string // Source encrypted file
 	DecryptPath     string // Destination path for decrypted file
 	DecryptPasswordID string // Password ID to use for decryption
+
+	// KnownHosts-specific fields
+	KnownHosts string // SSH host to add to known_hosts (hostname or IP)
 }
 
 // Parse parses content without include support
@@ -111,6 +114,12 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 		} else if strings.HasPrefix(line, "decrypt ") {
 			// Parse format: decrypt <file> to: <path> [group: <group>] [password-id: <id>] [id: <id>] [after: <deps>] on: [<platforms>]
 			rule := parseDecryptRule(line)
+			if rule != nil {
+				rules = append(rules, *rule)
+			}
+		} else if strings.HasPrefix(line, "known_hosts ") {
+			// Parse format: known_hosts <host> [id: <id>] [after: <deps>] on: [<platforms>]
+			rule := parseKnownHostsRule(line)
 			if rule != nil {
 				rules = append(rules, *rule)
 			}
@@ -585,6 +594,95 @@ func parseDecryptRule(line string) *Rule {
 		OSList:            osList,
 		After:             dependencies,
 		Tool:              "decrypt",
+	}
+}
+
+func parseKnownHostsRule(line string) *Rule {
+	// Remove "known_hosts " prefix
+	line = strings.TrimPrefix(line, "known_hosts ")
+
+	// Split by "on:" to get OS list (on: is optional)
+	parts := strings.Split(line, "on:")
+	var osListStr string
+	var rulePart string
+
+	if len(parts) == 2 {
+		// "on:" clause is present
+		osListStr = strings.TrimSpace(parts[1])
+		rulePart = strings.TrimSpace(parts[0])
+	} else if len(parts) == 1 {
+		// No "on:" clause - rule applies to all systems
+		rulePart = strings.TrimSpace(parts[0])
+		osListStr = ""
+	} else {
+		return nil
+	}
+
+	// Parse OS list [linux, mac, windows]
+	var osList []string
+	if osListStr != "" {
+		osListStr = strings.Trim(osListStr, "[]")
+		osList = strings.Split(osListStr, ",")
+		for i := range osList {
+			osList[i] = strings.TrimSpace(osList[i])
+		}
+	}
+
+	// Parse rule part: extract host, id:, and after: clauses
+	var host string
+	var id string
+	var dependencies []string
+
+	// Extract host (first token)
+	fields := strings.Fields(rulePart)
+	if len(fields) == 0 {
+		return nil
+	}
+	host = fields[0]
+	rulePart = strings.Join(fields[1:], " ")
+
+	// Extract id: value
+	if strings.Contains(rulePart, "id:") {
+		idParts := strings.Split(rulePart, "id:")
+		if len(idParts) >= 2 {
+			idValue := strings.TrimSpace(idParts[1])
+			// Get the ID (first word after id:)
+			idFields := strings.Fields(idValue)
+			if len(idFields) > 0 {
+				id = idFields[0]
+				// Reconstruct rulePart without the id: part
+				rulePart = idParts[0] + " " + strings.Join(idFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract after: value
+	if strings.Contains(rulePart, "after:") {
+		afterParts := strings.Split(rulePart, "after:")
+		if len(afterParts) >= 2 {
+			afterValue := strings.TrimSpace(afterParts[1])
+			// Parse comma-separated dependencies
+			deps := strings.Split(afterValue, ",")
+			for _, dep := range deps {
+				dep = strings.TrimSpace(dep)
+				if dep != "" {
+					dependencies = append(dependencies, dep)
+				}
+			}
+		}
+	}
+
+	if host == "" {
+		return nil
+	}
+
+	return &Rule{
+		ID:         id,
+		Action:     "known_hosts",
+		KnownHosts: host,
+		OSList:     osList,
+		After:      dependencies,
+		Tool:       "known_hosts",
 	}
 }
 
