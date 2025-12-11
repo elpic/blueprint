@@ -63,7 +63,7 @@ func (h *KnownHostsHandler) Up() (string, error) {
 		addHostCmd = fmt.Sprintf(`
 content=$(ssh-keyscan -t %s %s 2>/dev/null)
 if [ -n "$content" ]; then
-  grep -q "$content" ~/.ssh/known_hosts || echo "$content" >> ~/.ssh/known_hosts
+  grep -q "$content" ~/.ssh/known_hosts || printf '%%s\n' "$content" >> ~/.ssh/known_hosts
   exit 0
 fi
 exit 1
