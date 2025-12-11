@@ -76,9 +76,6 @@ exit 1
 	}
 
 	// If we got here, none of the key types worked
-	if len(keyTypes) == 1 {
-		return "", fmt.Errorf("failed to add host to known_hosts with key type %s", keyTypes[0])
-	}
 	return "", fmt.Errorf("failed to add host to known_hosts - no suitable key types found (tried: %s)", strings.Join(keyTypes, ", "))
 }
 
