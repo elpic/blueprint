@@ -65,12 +65,22 @@ type MkdirStatus struct {
 	OS        string `json:"os"`
 }
 
-// Status represents the current state of installed packages, clones, decrypts, and mkdirs
+// KnownHostsStatus tracks an SSH known host entry
+type KnownHostsStatus struct {
+	Host      string `json:"host"`
+	KeyType   string `json:"key_type"`
+	AddedAt   string `json:"added_at"`
+	Blueprint string `json:"blueprint"`
+	OS        string `json:"os"`
+}
+
+// Status represents the current state of installed packages, clones, decrypts, mkdirs, and known_hosts
 type Status struct {
-	Packages []PackageStatus `json:"packages"`
-	Clones   []CloneStatus   `json:"clones"`
-	Decrypts []DecryptStatus `json:"decrypts"`
-	Mkdirs   []MkdirStatus   `json:"mkdirs"`
+	Packages   []PackageStatus    `json:"packages"`
+	Clones     []CloneStatus      `json:"clones"`
+	Decrypts   []DecryptStatus    `json:"decrypts"`
+	Mkdirs     []MkdirStatus      `json:"mkdirs"`
+	KnownHosts []KnownHostsStatus `json:"known_hosts"`
 }
 
 // passwordCache stores decryption passwords by password-id to avoid re-prompting
@@ -357,6 +367,9 @@ func displayRules(rules []parser.Rule) {
 		} else if rule.Action == "uninstall" && rule.Tool == "mkdir" {
 			fmt.Printf("  Path: %s\n", ui.FormatError(rule.Mkdir))
 			fmt.Printf("  Description: %s\n", ui.FormatError("Removes directory"))
+		} else if rule.Action == "uninstall" && rule.Tool == "known_hosts" {
+			fmt.Printf("  Host: %s\n", ui.FormatError(rule.KnownHosts))
+			fmt.Printf("  Description: %s\n", ui.FormatError("Removes SSH known host"))
 		} else if rule.Action == "decrypt" {
 			fmt.Printf("  File: %s\n", ui.FormatInfo(rule.DecryptFile))
 			fmt.Printf("  Path: %s\n", ui.FormatInfo(rule.DecryptPath))
@@ -608,6 +621,11 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 				actualCmd = "uninstall-decrypt"
 				handler = handlerskg.NewDecryptHandler(rule, basePath, passwordCache)
 
+			case "known_hosts":
+				fmt.Printf(" %s", ui.FormatError(rule.KnownHosts))
+				actualCmd = "uninstall-known_hosts"
+				handler = handlerskg.NewKnownHostsHandler(rule, basePath)
+
 			case "package-manager":
 				// For package uninstall
 				cmd := buildCommand(rule)
@@ -836,10 +854,11 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 
 	// Convert engine Status to handler Status
 	handlerStatus := handlerskg.Status{
-		Packages: convertPackages(status.Packages),
-		Clones:   convertClones(status.Clones),
-		Decrypts: convertDecrypts(status.Decrypts),
-		Mkdirs:   convertMkdirs(status.Mkdirs),
+		Packages:   convertPackages(status.Packages),
+		Clones:     convertClones(status.Clones),
+		Decrypts:   convertDecrypts(status.Decrypts),
+		Mkdirs:     convertMkdirs(status.Mkdirs),
+		KnownHosts: convertKnownHosts(status.KnownHosts),
 	}
 
 	// Process each rule by creating appropriate handler and calling UpdateStatus
@@ -857,6 +876,8 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 				handler = handlerskg.NewCloneHandler(rule, "")
 			case "decrypt":
 				handler = handlerskg.NewDecryptHandler(rule, "", passwordCache)
+			case "known_hosts":
+				handler = handlerskg.NewKnownHostsHandler(rule, "")
 			case "package-manager":
 				handler = handlerskg.NewInstallHandler(rule, "")
 			default:
@@ -884,10 +905,11 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 
 	// Convert handler Status back to engine Status
 	status = Status{
-		Packages: convertHandlerPackages(handlerStatus.Packages),
-		Clones:   convertHandlerClones(handlerStatus.Clones),
-		Decrypts: convertHandlerDecrypts(handlerStatus.Decrypts),
-		Mkdirs:   convertHandlerMkdirs(handlerStatus.Mkdirs),
+		Packages:   convertHandlerPackages(handlerStatus.Packages),
+		Clones:     convertHandlerClones(handlerStatus.Clones),
+		Decrypts:   convertHandlerDecrypts(handlerStatus.Decrypts),
+		Mkdirs:     convertHandlerMkdirs(handlerStatus.Mkdirs),
+		KnownHosts: convertHandlerKnownHosts(handlerStatus.KnownHosts),
 	}
 
 	// Write status to file
@@ -1014,6 +1036,34 @@ func convertHandlerMkdirs(mkdirs []handlerskg.MkdirStatus) []MkdirStatus {
 	return result
 }
 
+func convertKnownHosts(knownHosts []KnownHostsStatus) []handlerskg.KnownHostsStatus {
+	result := make([]handlerskg.KnownHostsStatus, len(knownHosts))
+	for i, kh := range knownHosts {
+		result[i] = handlerskg.KnownHostsStatus{
+			Host:      kh.Host,
+			KeyType:   kh.KeyType,
+			AddedAt:   kh.AddedAt,
+			Blueprint: kh.Blueprint,
+			OS:        kh.OS,
+		}
+	}
+	return result
+}
+
+func convertHandlerKnownHosts(knownHosts []handlerskg.KnownHostsStatus) []KnownHostsStatus {
+	result := make([]KnownHostsStatus, len(knownHosts))
+	for i, kh := range knownHosts {
+		result[i] = KnownHostsStatus{
+			Host:      kh.Host,
+			KeyType:   kh.KeyType,
+			AddedAt:   kh.AddedAt,
+			Blueprint: kh.Blueprint,
+			OS:        kh.OS,
+		}
+	}
+	return result
+}
+
 // removePackageStatus removes a package from the status packages list
 func removePackageStatus(packages []PackageStatus, name string, blueprint string, osName string) []PackageStatus {
 	var result []PackageStatus
@@ -1093,6 +1143,7 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 	currentClones := make(map[string]bool)
 	currentDecrypts := make(map[string]bool)
 	currentMkdirs := make(map[string]bool)
+	currentKnownHosts := make(map[string]bool)
 	asdfInCurrentRules := false
 
 	for _, rule := range currentRules {
@@ -1107,6 +1158,8 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 			currentDecrypts[rule.DecryptPath] = true
 		case "mkdir":
 			currentMkdirs[rule.Mkdir] = true
+		case "known_hosts":
+			currentKnownHosts[rule.KnownHosts] = true
 		case "asdf":
 			asdfInCurrentRules = true
 		}
@@ -1183,6 +1236,20 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 					Mkdir:  mkdir.Path,
 					OSList: []string{osName},
 					Tool:   "mkdir",
+				})
+			}
+		}
+	}
+
+	// Check known_hosts in status - if not in current rules, flag for uninstall
+	if status.KnownHosts != nil {
+		for _, kh := range status.KnownHosts {
+			if kh.Blueprint == normalizedBlueprintFile && kh.OS == osName && !currentKnownHosts[kh.Host] {
+				autoUninstallRules = append(autoUninstallRules, parser.Rule{
+					Action:     "uninstall",
+					KnownHosts: kh.Host,
+					OSList:     []string{osName},
+					Tool:       "known_hosts",
 				})
 			}
 		}
@@ -2328,8 +2395,37 @@ func PrintStatus() {
 		}
 	}
 
-	if len(status.Packages) == 0 && len(status.Clones) == 0 && len(status.Decrypts) == 0 && len(status.Mkdirs) == 0 {
-		fmt.Printf("\n%s\n", ui.FormatInfo("No packages, repositories, decrypted files, or directories created"))
+	// Display SSH known hosts
+	if len(status.KnownHosts) > 0 {
+		fmt.Printf("\n%s\n", ui.FormatHighlight("SSH Known Hosts:"))
+		for _, kh := range status.KnownHosts {
+			// Parse timestamp for display
+			t, err := time.Parse(time.RFC3339, kh.AddedAt)
+			var timeStr string
+			if err == nil {
+				timeStr = t.Format("2006-01-02 15:04:05")
+			} else {
+				timeStr = kh.AddedAt
+			}
+
+			keyTypeStr := kh.KeyType
+			if keyTypeStr == "" {
+				keyTypeStr = "unknown"
+			}
+
+			fmt.Printf("  %s %s (%s, %s) [%s, %s]\n",
+				ui.FormatSuccess("●"),
+				ui.FormatInfo(kh.Host),
+				ui.FormatDim(keyTypeStr),
+				ui.FormatDim(timeStr),
+				ui.FormatDim(kh.OS),
+				ui.FormatDim(kh.Blueprint),
+			)
+		}
+	}
+
+	if len(status.Packages) == 0 && len(status.Clones) == 0 && len(status.Decrypts) == 0 && len(status.Mkdirs) == 0 && len(status.KnownHosts) == 0 {
+		fmt.Printf("\n%s\n", ui.FormatInfo("No packages, repositories, decrypted files, directories, or known hosts created"))
 	}
 
 	fmt.Printf("\n")

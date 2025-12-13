@@ -53,12 +53,22 @@ type MkdirStatus struct {
 	OS        string `json:"os"`
 }
 
+// KnownHostsStatus tracks an SSH known host entry
+type KnownHostsStatus struct {
+	Host      string `json:"host"`
+	KeyType   string `json:"key_type"`
+	AddedAt   string `json:"added_at"`
+	Blueprint string `json:"blueprint"`
+	OS        string `json:"os"`
+}
+
 // Status represents the current blueprint state
 type Status struct {
-	Packages []PackageStatus `json:"packages"`
-	Clones   []CloneStatus   `json:"clones"`
-	Decrypts []DecryptStatus `json:"decrypts"`
-	Mkdirs   []MkdirStatus   `json:"mkdirs"`
+	Packages   []PackageStatus    `json:"packages"`
+	Clones     []CloneStatus      `json:"clones"`
+	Decrypts   []DecryptStatus    `json:"decrypts"`
+	Mkdirs     []MkdirStatus      `json:"mkdirs"`
+	KnownHosts []KnownHostsStatus `json:"known_hosts"`
 }
 
 // Handler is the interface that all command handlers must implement
@@ -171,6 +181,19 @@ func removeDecryptStatus(decrypts []DecryptStatus, destPath string, blueprint st
 		normalizedStoredBlueprint := normalizePath(decrypt.Blueprint)
 		if !(decrypt.DestPath == destPath && normalizedStoredBlueprint == normalizedBlueprint && decrypt.OS == osName) {
 			result = append(result, decrypt)
+		}
+	}
+	return result
+}
+
+// removeKnownHostsStatus removes a known host from the status known_hosts list
+func removeKnownHostsStatus(knownHosts []KnownHostsStatus, host string, blueprint string, osName string) []KnownHostsStatus {
+	var result []KnownHostsStatus
+	normalizedBlueprint := normalizePath(blueprint)
+	for _, kh := range knownHosts {
+		normalizedStoredBlueprint := normalizePath(kh.Blueprint)
+		if !(kh.Host == host && normalizedStoredBlueprint == normalizedBlueprint && kh.OS == osName) {
+			result = append(result, kh)
 		}
 	}
 	return result
