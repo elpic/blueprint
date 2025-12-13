@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/elpic/blueprint/internal/parser"
 )
@@ -45,6 +46,56 @@ func (h *InstallHandler) Down() (string, error) {
 	}
 
 	return executeCommandWithCache(cmd)
+}
+
+// UpdateStatus updates the status after installing or uninstalling packages
+func (h *InstallHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
+	// Normalize blueprint path for consistent storage and comparison
+	blueprint = normalizePath(blueprint)
+
+	if h.Rule.Action == "install" {
+		// Check if this rule's command was executed successfully
+		cmd := h.buildCommand()
+		if needsSudo(cmd) {
+			cmd = "sudo " + cmd
+		}
+
+		// Look for a successful execution record matching this command
+		commandExecuted := false
+		for _, record := range records {
+			if record.Status == "success" && record.Command == cmd {
+				commandExecuted = true
+				break
+			}
+		}
+
+		if commandExecuted {
+			// Add or update package status
+			for _, pkg := range h.Rule.Packages {
+				// Remove existing entry if present
+				status.Packages = removePackageStatus(status.Packages, pkg.Name, blueprint, osName)
+				// Add new entry
+				status.Packages = append(status.Packages, PackageStatus{
+					Name:        pkg.Name,
+					InstalledAt: time.Now().Format(time.RFC3339),
+					Blueprint:   blueprint,
+					OS:          osName,
+				})
+			}
+		}
+	} else if h.Rule.Action == "uninstall" {
+		// Remove uninstalled packages from status
+		for _, pkg := range h.Rule.Packages {
+			status.Packages = removePackageStatus(status.Packages, pkg.Name, blueprint, osName)
+		}
+	}
+
+	return nil
+}
+
+// needsSudo checks if a command needs sudo
+func needsSudo(cmd string) bool {
+	return strings.Contains(cmd, "brew") || strings.Contains(cmd, "apt-get")
 }
 
 // buildCommand builds the install command based on OS

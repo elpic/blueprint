@@ -1,8 +1,65 @@
 package handlers
 
 import (
+	"path/filepath"
+	"regexp"
+
 	"github.com/elpic/blueprint/internal/parser"
 )
+
+// ExecutionRecord represents a single command execution
+type ExecutionRecord struct {
+	Timestamp string
+	Blueprint string
+	OS        string
+	Command   string
+	Output    string
+	Status    string
+	Error     string
+}
+
+// PackageStatus tracks an installed package
+type PackageStatus struct {
+	Name        string `json:"name"`
+	InstalledAt string `json:"installed_at"`
+	Blueprint   string `json:"blueprint"`
+	OS          string `json:"os"`
+}
+
+// CloneStatus tracks a cloned repository
+type CloneStatus struct {
+	URL       string `json:"url"`
+	Path      string `json:"path"`
+	SHA       string `json:"sha"`
+	ClonedAt  string `json:"cloned_at"`
+	Blueprint string `json:"blueprint"`
+	OS        string `json:"os"`
+}
+
+// DecryptStatus tracks a decrypted file
+type DecryptStatus struct {
+	SourceFile  string `json:"source_file"`
+	DestPath    string `json:"dest_path"`
+	DecryptedAt string `json:"decrypted_at"`
+	Blueprint   string `json:"blueprint"`
+	OS          string `json:"os"`
+}
+
+// MkdirStatus tracks a created directory
+type MkdirStatus struct {
+	Path      string `json:"path"`
+	CreatedAt string `json:"created_at"`
+	Blueprint string `json:"blueprint"`
+	OS        string `json:"os"`
+}
+
+// Status represents the current blueprint state
+type Status struct {
+	Packages []PackageStatus `json:"packages"`
+	Clones   []CloneStatus   `json:"clones"`
+	Decrypts []DecryptStatus `json:"decrypts"`
+	Mkdirs   []MkdirStatus   `json:"mkdirs"`
+}
 
 // Handler is the interface that all command handlers must implement
 type Handler interface {
@@ -13,10 +70,108 @@ type Handler interface {
 	// Down removes/uninstalls the resource
 	// Returns the output message and any error
 	Down() (string, error)
+
+	// UpdateStatus updates the status with the result of executing this handler
+	// Takes the current status, execution records, blueprint path, and OS name
+	UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error
 }
 
 // BaseHandler contains common fields for all handlers
 type BaseHandler struct {
 	Rule     parser.Rule
 	BasePath string // For resolving relative paths
+}
+
+// HandlerFactory creates a handler for a given rule
+// passwordCache is optional and only used by DecryptHandler
+type HandlerFactory func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler
+
+// GetHandlerFactory returns a handler factory function for the given action
+// If no factory is found for the action, returns nil
+func GetHandlerFactory(action string) HandlerFactory {
+	factories := map[string]HandlerFactory{
+		"install": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
+			return NewInstallHandler(rule, basePath)
+		},
+		"uninstall": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
+			return NewInstallHandler(rule, basePath)
+		},
+		"clone": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
+			return NewCloneHandler(rule, basePath)
+		},
+		"decrypt": func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewDecryptHandler(rule, basePath, passwordCache)
+		},
+		"mkdir": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
+			return NewMkdirHandler(rule, basePath)
+		},
+		"asdf": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
+			return NewAsdfHandler(rule, basePath)
+		},
+		"known_hosts": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
+			return NewKnownHostsHandler(rule, basePath)
+		},
+	}
+
+	return factories[action]
+}
+
+// Shared utility functions for status management
+
+// normalizePath normalizes a file path to an absolute path for consistent comparison
+func normalizePath(filePath string) string {
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return filepath.Clean(filePath)
+	}
+	return filepath.Clean(absPath)
+}
+
+// extractSHAFromOutput extracts the SHA from clone operation output using regex
+func extractSHAFromOutput(output string) string {
+	re := regexp.MustCompile(`\(SHA:\s*([a-fA-F0-9]+)\)`)
+	matches := re.FindStringSubmatch(output)
+	if len(matches) > 1 {
+		return matches[1]
+	}
+	return ""
+}
+
+// removePackageStatus removes a package from the status packages list
+func removePackageStatus(packages []PackageStatus, name string, blueprint string, osName string) []PackageStatus {
+	var result []PackageStatus
+	normalizedBlueprint := normalizePath(blueprint)
+	for _, pkg := range packages {
+		normalizedStoredBlueprint := normalizePath(pkg.Blueprint)
+		if !(pkg.Name == name && normalizedStoredBlueprint == normalizedBlueprint && pkg.OS == osName) {
+			result = append(result, pkg)
+		}
+	}
+	return result
+}
+
+// removeCloneStatus removes a clone from the status clones list
+func removeCloneStatus(clones []CloneStatus, path string, blueprint string, osName string) []CloneStatus {
+	var result []CloneStatus
+	normalizedBlueprint := normalizePath(blueprint)
+	for _, clone := range clones {
+		normalizedStoredBlueprint := normalizePath(clone.Blueprint)
+		if !(clone.Path == path && normalizedStoredBlueprint == normalizedBlueprint && clone.OS == osName) {
+			result = append(result, clone)
+		}
+	}
+	return result
+}
+
+// removeDecryptStatus removes a decrypt from the status decrypts list
+func removeDecryptStatus(decrypts []DecryptStatus, destPath string, blueprint string, osName string) []DecryptStatus {
+	var result []DecryptStatus
+	normalizedBlueprint := normalizePath(blueprint)
+	for _, decrypt := range decrypts {
+		normalizedStoredBlueprint := normalizePath(decrypt.Blueprint)
+		if !(decrypt.DestPath == destPath && normalizedStoredBlueprint == normalizedBlueprint && decrypt.OS == osName) {
+			result = append(result, decrypt)
+		}
+	}
+	return result
 }

@@ -57,11 +57,20 @@ type DecryptStatus struct {
 	OS          string `json:"os"`
 }
 
-// Status represents the current state of installed packages, clones, and decrypts
+// MkdirStatus tracks a created directory
+type MkdirStatus struct {
+	Path      string `json:"path"`
+	CreatedAt string `json:"created_at"`
+	Blueprint string `json:"blueprint"`
+	OS        string `json:"os"`
+}
+
+// Status represents the current state of installed packages, clones, decrypts, and mkdirs
 type Status struct {
 	Packages []PackageStatus `json:"packages"`
 	Clones   []CloneStatus   `json:"clones"`
 	Decrypts []DecryptStatus `json:"decrypts"`
+	Mkdirs   []MkdirStatus   `json:"mkdirs"`
 }
 
 // passwordCache stores decryption passwords by password-id to avoid re-prompting
@@ -131,7 +140,15 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 	if skipGroup == "" && skipID == "" {
 		numClonedDeletions := deleteRemovedClones(filteredRules, file, currentOS)
 		numDecryptedDeletions := deleteRemovedDecryptFiles(filteredRules, file, currentOS)
-		numCleanups = numClonedDeletions + numDecryptedDeletions
+
+		// Count uninstall rules as cleanups
+		numUninstalls := 0
+		for _, rule := range autoUninstallRules {
+			if rule.Action == "uninstall" {
+				numUninstalls++
+			}
+		}
+		numCleanups = numClonedDeletions + numDecryptedDeletions + numUninstalls
 	}
 
 	// Extract base directory from setupPath for resolving relative file paths
@@ -219,7 +236,15 @@ func Run(file string, dry bool) {
 	// Delete cloned repos and decrypted files that are no longer in the blueprint
 	numClonedDeletions := deleteRemovedClones(filteredRules, file, currentOS)
 	numDecryptedDeletions := deleteRemovedDecryptFiles(filteredRules, file, currentOS)
-	numCleanups := numClonedDeletions + numDecryptedDeletions
+
+	// Count uninstall rules as cleanups
+	numUninstalls := 0
+	for _, rule := range autoUninstallRules {
+		if rule.Action == "uninstall" {
+			numUninstalls++
+		}
+	}
+	numCleanups := numClonedDeletions + numDecryptedDeletions + numUninstalls
 
 	// Extract base directory from setupPath for resolving relative file paths
 	basePath := filepath.Dir(setupPath)
@@ -327,8 +352,11 @@ func displayRules(rules []parser.Rule) {
 			} else {
 				fmt.Printf("  Description: %s\n", ui.FormatInfo("Installs asdf version manager"))
 			}
-		} else if rule.Action == "uninstall-asdf" {
+		} else if rule.Action == "uninstall" && rule.Tool == "asdf-vm" {
 			fmt.Printf("  Description: %s\n", ui.FormatError("Uninstalls asdf version manager"))
+		} else if rule.Action == "uninstall" && rule.Tool == "mkdir" {
+			fmt.Printf("  Path: %s\n", ui.FormatError(rule.Mkdir))
+			fmt.Printf("  Description: %s\n", ui.FormatError("Removes directory"))
 		} else if rule.Action == "decrypt" {
 			fmt.Printf("  File: %s\n", ui.FormatInfo(rule.DecryptFile))
 			fmt.Printf("  Path: %s\n", ui.FormatInfo(rule.DecryptPath))
@@ -344,6 +372,11 @@ func displayRules(rules []parser.Rule) {
 				fmt.Printf("  Key Type: %s\n", ui.FormatDim(rule.KnownHostsKey))
 			} else {
 				fmt.Printf("  Key Type: %s\n", ui.FormatDim("auto-detect (ed25519, ecdsa, rsa)"))
+			}
+		} else if rule.Action == "mkdir" {
+			fmt.Printf("  Path: %s\n", ui.FormatInfo(rule.Mkdir))
+			if rule.MkdirPerms != "" {
+				fmt.Printf("  Permissions: %s\n", ui.FormatDim(rule.MkdirPerms))
 			}
 		} else {
 			if len(rule.Packages) > 0 {
@@ -385,12 +418,15 @@ func displayRules(rules []parser.Rule) {
 		}
 
 		// Display command that will be executed (for install/uninstall only)
-		if rule.Action != "clone" && rule.Action != "asdf" && rule.Action != "uninstall-asdf" && rule.Action != "decrypt" && rule.Action != "known_hosts" {
+		if rule.Action != "clone" && rule.Action != "asdf" && rule.Action != "uninstall" && rule.Action != "decrypt" && rule.Action != "known_hosts" && rule.Action != "mkdir" {
 			cmd := buildCommand(rule)
 			fmt.Printf("  Command: %s\n", ui.FormatDim(cmd))
-		} else if rule.Action == "uninstall-asdf" {
-			// For uninstall-asdf, show what command will be executed
+		} else if rule.Action == "uninstall" && rule.Tool == "asdf-vm" {
+			// For asdf uninstall, show what command will be executed
 			fmt.Printf("  Command: %s\n", ui.FormatDim("Remove ~/.asdf directory and clean shell configs"))
+		} else if rule.Action == "uninstall" && rule.Tool == "mkdir" {
+			// For mkdir uninstall, show what will be removed
+			fmt.Printf("  Command: %s\n", ui.FormatDim(fmt.Sprintf("rm -rf %s", rule.Mkdir)))
 		} else if rule.Action == "decrypt" {
 			// For decrypt, show what will be decrypted
 			fmt.Printf("  Command: %s\n", ui.FormatDim(fmt.Sprintf("decrypt %s to %s", rule.DecryptFile, rule.DecryptPath)))
@@ -401,6 +437,13 @@ func displayRules(rules []parser.Rule) {
 			} else {
 				fmt.Printf("  Command: %s\n", ui.FormatDim(fmt.Sprintf("ssh-keyscan -t [ed25519|ecdsa|rsa] %s >> ~/.ssh/known_hosts", rule.KnownHosts)))
 			}
+		} else if rule.Action == "mkdir" {
+			// For mkdir, show the command that will be executed
+			cmd := fmt.Sprintf("mkdir -p %s", rule.Mkdir)
+			if rule.MkdirPerms != "" {
+				cmd += fmt.Sprintf(" && chmod %s %s", rule.MkdirPerms, rule.Mkdir)
+			}
+			fmt.Printf("  Command: %s\n", ui.FormatDim(cmd))
 		}
 		fmt.Println()
 	}
@@ -541,69 +584,123 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 		var err error
 		var actualCmd string
 
-		// Create appropriate handler based on rule action
-		switch rule.Action {
-		case "clone":
-			fmt.Printf(" %s", ui.FormatInfo(rule.ClonePath))
-			handler = handlerskg.NewCloneHandler(rule, basePath)
-			actualCmd = fmt.Sprintf("git clone %s %s", rule.CloneURL, rule.ClonePath)
-			if rule.Branch != "" {
-				actualCmd = fmt.Sprintf("git clone -b %s %s %s", rule.Branch, rule.CloneURL, rule.ClonePath)
-			}
+		// Create appropriate handler based on rule action using factory pattern
+		if rule.Action == "uninstall" {
+			// Special handling for uninstall - dispatch based on Tool field
+			switch rule.Tool {
+			case "asdf-vm":
+				fmt.Printf(" %s", ui.FormatError("asdf"))
+				actualCmd = "asdf-uninstall"
+				handler = handlerskg.NewAsdfHandler(rule, basePath)
 
-		case "asdf":
-			handler = handlerskg.NewAsdfHandler(rule, basePath)
-			actualCmd = "asdf-init"
+			case "mkdir":
+				fmt.Printf(" %s", ui.FormatError(rule.Mkdir))
+				actualCmd = fmt.Sprintf("rm -rf %s", rule.Mkdir)
+				handler = handlerskg.NewMkdirHandler(rule, basePath)
 
-		case "uninstall-asdf":
-			fmt.Printf(" %s", ui.FormatError("asdf"))
-			actualCmd = "asdf-uninstall"
-			// For uninstall-asdf, create an asdf handler and call Down
-			handler = handlerskg.NewAsdfHandler(rule, basePath)
+			case "git":
+				fmt.Printf(" %s", ui.FormatError(rule.ClonePath))
+				actualCmd = "uninstall-clone"
+				handler = handlerskg.NewCloneHandler(rule, basePath)
 
-		case "decrypt":
-			fmt.Printf(" %s", ui.FormatInfo(rule.DecryptPath))
-			handler = handlerskg.NewDecryptHandler(rule, basePath, passwordCache)
-			actualCmd = fmt.Sprintf("decrypt %s to %s", rule.DecryptFile, rule.DecryptPath)
+			case "decrypt":
+				fmt.Printf(" %s", ui.FormatError(rule.DecryptPath))
+				actualCmd = "uninstall-decrypt"
+				handler = handlerskg.NewDecryptHandler(rule, basePath, passwordCache)
 
-		case "known_hosts":
-			fmt.Printf(" %s", ui.FormatInfo(rule.KnownHosts))
-			handler = handlerskg.NewKnownHostsHandler(rule, basePath)
-			actualCmd = fmt.Sprintf("known_hosts %s", rule.KnownHosts)
-
-		case "install", "uninstall":
-			handler = handlerskg.NewInstallHandler(rule, basePath)
-			cmd := buildCommand(rule)
-			actualCmd = cmd
-			if needsSudo(cmd) {
-				actualCmd = "sudo " + cmd
-			}
-
-			// Build package list string
-			packages := ""
-			for j, pkg := range rule.Packages {
-				if j > 0 {
-					packages += ", "
+			case "package-manager":
+				// For package uninstall
+				cmd := buildCommand(rule)
+				actualCmd = cmd
+				if needsSudo(cmd) {
+					actualCmd = "sudo " + cmd
 				}
-				packages += pkg.Name
+
+				// Build package list string
+				packages := ""
+				for j, pkg := range rule.Packages {
+					if j > 0 {
+						packages += ", "
+					}
+					packages += pkg.Name
+				}
+
+				if packages != "" {
+					fmt.Printf(" %s", ui.FormatError(packages))
+				}
+
+				handler = handlerskg.NewInstallHandler(rule, basePath)
+
+			default:
+				fmt.Printf(" %s", ui.FormatError("unknown uninstall tool: "+rule.Tool))
+				handler = nil
+			}
+		} else {
+			// Use factory pattern for all other actions
+			factory := handlerskg.GetHandlerFactory(rule.Action)
+			if factory != nil {
+				handler = factory(rule, basePath, passwordCache)
 			}
 
-			if packages != "" {
-				fmt.Printf(" %s", ui.FormatInfo(packages))
-			}
+			// Set action-specific UI formatting and command
+			switch rule.Action {
+			case "clone":
+				fmt.Printf(" %s", ui.FormatInfo(rule.ClonePath))
+				actualCmd = fmt.Sprintf("git clone %s %s", rule.CloneURL, rule.ClonePath)
+				if rule.Branch != "" {
+					actualCmd = fmt.Sprintf("git clone -b %s %s %s", rule.Branch, rule.CloneURL, rule.ClonePath)
+				}
 
-		default:
-			// Unknown action - this shouldn't happen if parsing is correct
-			fmt.Printf(" %s", ui.FormatError("unknown action"))
-			output = fmt.Sprintf("unknown action: %s", rule.Action)
-			err = fmt.Errorf("unknown action type")
+			case "asdf":
+				actualCmd = "asdf-init"
+
+			case "decrypt":
+				fmt.Printf(" %s", ui.FormatInfo(rule.DecryptPath))
+				actualCmd = fmt.Sprintf("decrypt %s to %s", rule.DecryptFile, rule.DecryptPath)
+
+			case "known_hosts":
+				fmt.Printf(" %s", ui.FormatInfo(rule.KnownHosts))
+				actualCmd = fmt.Sprintf("known_hosts %s", rule.KnownHosts)
+
+			case "mkdir":
+				fmt.Printf(" %s", ui.FormatInfo(rule.Mkdir))
+				actualCmd = fmt.Sprintf("mkdir -p %s", rule.Mkdir)
+				if rule.MkdirPerms != "" {
+					actualCmd += fmt.Sprintf(" (chmod %s)", rule.MkdirPerms)
+				}
+
+			case "install":
+				cmd := buildCommand(rule)
+				actualCmd = cmd
+				if needsSudo(cmd) {
+					actualCmd = "sudo " + cmd
+				}
+
+				// Build package list string
+				packages := ""
+				for j, pkg := range rule.Packages {
+					if j > 0 {
+						packages += ", "
+					}
+					packages += pkg.Name
+				}
+
+				if packages != "" {
+					fmt.Printf(" %s", ui.FormatInfo(packages))
+				}
+
+			default:
+				// Unknown action - this shouldn't happen if parsing is correct
+				fmt.Printf(" %s", ui.FormatError("unknown action"))
+				output = fmt.Sprintf("unknown action: %s", rule.Action)
+				err = fmt.Errorf("unknown action type")
+			}
 		}
 
 		// Execute handler
 		if handler != nil {
-			if rule.Action == "uninstall-asdf" {
-				output, err = handler.Down()
-			} else if rule.Action == "uninstall" && rule.Packages != nil {
+			// Call Down() for all uninstall actions
+			if rule.Action == "uninstall" {
 				output, err = handler.Down()
 			} else {
 				output, err = handler.Up()
@@ -714,132 +811,83 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 		return err
 	}
 
+	// Normalize blueprint path for consistent storage and comparison
+	blueprint = normalizePath(blueprint)
+
 	// Load existing status
 	var status Status
 	if data, err := os.ReadFile(statusPath); err == nil {
 		json.Unmarshal(data, &status)
 	}
 
-	// Create a map for quick lookup of succeeded records
-	succeededCommands := make(map[string]bool)
-	for _, record := range records {
-		if record.Status == "success" {
-			succeededCommands[record.Command] = true
+	// Convert engine ExecutionRecords to handler ExecutionRecords
+	handlerRecords := make([]handlerskg.ExecutionRecord, len(records))
+	for i, record := range records {
+		handlerRecords[i] = handlerskg.ExecutionRecord{
+			Timestamp: record.Timestamp,
+			Blueprint: record.Blueprint,
+			OS:        record.OS,
+			Command:   record.Command,
+			Output:    record.Output,
+			Status:    record.Status,
+			Error:     record.Error,
 		}
 	}
 
-	// Process each rule
+	// Convert engine Status to handler Status
+	handlerStatus := handlerskg.Status{
+		Packages: convertPackages(status.Packages),
+		Clones:   convertClones(status.Clones),
+		Decrypts: convertDecrypts(status.Decrypts),
+		Mkdirs:   convertMkdirs(status.Mkdirs),
+	}
+
+	// Process each rule by creating appropriate handler and calling UpdateStatus
 	for _, rule := range rules {
-		if rule.Action == "install" {
-			// Check if this rule's command was executed successfully
-			cmd := buildCommand(rule)
-			if needsSudo(cmd) {
-				cmd = "sudo " + cmd
+		var handler handlerskg.Handler
+
+		// Handle uninstall actions specially - dispatch based on Tool field
+		if rule.Action == "uninstall" {
+			switch rule.Tool {
+			case "asdf-vm":
+				handler = handlerskg.NewAsdfHandler(rule, "")
+			case "mkdir":
+				handler = handlerskg.NewMkdirHandler(rule, "")
+			case "git":
+				handler = handlerskg.NewCloneHandler(rule, "")
+			case "decrypt":
+				handler = handlerskg.NewDecryptHandler(rule, "", passwordCache)
+			case "package-manager":
+				handler = handlerskg.NewInstallHandler(rule, "")
+			default:
+				// Skip unknown uninstall tools
+				continue
+			}
+		} else {
+			// For non-uninstall actions, use factory pattern
+			factory := handlerskg.GetHandlerFactory(rule.Action)
+			if factory == nil {
+				// Skip unknown actions
+				continue
 			}
 
-			if succeededCommands[cmd] {
-				// Add or update package status
-				for _, pkg := range rule.Packages {
-					// Remove existing entry if present
-					status.Packages = removePackageStatus(status.Packages, pkg.Name, blueprint, osName)
-					// Add new entry
-					status.Packages = append(status.Packages, PackageStatus{
-						Name:        pkg.Name,
-						InstalledAt: time.Now().Format(time.RFC3339),
-						Blueprint:   blueprint,
-						OS:          osName,
-					})
-				}
-			}
-		} else if rule.Action == "clone" {
-			// Check if this rule's command was executed successfully
-			cloneCmd := fmt.Sprintf("git clone %s %s", rule.CloneURL, rule.ClonePath)
-			if rule.Branch != "" {
-				cloneCmd = fmt.Sprintf("git clone -b %s %s %s", rule.Branch, rule.CloneURL, rule.ClonePath)
-			}
-
-			if succeededCommands[cloneCmd] {
-				// Find the SHA from the records
-				var cloneSHA string
-				for _, record := range records {
-					if record.Status == "success" && record.Command == cloneCmd {
-						// Extract SHA from cloneInfo in output using regex
-						cloneSHA = extractSHAFromOutput(record.Output)
-						if cloneSHA != "" {
-							break
-						}
-					}
-				}
-
-				// Remove existing entry if present
-				status.Clones = removeCloneStatus(status.Clones, rule.ClonePath, blueprint, osName)
-				// Add new entry
-				status.Clones = append(status.Clones, CloneStatus{
-					URL:       rule.CloneURL,
-					Path:      rule.ClonePath,
-					SHA:       cloneSHA,
-					ClonedAt:  time.Now().Format(time.RFC3339),
-					Blueprint: blueprint,
-					OS:        osName,
-				})
-			}
-		} else if rule.Action == "uninstall" {
-			// Remove uninstalled packages
-			for _, pkg := range rule.Packages {
-				status.Packages = removePackageStatus(status.Packages, pkg.Name, blueprint, osName)
-			}
-		} else if rule.Action == "asdf" {
-			// Check if asdf was executed successfully
-			if succeededCommands["asdf-init"] {
-				// Find the SHA from the records
-				var asdfSHA string
-				for _, record := range records {
-					if record.Status == "success" && record.Command == "asdf-init" {
-						// Extract SHA from output using regex
-						asdfSHA = extractSHAFromOutput(record.Output)
-						if asdfSHA != "" {
-							break
-						}
-					}
-				}
-
-				// Use "asdf" as the path identifier for status tracking
-				asdfPath := "~/.asdf"
-				// Remove existing asdf entry if present
-				status.Clones = removeCloneStatus(status.Clones, asdfPath, blueprint, osName)
-				// Add new entry
-				status.Clones = append(status.Clones, CloneStatus{
-					URL:       "https://github.com/asdf-vm/asdf.git",
-					Path:      asdfPath,
-					SHA:       asdfSHA,
-					ClonedAt:  time.Now().Format(time.RFC3339),
-					Blueprint: blueprint,
-					OS:        osName,
-				})
-			}
-		} else if rule.Action == "uninstall-asdf" {
-			// Check if asdf was uninstalled successfully
-			if succeededCommands["asdf-uninstall"] {
-				// Remove asdf from status
-				asdfPath := "~/.asdf"
-				status.Clones = removeCloneStatus(status.Clones, asdfPath, blueprint, osName)
-			}
-		} else if rule.Action == "decrypt" {
-			// Check if this rule's command was executed successfully
-			decryptCmd := fmt.Sprintf("decrypt %s to %s", rule.DecryptFile, rule.DecryptPath)
-			if succeededCommands[decryptCmd] {
-				// Remove existing entry if present
-				status.Decrypts = removeDecryptStatus(status.Decrypts, rule.DecryptPath, blueprint, osName)
-				// Add new entry
-				status.Decrypts = append(status.Decrypts, DecryptStatus{
-					SourceFile:  rule.DecryptFile,
-					DestPath:    rule.DecryptPath,
-					DecryptedAt: time.Now().Format(time.RFC3339),
-					Blueprint:   blueprint,
-					OS:          osName,
-				})
-			}
+			// Create handler using factory
+			handler = factory(rule, "", passwordCache)
 		}
+
+		// Let the handler update status
+		if err := handler.UpdateStatus(&handlerStatus, handlerRecords, blueprint, osName); err != nil {
+			// Log but don't fail on status update errors
+			fmt.Fprintf(os.Stderr, "Warning: failed to update status for rule %v: %v\n", rule.Action, err)
+		}
+	}
+
+	// Convert handler Status back to engine Status
+	status = Status{
+		Packages: convertHandlerPackages(handlerStatus.Packages),
+		Clones:   convertHandlerClones(handlerStatus.Clones),
+		Decrypts: convertHandlerDecrypts(handlerStatus.Decrypts),
+		Mkdirs:   convertHandlerMkdirs(handlerStatus.Mkdirs),
 	}
 
 	// Write status to file
@@ -853,6 +901,117 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 	}
 
 	return nil
+}
+
+// Helper functions to convert between engine and handler status types
+func convertPackages(packages []PackageStatus) []handlerskg.PackageStatus {
+	result := make([]handlerskg.PackageStatus, len(packages))
+	for i, pkg := range packages {
+		result[i] = handlerskg.PackageStatus{
+			Name:        pkg.Name,
+			InstalledAt: pkg.InstalledAt,
+			Blueprint:   pkg.Blueprint,
+			OS:          pkg.OS,
+		}
+	}
+	return result
+}
+
+func convertClones(clones []CloneStatus) []handlerskg.CloneStatus {
+	result := make([]handlerskg.CloneStatus, len(clones))
+	for i, clone := range clones {
+		result[i] = handlerskg.CloneStatus{
+			URL:       clone.URL,
+			Path:      clone.Path,
+			SHA:       clone.SHA,
+			ClonedAt:  clone.ClonedAt,
+			Blueprint: clone.Blueprint,
+			OS:        clone.OS,
+		}
+	}
+	return result
+}
+
+func convertDecrypts(decrypts []DecryptStatus) []handlerskg.DecryptStatus {
+	result := make([]handlerskg.DecryptStatus, len(decrypts))
+	for i, decrypt := range decrypts {
+		result[i] = handlerskg.DecryptStatus{
+			SourceFile:  decrypt.SourceFile,
+			DestPath:    decrypt.DestPath,
+			DecryptedAt: decrypt.DecryptedAt,
+			Blueprint:   decrypt.Blueprint,
+			OS:          decrypt.OS,
+		}
+	}
+	return result
+}
+
+func convertMkdirs(mkdirs []MkdirStatus) []handlerskg.MkdirStatus {
+	result := make([]handlerskg.MkdirStatus, len(mkdirs))
+	for i, mkdir := range mkdirs {
+		result[i] = handlerskg.MkdirStatus{
+			Path:      mkdir.Path,
+			CreatedAt: mkdir.CreatedAt,
+			Blueprint: mkdir.Blueprint,
+			OS:        mkdir.OS,
+		}
+	}
+	return result
+}
+
+func convertHandlerPackages(packages []handlerskg.PackageStatus) []PackageStatus {
+	result := make([]PackageStatus, len(packages))
+	for i, pkg := range packages {
+		result[i] = PackageStatus{
+			Name:        pkg.Name,
+			InstalledAt: pkg.InstalledAt,
+			Blueprint:   pkg.Blueprint,
+			OS:          pkg.OS,
+		}
+	}
+	return result
+}
+
+func convertHandlerClones(clones []handlerskg.CloneStatus) []CloneStatus {
+	result := make([]CloneStatus, len(clones))
+	for i, clone := range clones {
+		result[i] = CloneStatus{
+			URL:       clone.URL,
+			Path:      clone.Path,
+			SHA:       clone.SHA,
+			ClonedAt:  clone.ClonedAt,
+			Blueprint: clone.Blueprint,
+			OS:        clone.OS,
+		}
+	}
+	return result
+}
+
+func convertHandlerDecrypts(decrypts []handlerskg.DecryptStatus) []DecryptStatus {
+	result := make([]DecryptStatus, len(decrypts))
+	for i, decrypt := range decrypts {
+		result[i] = DecryptStatus{
+			SourceFile:  decrypt.SourceFile,
+			DestPath:    decrypt.DestPath,
+			DecryptedAt: decrypt.DecryptedAt,
+			Blueprint:   decrypt.Blueprint,
+			OS:          decrypt.OS,
+		}
+	}
+	return result
+}
+
+func convertHandlerMkdirs(mkdirs []handlerskg.MkdirStatus) []MkdirStatus {
+	result := make([]MkdirStatus, len(mkdirs))
+	for i, mkdir := range mkdirs {
+		result[i] = MkdirStatus{
+			Path:      mkdir.Path,
+			CreatedAt: mkdir.CreatedAt,
+			Blueprint: mkdir.Blueprint,
+			OS:        mkdir.OS,
+		}
+	}
+	return result
 }
 
 // removePackageStatus removes a package from the status packages list
@@ -888,86 +1047,84 @@ func removeDecryptStatus(decrypts []DecryptStatus, destPath string, blueprint st
 	return result
 }
 
-// getAutoUninstallRules compares history with current rules and generates uninstall rules for removed packages
+// removeMkdirStatus removes a mkdir from the status mkdirs list
+func removeMkdirStatus(mkdirs []MkdirStatus, path string, blueprint string, osName string) []MkdirStatus {
+	var result []MkdirStatus
+	// Normalize blueprint for comparison to handle path variations like /tmp vs /private/tmp
+	normalizedBlueprint := normalizePath(blueprint)
+	for _, mkdir := range mkdirs {
+		// Also normalize the stored blueprint for comparison
+		normalizedStoredBlueprint := normalizePath(mkdir.Blueprint)
+		if !(mkdir.Path == path && normalizedStoredBlueprint == normalizedBlueprint && mkdir.OS == osName) {
+			result = append(result, mkdir)
+		}
+	}
+	return result
+}
+
+// getAutoUninstallRules compares status with current rules and generates uninstall rules for removed resources
+// Uses a generic approach: any resource in status but not in current rules gets flagged for removal
 func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osName string) []parser.Rule {
 	var autoUninstallRules []parser.Rule
-
-	// Load history
-	historyPath, err := getHistoryPath()
-	if err != nil {
-		return autoUninstallRules
-	}
-
-	// Read history file
-	data, err := os.ReadFile(historyPath)
-	if err != nil {
-		// No history yet, nothing to uninstall
-		return autoUninstallRules
-	}
-
-	// Parse history
-	var records []ExecutionRecord
-	if err := json.Unmarshal(data, &records); err != nil {
-		return autoUninstallRules
-	}
 
 	// Normalize the blueprint file path for comparison
 	normalizedBlueprintFile := normalizePath(blueprintFile)
 
-	// Extract historically installed packages for this blueprint and OS
-	historicalPackages := make(map[string]bool)
-	for _, record := range records {
-		// Only consider successful commands from this blueprint on this OS
-		// Use normalized paths for comparison to handle relative vs absolute paths
-		if record.Status == "success" && normalizePath(record.Blueprint) == normalizedBlueprintFile && record.OS == osName {
-			// Check if it's an install command
-			if strings.Contains(record.Command, "install") && !strings.Contains(record.Command, "uninstall") {
-				// Extract package names from command
-				// Format: "brew install <packages>" or "apt-get install -y <packages>"
-				pkgs := extractPackagesFromCommand(record.Command, "install")
-				for _, pkg := range pkgs {
-					historicalPackages[pkg] = true
-				}
-			}
-		}
+	// Load status file to check for removed resources
+	statusPath, err := getStatusPath()
+	if err != nil {
+		return autoUninstallRules
 	}
 
-	// Remove packages that have been successfully uninstalled
-	for _, record := range records {
-		if record.Status == "success" && normalizePath(record.Blueprint) == normalizedBlueprintFile && record.OS == osName {
-			// Check if it's an uninstall command
-			if strings.Contains(record.Command, "uninstall") || (strings.Contains(record.Command, "remove") && strings.Contains(record.Command, "apt-get")) {
-				// Extract package names from command
-				pkgs := extractPackagesFromCommand(record.Command, "uninstall")
-				for _, pkg := range pkgs {
-					delete(historicalPackages, pkg)
-				}
-			}
-		}
+	statusData, err := os.ReadFile(statusPath)
+	if err != nil {
+		// No status file yet, nothing to uninstall
+		return autoUninstallRules
 	}
 
-	// Get current packages from blueprint rules
+	var status Status
+	if err := json.Unmarshal(statusData, &status); err != nil {
+		// Invalid status file, can't process
+		return autoUninstallRules
+	}
+
+	// Build map of current resources in blueprint rules for quick lookup
 	currentPackages := make(map[string]bool)
+	currentClones := make(map[string]bool)
+	currentDecrypts := make(map[string]bool)
+	currentMkdirs := make(map[string]bool)
+	asdfInCurrentRules := false
+
 	for _, rule := range currentRules {
-		if rule.Action == "install" {
+		switch rule.Action {
+		case "install":
 			for _, pkg := range rule.Packages {
 				currentPackages[pkg.Name] = true
 			}
+		case "clone":
+			currentClones[rule.ClonePath] = true
+		case "decrypt":
+			currentDecrypts[rule.DecryptPath] = true
+		case "mkdir":
+			currentMkdirs[rule.Mkdir] = true
+		case "asdf":
+			asdfInCurrentRules = true
 		}
 	}
 
-	// Find packages to uninstall (in history but not in current rules)
+	// Check packages in status - if not in current rules, flag for uninstall
 	var packagesToUninstall []parser.Package
-	for pkg := range historicalPackages {
-		if !currentPackages[pkg] {
-			packagesToUninstall = append(packagesToUninstall, parser.Package{
-				Name:    pkg,
-				Version: "latest",
-			})
+	if status.Packages != nil {
+		for _, pkg := range status.Packages {
+			if pkg.Blueprint == normalizedBlueprintFile && pkg.OS == osName && !currentPackages[pkg.Name] {
+				packagesToUninstall = append(packagesToUninstall, parser.Package{
+					Name:    pkg.Name,
+					Version: "latest",
+				})
+			}
 		}
 	}
 
-	// If there are packages to uninstall, create a rule
 	if len(packagesToUninstall) > 0 {
 		autoUninstallRules = append(autoUninstallRules, parser.Rule{
 			Action:   "uninstall",
@@ -977,38 +1134,58 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 		})
 	}
 
-	// Check if asdf was historically used but is not in current rules
-	asdfWasUsed := false
-	for _, record := range records {
-		if record.Status == "success" && normalizePath(record.Blueprint) == normalizedBlueprintFile && record.OS == osName {
-			if record.Command == "asdf-init" || record.Command == "asdf-uninstall" {
-				// If we find asdf-init, it was used; if we only find asdf-uninstall, it was already cleaned up
-				if record.Command == "asdf-init" {
-					asdfWasUsed = true
-				} else if record.Command == "asdf-uninstall" {
-					// If we find uninstall after init, mark that asdf is no longer used
-					asdfWasUsed = false
+	// Check clones in status - if not in current rules, flag for uninstall
+	if status.Clones != nil {
+		for _, clone := range status.Clones {
+			if clone.Blueprint == normalizedBlueprintFile && clone.OS == osName {
+				// Special handling for asdf which is tracked as ~/.asdf in clones
+				if clone.Path == "~/.asdf" && !asdfInCurrentRules {
+					autoUninstallRules = append(autoUninstallRules, parser.Rule{
+						Action:   "uninstall",
+						OSList:   []string{osName},
+						Tool:     "asdf-vm",
+						ClonePath: clone.Path,
+					})
+				} else if clone.Path != "~/.asdf" && !currentClones[clone.Path] {
+					// Regular clones that were removed from rules
+					autoUninstallRules = append(autoUninstallRules, parser.Rule{
+						Action:    "uninstall",
+						ClonePath: clone.Path,
+						CloneURL:  clone.URL,
+						OSList:    []string{osName},
+						Tool:      "git",
+					})
 				}
 			}
 		}
 	}
 
-	// Check if asdf is in current rules
-	asdfIsInCurrentRules := false
-	for _, rule := range currentRules {
-		if rule.Action == "asdf" {
-			asdfIsInCurrentRules = true
-			break
+	// Check decrypts in status - if not in current rules, flag for uninstall
+	if status.Decrypts != nil {
+		for _, decrypt := range status.Decrypts {
+			if decrypt.Blueprint == normalizedBlueprintFile && decrypt.OS == osName && !currentDecrypts[decrypt.DestPath] {
+				autoUninstallRules = append(autoUninstallRules, parser.Rule{
+					Action:      "uninstall",
+					DecryptPath: decrypt.DestPath,
+					OSList:      []string{osName},
+					Tool:        "decrypt",
+				})
+			}
 		}
 	}
 
-	// If asdf was used but is not in current rules, create an uninstall rule
-	if asdfWasUsed && !asdfIsInCurrentRules {
-		autoUninstallRules = append(autoUninstallRules, parser.Rule{
-			Action: "uninstall-asdf",
-			OSList: []string{osName},
-			Tool:   "asdf-vm",
-		})
+	// Check mkdirs in status - if not in current rules, flag for uninstall
+	if status.Mkdirs != nil {
+		for _, mkdir := range status.Mkdirs {
+			if mkdir.Blueprint == normalizedBlueprintFile && mkdir.OS == osName && !currentMkdirs[mkdir.Path] {
+				autoUninstallRules = append(autoUninstallRules, parser.Rule{
+					Action: "uninstall",
+					Mkdir:  mkdir.Path,
+					OSList: []string{osName},
+					Tool:   "mkdir",
+				})
+			}
+		}
 	}
 
 	return autoUninstallRules
@@ -1319,8 +1496,8 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 			} else if rule.Action == "clone" {
 				// For clone rules without ID, use the clone path as key
 				ruleKey = rule.ClonePath
-			} else if rule.Action == "uninstall-asdf" {
-				// For uninstall-asdf rules, use action as key
+			} else if rule.Action == "uninstall" && rule.Tool == "asdf-vm" {
+				// For asdf uninstall rules, use action as key
 				ruleKey = "uninstall-asdf"
 			} else if rule.Action == "asdf" {
 				// For asdf rules without ID, use action as key
@@ -1331,6 +1508,12 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 			} else if rule.Action == "known_hosts" {
 				// For known_hosts rules without ID, use the host as key
 				ruleKey = rule.KnownHosts
+			} else if rule.Action == "mkdir" {
+				// For mkdir rules without ID, use the path as key
+				ruleKey = rule.Mkdir
+			} else if rule.Action == "uninstall" && rule.Tool == "mkdir" {
+				// For mkdir uninstall rules without ID, use the path as key
+				ruleKey = rule.Mkdir
 			} else {
 				// For other actions without ID, use action as key
 				ruleKey = rule.Action
@@ -2122,8 +2305,31 @@ func PrintStatus() {
 		}
 	}
 
-	if len(status.Packages) == 0 && len(status.Clones) == 0 && len(status.Decrypts) == 0 {
-		fmt.Printf("\n%s\n", ui.FormatInfo("No packages, repositories, or decrypted files"))
+	// Display created directories
+	if len(status.Mkdirs) > 0 {
+		fmt.Printf("\n%s\n", ui.FormatHighlight("Created Directories:"))
+		for _, mkdir := range status.Mkdirs {
+			// Parse timestamp for display
+			t, err := time.Parse(time.RFC3339, mkdir.CreatedAt)
+			var timeStr string
+			if err == nil {
+				timeStr = t.Format("2006-01-02 15:04:05")
+			} else {
+				timeStr = mkdir.CreatedAt
+			}
+
+			fmt.Printf("  %s %s (%s) [%s, %s]\n",
+				ui.FormatSuccess("●"),
+				ui.FormatInfo(mkdir.Path),
+				ui.FormatDim(timeStr),
+				ui.FormatDim(mkdir.OS),
+				ui.FormatDim(mkdir.Blueprint),
+			)
+		}
+	}
+
+	if len(status.Packages) == 0 && len(status.Clones) == 0 && len(status.Decrypts) == 0 && len(status.Mkdirs) == 0 {
+		fmt.Printf("\n%s\n", ui.FormatInfo("No packages, repositories, decrypted files, or directories created"))
 	}
 
 	fmt.Printf("\n")

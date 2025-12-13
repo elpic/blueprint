@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	cryptopkg "github.com/elpic/blueprint/internal/crypto"
 	"github.com/elpic/blueprint/internal/parser"
@@ -87,6 +88,47 @@ func (h *DecryptHandler) Down() (string, error) {
 	}
 
 	return "Decrypted file not found", nil
+}
+
+// UpdateStatus updates the status after decrypting or removing a file
+func (h *DecryptHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
+	// Normalize blueprint path for consistent storage and comparison
+	blueprint = normalizePath(blueprint)
+
+	if h.Rule.Action == "decrypt" {
+		// Check if this rule's command was executed successfully
+		decryptCmd := fmt.Sprintf("decrypt %s to %s", h.Rule.DecryptFile, h.Rule.DecryptPath)
+
+		commandExecuted := false
+		for _, record := range records {
+			if record.Status == "success" && record.Command == decryptCmd {
+				commandExecuted = true
+				break
+			}
+		}
+
+		if commandExecuted {
+			// Remove existing entry if present
+			status.Decrypts = removeDecryptStatus(status.Decrypts, h.Rule.DecryptPath, blueprint, osName)
+			// Add new entry
+			status.Decrypts = append(status.Decrypts, DecryptStatus{
+				SourceFile:  h.Rule.DecryptFile,
+				DestPath:    h.Rule.DecryptPath,
+				DecryptedAt: time.Now().Format(time.RFC3339),
+				Blueprint:   blueprint,
+				OS:          osName,
+			})
+		}
+	} else if h.Rule.Action == "uninstall" && h.Rule.Tool == "decrypt" {
+		// Check if decrypt file was removed by checking if file doesn't exist
+		expandedPath := expandPath(h.Rule.DecryptPath)
+		if _, err := os.Stat(expandedPath); os.IsNotExist(err) {
+			// File has been removed, update status
+			status.Decrypts = removeDecryptStatus(status.Decrypts, h.Rule.DecryptPath, blueprint, osName)
+		}
+	}
+
+	return nil
 }
 
 // resolveFilePath resolves the file path, checking multiple locations

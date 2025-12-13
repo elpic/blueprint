@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
@@ -83,6 +84,54 @@ func (h *CloneHandler) Down() (string, error) {
 	}
 
 	return "Repository not found", nil
+}
+
+// UpdateStatus updates the status after cloning or removing a repository
+func (h *CloneHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
+	// Normalize blueprint path for consistent storage and comparison
+	blueprint = normalizePath(blueprint)
+
+	if h.Rule.Action == "clone" {
+		// Check if this rule's command was executed successfully
+		cloneCmd := fmt.Sprintf("git clone %s %s", h.Rule.CloneURL, h.Rule.ClonePath)
+		if h.Rule.Branch != "" {
+			cloneCmd = fmt.Sprintf("git clone -b %s %s %s", h.Rule.Branch, h.Rule.CloneURL, h.Rule.ClonePath)
+		}
+
+		commandExecuted := false
+		var cloneSHA string
+		for _, record := range records {
+			if record.Status == "success" && record.Command == cloneCmd {
+				commandExecuted = true
+				// Extract SHA from the records
+				cloneSHA = extractSHAFromOutput(record.Output)
+				break
+			}
+		}
+
+		if commandExecuted {
+			// Remove existing entry if present
+			status.Clones = removeCloneStatus(status.Clones, h.Rule.ClonePath, blueprint, osName)
+			// Add new entry
+			status.Clones = append(status.Clones, CloneStatus{
+				URL:       h.Rule.CloneURL,
+				Path:      h.Rule.ClonePath,
+				SHA:       cloneSHA,
+				ClonedAt:  time.Now().Format(time.RFC3339),
+				Blueprint: blueprint,
+				OS:        osName,
+			})
+		}
+	} else if h.Rule.Action == "uninstall" && h.Rule.Tool == "git" {
+		// Check if clone was removed by checking if directory doesn't exist
+		expandedPath := expandPath(h.Rule.ClonePath)
+		if _, err := os.Stat(expandedPath); os.IsNotExist(err) {
+			// Directory has been removed, update status
+			status.Clones = removeCloneStatus(status.Clones, h.Rule.ClonePath, blueprint, osName)
+		}
+	}
+
+	return nil
 }
 
 // expandPath expands ~ to home directory

@@ -140,3 +140,11 @@ func escapeForSed(s string) string {
 	)
 	return replacer.Replace(s)
 }
+
+// UpdateStatus updates the status after adding or removing a known host
+// Note: known_hosts operations don't need to update status.json (they're handled by the OS)
+func (h *KnownHostsHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
+	// No status update needed for known_hosts operations
+	// The known_hosts file is managed by the system
+	return nil
+}

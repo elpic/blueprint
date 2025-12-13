@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
@@ -264,3 +265,59 @@ func (h *AsdfHandler) uninstallAsdfLinux() error {
 
 	return nil
 }
+
+// UpdateStatus updates the status after installing or uninstalling asdf
+func (h *AsdfHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
+	// Normalize blueprint path for consistent storage and comparison
+	blueprint = normalizePath(blueprint)
+
+	if h.Rule.Action == "asdf" {
+		// Check if asdf was executed successfully
+		commandExecuted := false
+		var asdfSHA string
+		for _, record := range records {
+			if record.Status == "success" && record.Command == "asdf-init" {
+				commandExecuted = true
+				// Extract SHA from output using regex
+				asdfSHA = extractSHAFromOutput(record.Output)
+				break
+			}
+		}
+
+		if commandExecuted {
+			// Use "~/.asdf" as the path identifier for status tracking
+			asdfPath := "~/.asdf"
+			// Remove existing asdf entry if present
+			status.Clones = removeCloneStatus(status.Clones, asdfPath, blueprint, osName)
+			// Add new entry
+			status.Clones = append(status.Clones, CloneStatus{
+				URL:       "https://github.com/asdf-vm/asdf.git",
+				Path:      asdfPath,
+				SHA:       asdfSHA,
+				ClonedAt:  time.Now().Format(time.RFC3339),
+				Blueprint: blueprint,
+				OS:        osName,
+			})
+		}
+	} else if h.Rule.Action == "uninstall" && h.Rule.Tool == "asdf-vm" {
+		// Check if asdf was uninstalled successfully
+		if succeededAsdfUninstall(records) {
+			// Remove asdf from status
+			asdfPath := "~/.asdf"
+			status.Clones = removeCloneStatus(status.Clones, asdfPath, blueprint, osName)
+		}
+	}
+
+	return nil
+}
+
+// succeededAsdfUninstall checks if asdf uninstall was successful
+func succeededAsdfUninstall(records []ExecutionRecord) bool {
+	for _, record := range records {
+		if record.Status == "success" && record.Command == "asdf-uninstall" {
+			return true
+		}
+	}
+	return false
+}
+
