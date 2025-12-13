@@ -37,6 +37,10 @@ type Rule struct {
 	// KnownHosts-specific fields
 	KnownHosts    string // SSH host to add to known_hosts (hostname or IP)
 	KnownHostsKey string // Key type for ssh-keyscan (ed25519, ecdsa, rsa, etc.) - optional
+
+	// Mkdir-specific fields
+	Mkdir      string // Directory path to create
+	MkdirPerms string // Octal permissions (e.g., "755", "700") - optional
 }
 
 // Parse parses content without include support
@@ -121,6 +125,12 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 		} else if strings.HasPrefix(line, "known_hosts ") {
 			// Parse format: known_hosts <host> [id: <id>] [after: <deps>] on: [<platforms>]
 			rule := parseKnownHostsRule(line)
+			if rule != nil {
+				rules = append(rules, *rule)
+			}
+		} else if strings.HasPrefix(line, "mkdir ") {
+			// Parse format: mkdir <path> [permissions: <octal>] [id: <id>] [after: <deps>] on: [<platforms>]
+			rule := parseMkdirRule(line)
 			if rule != nil {
 				rules = append(rules, *rule)
 			}
@@ -701,6 +711,112 @@ func parseKnownHostsRule(line string) *Rule {
 		OSList:        osList,
 		After:         dependencies,
 		Tool:          "known_hosts",
+	}
+}
+
+func parseMkdirRule(line string) *Rule {
+	// Remove "mkdir " prefix
+	line = strings.TrimPrefix(line, "mkdir ")
+
+	// Split by "on:" to get OS list (on: is optional)
+	parts := strings.Split(line, "on:")
+	var osListStr string
+	var rulePart string
+
+	if len(parts) == 2 {
+		// "on:" clause is present
+		osListStr = strings.TrimSpace(parts[1])
+		rulePart = strings.TrimSpace(parts[0])
+	} else if len(parts) == 1 {
+		// No "on:" clause - rule applies to all systems
+		rulePart = strings.TrimSpace(parts[0])
+		osListStr = ""
+	} else {
+		return nil
+	}
+
+	// Parse OS list [linux, mac, windows]
+	var osList []string
+	if osListStr != "" {
+		osListStr = strings.Trim(osListStr, "[]")
+		osList = strings.Split(osListStr, ",")
+		for i := range osList {
+			osList[i] = strings.TrimSpace(osList[i])
+		}
+	}
+
+	// Parse rule part: extract path, permissions:, id:, and after: clauses
+	var path string
+	var permissions string
+	var id string
+	var dependencies []string
+
+	// Extract path (first token)
+	fields := strings.Fields(rulePart)
+	if len(fields) == 0 {
+		return nil
+	}
+	path = fields[0]
+	rulePart = strings.Join(fields[1:], " ")
+
+	// Extract permissions: value
+	if strings.Contains(rulePart, "permissions:") {
+		permParts := strings.Split(rulePart, "permissions:")
+		if len(permParts) >= 2 {
+			permValue := strings.TrimSpace(permParts[1])
+			// Get the permissions (first word after permissions:)
+			permFields := strings.Fields(permValue)
+			if len(permFields) > 0 {
+				permissions = permFields[0]
+				// Reconstruct rulePart without the permissions: part
+				rulePart = permParts[0] + " " + strings.Join(permFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract id: value
+	if strings.Contains(rulePart, "id:") {
+		idParts := strings.Split(rulePart, "id:")
+		if len(idParts) >= 2 {
+			idValue := strings.TrimSpace(idParts[1])
+			// Get the ID (first word after id:)
+			idFields := strings.Fields(idValue)
+			if len(idFields) > 0 {
+				id = idFields[0]
+				// Reconstruct rulePart without the id: part
+				rulePart = idParts[0] + " " + strings.Join(idFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract after: value
+	if strings.Contains(rulePart, "after:") {
+		afterParts := strings.Split(rulePart, "after:")
+		if len(afterParts) >= 2 {
+			afterValue := strings.TrimSpace(afterParts[1])
+			// Parse comma-separated dependencies
+			deps := strings.Split(afterValue, ",")
+			for _, dep := range deps {
+				dep = strings.TrimSpace(dep)
+				if dep != "" {
+					dependencies = append(dependencies, dep)
+				}
+			}
+		}
+	}
+
+	if path == "" {
+		return nil
+	}
+
+	return &Rule{
+		ID:         id,
+		Action:     "mkdir",
+		Mkdir:      path,
+		MkdirPerms: permissions, // Will be empty if not specified
+		OSList:     osList,
+		After:      dependencies,
+		Tool:       "mkdir",
 	}
 }
 

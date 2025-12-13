@@ -1,0 +1,195 @@
+package handlers
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"os/user"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/elpic/blueprint/internal/parser"
+)
+
+// MkdirHandler handles directory creation with optional permissions
+type MkdirHandler struct {
+	BaseHandler
+}
+
+// NewMkdirHandler creates a new mkdir handler
+func NewMkdirHandler(rule parser.Rule, basePath string) *MkdirHandler {
+	return &MkdirHandler{
+		BaseHandler: BaseHandler{
+			Rule:     rule,
+			BasePath: basePath,
+		},
+	}
+}
+
+// Up creates the directory with optional permissions
+func (h *MkdirHandler) Up() (string, error) {
+	// Expand path (handle ~)
+	path := h.Rule.Mkdir
+	path = mkdirExpandPath(path)
+
+	// Validate permissions if specified
+	if h.Rule.MkdirPerms != "" {
+		if !mkdirIsValidOctalPermissions(h.Rule.MkdirPerms) {
+			return "", fmt.Errorf("invalid permissions '%s': must be valid octal (0-777)", h.Rule.MkdirPerms)
+		}
+	}
+
+	// Create directory with mkdir -p
+	mkdirCmd := fmt.Sprintf("mkdir -p %s", mkdirEscapePath(path))
+	cmd := exec.Command("sh", "-c", mkdirCmd)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to create directory %s: %s", path, strings.TrimSpace(string(output)))
+	}
+
+	// Apply permissions if specified
+	if h.Rule.MkdirPerms != "" {
+		chmodCmd := fmt.Sprintf("chmod %s %s", h.Rule.MkdirPerms, mkdirEscapePath(path))
+		cmd := exec.Command("sh", "-c", chmodCmd)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("failed to set permissions on %s: %s", path, strings.TrimSpace(string(output)))
+		}
+	}
+
+	// Return success message
+	msg := fmt.Sprintf("Created directory %s", path)
+	if h.Rule.MkdirPerms != "" {
+		msg += fmt.Sprintf(" with permissions %s", h.Rule.MkdirPerms)
+	}
+	return msg, nil
+}
+
+// Down removes the directory
+func (h *MkdirHandler) Down() (string, error) {
+	// Expand path (handle ~)
+	path := h.Rule.Mkdir
+	path = mkdirExpandPath(path)
+
+	// Check if directory exists
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return fmt.Sprintf("Directory %s does not exist", path), nil
+	}
+
+	// Remove directory recursively
+	removeCmd := fmt.Sprintf("rm -rf %s", mkdirEscapePath(path))
+	cmd := exec.Command("sh", "-c", removeCmd)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to remove directory %s: %s", path, strings.TrimSpace(string(output)))
+	}
+
+	return fmt.Sprintf("Removed directory %s", path), nil
+}
+
+// UpdateStatus updates the blueprint status after executing mkdir or uninstall-mkdir
+func (h *MkdirHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
+	// Normalize blueprint path for comparison
+	blueprint = normalizePath(blueprint)
+
+	if h.Rule.Action == "mkdir" {
+		// Check if mkdir was executed successfully
+		mkdirCmd := fmt.Sprintf("mkdir -p %s", h.Rule.Mkdir)
+		mkdirExecuted := false
+		for _, record := range records {
+			if record.Status == "success" {
+				if record.Command == mkdirCmd || strings.HasPrefix(record.Command, mkdirCmd+" (chmod ") {
+					mkdirExecuted = true
+					break
+				}
+			}
+		}
+
+		if mkdirExecuted {
+			// Remove existing entry if present
+			status.Mkdirs = removeMkdirStatus(status.Mkdirs, h.Rule.Mkdir, blueprint, osName)
+			// Add new entry
+			status.Mkdirs = append(status.Mkdirs, MkdirStatus{
+				Path:      h.Rule.Mkdir,
+				CreatedAt: time.Now().Format(time.RFC3339),
+				Blueprint: blueprint,
+				OS:        osName,
+			})
+		}
+	} else if h.Rule.Action == "uninstall" && h.Rule.Tool == "mkdir" {
+		// Check if mkdir was uninstalled successfully by checking if the directory no longer exists
+		expandedPath := h.Rule.Mkdir
+		if strings.HasPrefix(expandedPath, "~") {
+			homeDir, err := os.UserHomeDir()
+			if err == nil {
+				expandedPath = filepath.Join(homeDir, expandedPath[1:])
+			}
+		}
+
+		// If directory doesn't exist, remove from status
+		if _, err := os.Stat(expandedPath); os.IsNotExist(err) {
+			status.Mkdirs = removeMkdirStatus(status.Mkdirs, h.Rule.Mkdir, blueprint, osName)
+		}
+	}
+
+	return nil
+}
+
+// mkdirExpandPath expands ~ to home directory
+func mkdirExpandPath(path string) string {
+	if strings.HasPrefix(path, "~") {
+		usr, err := user.Current()
+		if err != nil {
+			return path
+		}
+		return filepath.Join(usr.HomeDir, path[1:])
+	}
+	return path
+}
+
+// mkdirEscapePath escapes special characters for shell
+func mkdirEscapePath(path string) string {
+	// If path contains spaces or special characters, quote it
+	if strings.ContainsAny(path, " \t\"'$`\\") {
+		// Use single quotes but escape any single quotes in the path
+		path = strings.ReplaceAll(path, "'", "'\\''")
+		return fmt.Sprintf("'%s'", path)
+	}
+	return path
+}
+
+// mkdirIsValidOctalPermissions validates that the string is valid octal (0-777)
+func mkdirIsValidOctalPermissions(perms string) bool {
+	// Check if it matches octal pattern (0-7 digits only)
+	matched, err := regexp.MatchString(`^[0-7]{1,3}$`, perms)
+	if err != nil || !matched {
+		return false
+	}
+
+	// Parse as octal and check range
+	var octal int
+	_, err = fmt.Sscanf(perms, "%o", &octal)
+	if err != nil {
+		return false
+	}
+
+	// Valid range is 0 to 777 (octal)
+	return octal >= 0 && octal <= 0777
+}
+
+// removeMkdirStatus removes a mkdir from the status mkdirs list
+func removeMkdirStatus(mkdirs []MkdirStatus, path string, blueprint string, osName string) []MkdirStatus {
+	var result []MkdirStatus
+	// Normalize blueprint for comparison to handle path variations like /tmp vs /private/tmp
+	normalizedBlueprint := normalizePath(blueprint)
+	for _, mkdir := range mkdirs {
+		// Also normalize the stored blueprint for comparison
+		normalizedStoredBlueprint := normalizePath(mkdir.Blueprint)
+		if !(mkdir.Path == path && normalizedStoredBlueprint == normalizedBlueprint && mkdir.OS == osName) {
+			result = append(result, mkdir)
+		}
+	}
+	return result
+}

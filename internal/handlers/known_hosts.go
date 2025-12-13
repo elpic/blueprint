@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/elpic/blueprint/internal/parser"
 )
@@ -139,4 +140,49 @@ func escapeForSed(s string) string {
 		"\\", "\\\\",
 	)
 	return replacer.Replace(s)
+}
+
+// UpdateStatus updates the status after adding or removing a known host
+func (h *KnownHostsHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
+	// Normalize blueprint path for consistent storage and comparison
+	blueprint = normalizePath(blueprint)
+
+	if h.Rule.Action == "known_hosts" {
+		// Check if this rule's command was executed successfully
+		// Look for a record indicating success
+		commandExecuted := false
+		var keyType string
+		for _, record := range records {
+			if record.Status == "success" && strings.Contains(record.Command, "known_hosts") && strings.Contains(record.Command, h.Rule.KnownHosts) {
+				commandExecuted = true
+				// Extract key type from the output
+				if strings.Contains(record.Output, "ed25519") {
+					keyType = "ed25519"
+				} else if strings.Contains(record.Output, "ecdsa") {
+					keyType = "ecdsa"
+				} else if strings.Contains(record.Output, "rsa") {
+					keyType = "rsa"
+				}
+				break
+			}
+		}
+
+		if commandExecuted {
+			// Remove existing entry if present
+			status.KnownHosts = removeKnownHostsStatus(status.KnownHosts, h.Rule.KnownHosts, blueprint, osName)
+			// Add new entry
+			status.KnownHosts = append(status.KnownHosts, KnownHostsStatus{
+				Host:      h.Rule.KnownHosts,
+				KeyType:   keyType,
+				AddedAt:   time.Now().Format(time.RFC3339),
+				Blueprint: blueprint,
+				OS:        osName,
+			})
+		}
+	} else if h.Rule.Action == "uninstall" && h.Rule.Tool == "known_hosts" {
+		// Remove known host from status if uninstall was successful
+		status.KnownHosts = removeKnownHostsStatus(status.KnownHosts, h.Rule.KnownHosts, blueprint, osName)
+	}
+
+	return nil
 }

@@ -69,18 +69,8 @@ func PrintExecutionHeader(isApplyMode bool, currentOS string, blueprintFile stri
 		fmt.Println(Header.Render("═══ [APPLY MODE] ═══") + "\n")
 		fmt.Printf("OS: %s\n", FormatHighlight(currentOS))
 		var executionInfo string
-		if numAutoUninstall > 0 && numCleanups > 0 {
-			executionInfo = fmt.Sprintf("Executing %s rules + %s auto-uninstall + %s cleanups from %s",
-				FormatHighlight(fmt.Sprint(numRules)),
-				FormatHighlight(fmt.Sprint(numAutoUninstall)),
-				FormatHighlight(fmt.Sprint(numCleanups)),
-				FormatHighlight(blueprintFile))
-		} else if numAutoUninstall > 0 {
-			executionInfo = fmt.Sprintf("Executing %s rules + %s auto-uninstall from %s",
-				FormatHighlight(fmt.Sprint(numRules)),
-				FormatHighlight(fmt.Sprint(numAutoUninstall)),
-				FormatHighlight(blueprintFile))
-		} else if numCleanups > 0 {
+		// numCleanups already includes uninstall rules, so use it directly
+		if numCleanups > 0 {
 			executionInfo = fmt.Sprintf("Executing %s rules + %s cleanups from %s",
 				FormatHighlight(fmt.Sprint(numRules)),
 				FormatHighlight(fmt.Sprint(numCleanups)),
@@ -96,9 +86,7 @@ func PrintExecutionHeader(isApplyMode bool, currentOS string, blueprintFile stri
 		fmt.Printf("Blueprint: %s\n", FormatHighlight(blueprintFile))
 		fmt.Printf("Current OS: %s\n", FormatHighlight(currentOS))
 		fmt.Printf("Applicable Rules: %s\n", FormatHighlight(fmt.Sprint(numRules)))
-		if numAutoUninstall > 0 {
-			fmt.Printf("Auto-uninstall Rules: %s\n", FormatHighlight(fmt.Sprint(numAutoUninstall)))
-		}
+		// numCleanups already includes uninstall rules, so use it directly
 		if numCleanups > 0 {
 			fmt.Printf("Cleanups: %s\n", FormatHighlight(fmt.Sprint(numCleanups)))
 		}
