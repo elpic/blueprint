@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -90,6 +91,16 @@ var passwordCache = make(map[string]string)
 func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 	var setupPath string
 	var err error
+	var runNumber int
+
+	// Get next run number (only for non-dry runs)
+	if !dry {
+		runNumber, err = getNextRunNumber()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to get run number: %v\n", err)
+			runNumber = 0 // Disable history saving if we can't get run number
+		}
+	}
 
 	// Check if input is a git URL
 	if gitpkg.IsGitURL(file) {
@@ -190,7 +201,7 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 			return
 		}
 
-		records := executeRules(allRules, file, currentOS, basePath)
+		records := executeRules(allRules, file, currentOS, basePath, runNumber)
 		if err := saveHistory(records); err != nil {
 			fmt.Printf("Warning: Failed to save history: %v\n", err)
 		}
@@ -203,6 +214,16 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 func Run(file string, dry bool) {
 	var setupPath string
 	var err error
+	var runNumber int
+
+	// Get next run number (only for non-dry runs)
+	if !dry {
+		runNumber, err = getNextRunNumber()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to get run number: %v\n", err)
+			runNumber = 0 // Disable history saving if we can't get run number
+		}
+	}
 
 	// Check if input is a git URL
 	if gitpkg.IsGitURL(file) {
@@ -285,7 +306,7 @@ func Run(file string, dry bool) {
 			return
 		}
 
-		records := executeRules(allRules, file, currentOS, basePath)
+		records := executeRules(allRules, file, currentOS, basePath, runNumber)
 		if err := saveHistory(records); err != nil {
 			fmt.Printf("Warning: Failed to save history: %v\n", err)
 		}
@@ -576,7 +597,7 @@ func executeCommand(cmdStr string) (string, error) {
 
 // executeRulesWithHandlers executes rules using the handler pattern
 // This is the refactored version that uses the handlers package
-func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName string, basePath string) []ExecutionRecord {
+func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName string, basePath string, runNumber int) []ExecutionRecord {
 	var records []ExecutionRecord
 
 	// Set up the handler package with our executeCommand function
@@ -745,14 +766,21 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 		}
 
 		records = append(records, record)
+
+		// Save output to history (only if runNumber > 0)
+		if runNumber > 0 {
+			if err := saveRuleOutput(runNumber, i, record.Output, record.Error); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to save rule output to history: %v\n", err)
+			}
+		}
 	}
 
 	return records
 }
 
-func executeRules(rules []parser.Rule, blueprint string, osName string, basePath string) []ExecutionRecord {
+func executeRules(rules []parser.Rule, blueprint string, osName string, basePath string, runNumber int) []ExecutionRecord {
 	// Use the refactored version with handlers
-	return executeRulesWithHandlers(rules, blueprint, osName, basePath)
+	return executeRulesWithHandlers(rules, blueprint, osName, basePath, runNumber)
 }
 
 // getHistoryPath returns the path to the history file in ~/.blueprint/
@@ -2431,3 +2459,203 @@ func PrintStatus() {
 	fmt.Printf("\n")
 }
 
+// getBlueprintDir returns the path to the .blueprint directory
+func getBlueprintDir() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	blueprintDir := filepath.Join(homeDir, ".blueprint")
+
+	// Create directory if it doesn't exist
+	if err := os.MkdirAll(blueprintDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create .blueprint directory: %w", err)
+	}
+
+	return blueprintDir, nil
+}
+
+// getNextRunNumber returns the next run number and increments the counter
+func getNextRunNumber() (int, error) {
+	blueprintDir, err := getBlueprintDir()
+	if err != nil {
+		return 0, err
+	}
+
+	runNumberFile := filepath.Join(blueprintDir, "run_number")
+
+	// Read current run number
+	var runNumber int
+	if data, err := os.ReadFile(runNumberFile); err == nil {
+		fmt.Sscanf(string(data), "%d", &runNumber)
+	}
+
+	// Increment for next run
+	runNumber++
+
+	// Write back
+	if err := os.WriteFile(runNumberFile, []byte(fmt.Sprintf("%d", runNumber)), 0644); err != nil {
+		return 0, err
+	}
+
+	return runNumber, nil
+}
+
+// saveRuleOutput saves the output of a rule execution to history
+func saveRuleOutput(runNumber, ruleIndex int, output, stderr string) error {
+	blueprintDir, err := getBlueprintDir()
+	if err != nil {
+		return err
+	}
+
+	historyDir := filepath.Join(blueprintDir, "history", fmt.Sprintf("%d", runNumber))
+	if err := os.MkdirAll(historyDir, 0755); err != nil {
+		return err
+	}
+
+	outputFile := filepath.Join(historyDir, fmt.Sprintf("%d.output", ruleIndex))
+	content := fmt.Sprintf("=== STDOUT ===\n%s\n\n=== STDERR ===\n%s\n", output, stderr)
+
+	return os.WriteFile(outputFile, []byte(content), 0644)
+}
+
+// getLatestRunNumber returns the latest run number from the history directory
+func getLatestRunNumber() (int, error) {
+	blueprintDir, err := getBlueprintDir()
+	if err != nil {
+		return 0, err
+	}
+
+	historyBaseDir := filepath.Join(blueprintDir, "history")
+	entries, err := os.ReadDir(historyBaseDir)
+	if err != nil {
+		return 0, fmt.Errorf("no history found")
+	}
+
+	var latestRun int
+	for _, entry := range entries {
+		if entry.IsDir() {
+			runNum := 0
+			fmt.Sscanf(entry.Name(), "%d", &runNum)
+			if runNum > latestRun {
+				latestRun = runNum
+			}
+		}
+	}
+
+	if latestRun == 0 {
+		return 0, fmt.Errorf("no history found")
+	}
+
+	return latestRun, nil
+}
+
+// PrintHistory displays the history of a specific run
+// If runNumber is 0, displays the latest run
+// If stepNumber is >= 0, displays only that specific step
+func PrintHistory(runNumber int, stepNumber int) {
+	blueprintDir, err := getBlueprintDir()
+	if err != nil {
+		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Failed to get blueprint directory: %v", err)))
+		return
+	}
+
+	// If runNumber is 0, get the latest run
+	if runNumber == 0 {
+		var err error
+		runNumber, err = getLatestRunNumber()
+		if err != nil {
+			fmt.Printf("%s\n", ui.FormatError("No history found"))
+			return
+		}
+	}
+
+	historyDir := filepath.Join(blueprintDir, "history", fmt.Sprintf("%d", runNumber))
+
+	// Check if history directory exists
+	if _, err := os.Stat(historyDir); os.IsNotExist(err) {
+		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("No history found for run %d", runNumber)))
+		return
+	}
+
+	fmt.Printf("\n%s\n", ui.FormatHighlight(fmt.Sprintf("=== RUN %d HISTORY ===", runNumber)))
+
+	// List all output files
+	entries, err := os.ReadDir(historyDir)
+	if err != nil {
+		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Failed to read history: %v", err)))
+		return
+	}
+
+	if len(entries) == 0 {
+		fmt.Printf("%s\n", ui.FormatInfo("No rule outputs recorded for this run"))
+		return
+	}
+
+	// Sort entries by filename (rule number)
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Name() < entries[j].Name()
+	})
+
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".output" {
+			ruleNum := strings.TrimSuffix(entry.Name(), ".output")
+
+			// If stepNumber is specified, only show that step
+			if stepNumber >= 0 {
+				ruleNumInt := 0
+				fmt.Sscanf(ruleNum, "%d", &ruleNumInt)
+				if ruleNumInt != stepNumber {
+					continue
+				}
+			}
+
+			outputPath := filepath.Join(historyDir, entry.Name())
+
+			content, err := os.ReadFile(outputPath)
+			if err != nil {
+				continue
+			}
+
+			fmt.Printf("\n%s\n", ui.FormatHighlight(fmt.Sprintf("Rule #%s:", ruleNum)))
+
+			// Parse stdout and stderr sections
+			contentStr := string(content)
+			parts := strings.Split(contentStr, "\n=== STDERR ===\n")
+
+			stdout := ""
+			stderr := ""
+
+			if len(parts) >= 1 {
+				stdout = strings.TrimPrefix(parts[0], "=== STDOUT ===\n")
+				stdout = strings.TrimSpace(stdout)
+			}
+
+			if len(parts) >= 2 {
+				stderr = strings.TrimSpace(parts[1])
+			}
+
+			// Show stdout if not empty (with separator line instead of header)
+			if stdout != "" {
+				fmt.Printf("%s\n%s\n", "───────────────", stdout)
+			}
+
+			// Show stderr if not empty (in red)
+			if stderr != "" {
+				// Color each line of stderr red
+				stderrLines := strings.Split(stderr, "\n")
+				for _, line := range stderrLines {
+					fmt.Printf("%s\n", ui.FormatError(line))
+				}
+			}
+
+			// Show message if both are empty
+			if stdout == "" && stderr == "" {
+				fmt.Printf("%s\n", ui.FormatInfo("(no output)"))
+			}
+		}
+	}
+
+	fmt.Printf("\n")
+}
