@@ -57,14 +57,14 @@ test FLAGS="":
 # Run linter (golangci-lint)
 lint:
   @echo "Running linter..."
-  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin latest
+  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
   $(go env GOPATH)/bin/golangci-lint run ./... --timeout=5m
   @echo "✓ Lint checks passed"
 
 # Run security scanner (gosec)
 security:
   @echo "Running security scan..."
-  curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s -- -b $(go env GOPATH)/bin latest
+  curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
   $(go env GOPATH)/bin/gosec ./... || true
   @echo "✓ Security scan completed"
 
