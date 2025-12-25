@@ -1,10 +1,6 @@
 name: integration
 
 on:
-  push:
-    branches:
-      - main
-      - 'feat/**'
   pull_request:
     branches:
       - main
@@ -26,9 +22,11 @@ jobs:
           go-version: '1.21'
           cache: true
 
-      - name: Run unit tests
-        run: |
-          go test -v -coverprofile=coverage.out ./...
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Run unit tests with coverage
+        run: just test --coverage -v
 
       - name: Generate coverage report
         run: |
@@ -51,7 +49,6 @@ jobs:
           echo "Coverage: ${coverage}%"
 
       - name: Compare coverage with main branch (PR only)
-        if: github.event_name == 'pull_request'
         run: |
           # Fetch main branch coverage
           git fetch origin main:main
@@ -61,8 +58,8 @@ jobs:
 
           # Checkout main and get coverage
           git checkout main
-          go test -v -coverprofile=coverage.main.out ./... || true
-          main_coverage=$(go tool cover -func coverage.main.out | grep total | awk '{print $3}' | sed 's/%//')
+          just test --coverage -v || true
+          main_coverage=$(go tool cover -func coverage.out | grep total | awk '{print $3}' | sed 's/%//')
 
           # Restore changes
           git checkout -
@@ -105,13 +102,11 @@ jobs:
           go-version: '1.21'
           cache: true
 
-      - name: Install golangci-lint
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin latest
+      - name: Install just
+        uses: extractions/setup-just@v2
 
       - name: Run linter
-        run: |
-          $(go env GOPATH)/bin/golangci-lint run ./... --timeout=5m
+        run: just lint
 
   build:
     name: Build Binary
@@ -127,15 +122,17 @@ jobs:
           go-version: '1.21'
           cache: true
 
+      - name: Install just
+        uses: extractions/setup-just@v2
+
       - name: Build binary
-        run: |
-          go build -v -o blueprint ./cmd/blueprint
+        run: just build
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: blueprint-binary
-          path: blueprint
+          name: blueprint-binaries
+          path: blueprint-*
 
   integration:
     name: Integration Tests
@@ -152,23 +149,18 @@ jobs:
           go-version: '1.21'
           cache: true
 
-      - name: Download blueprint binary
+      - name: Download blueprint binaries
         uses: actions/download-artifact@v4
         with:
-          name: blueprint-binary
+          name: blueprint-binaries
 
-      - name: Make binary executable
+      - name: Make binaries executable
         run: |
-          chmod +x blueprint
+          chmod +x blueprint-*
 
       - name: Run integration tests
         run: |
           go test -v -race -run Integration ./...
-
-      - name: Verify blueprint functionality
-        run: |
-          ./blueprint --version || true
-          ./blueprint plan --help || true
 
   security:
     name: Security Checks
@@ -184,10 +176,8 @@ jobs:
           go-version: '1.21'
           cache: true
 
-      - name: Install gosec
-        run: |
-          curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s -- -b $(go env GOPATH)/bin latest
+      - name: Install just
+        uses: extractions/setup-just@v2
 
       - name: Run security scan
-        run: |
-          $(go env GOPATH)/bin/gosec ./... || true
+        run: just security

@@ -44,7 +44,7 @@ test FEATURE="" FLAGS="":
     VERBOSE="-v"
   fi
   if [[ "{{FLAGS}}" == *"--coverage"* ]]; then
-    COVERAGE="-cover"
+    COVERAGE="-coverprofile=coverage.out"
   fi
 
   if [[ -n "$COVERAGE" ]]; then
@@ -52,6 +52,24 @@ test FEATURE="" FLAGS="":
   else
     go test $VERBOSE ./...
   fi
+
+# Run linter (golangci-lint)
+lint:
+  @echo "Running linter..."
+  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin latest
+  $(go env GOPATH)/bin/golangci-lint run ./... --timeout=5m
+  @echo "✓ Lint checks passed"
+
+# Run security scanner (gosec)
+security:
+  @echo "Running security scan..."
+  curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s -- -b $(go env GOPATH)/bin latest
+  $(go env GOPATH)/bin/gosec ./... || true
+  @echo "✓ Security scan completed"
+
+# Run all checks (test, lint, security)
+check: test lint security
+  @echo "✓ All checks passed"
 
 # Clean build artifacts
 clean:
@@ -72,10 +90,13 @@ help:
   @echo ""
   @echo "TEST:"
   @echo "  just test           - Run all tests"
+  @echo "  just test -v        - Run all tests with verbose output"
+  @echo "  just test --coverage - Run all tests with coverage report"
   @echo ""
-  @echo "TEST FLAGS (can be combined):"
-  @echo "  just test -v                    - Run all tests with verbose output"
-  @echo "  just test --coverage            - Run all tests with coverage report"
+  @echo "QUALITY CHECKS:"
+  @echo "  just lint           - Run golangci-lint"
+  @echo "  just security       - Run security scan (gosec)"
+  @echo "  just check          - Run all checks (test, lint, security)"
   @echo ""
   @echo "MAINTENANCE:"
   @echo "  just clean          - Remove all build artifacts"
