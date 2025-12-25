@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test known_hosts entry with key type specified
+known_hosts github.com key-type: ecdsa-sha2-nistp256

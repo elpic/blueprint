@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test basic SSH host known_hosts entry
+known_hosts github.com

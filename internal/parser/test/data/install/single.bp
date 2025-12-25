@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test single package installation
+install curl

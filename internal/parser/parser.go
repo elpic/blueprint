@@ -14,10 +14,9 @@ type Package struct {
 
 type Rule struct {
 	ID        string     // Unique identifier for this rule
-	Action    string     // "install", "uninstall", or "clone"
+	Action    string     // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "known_hosts", or "gpg-key"
 	Packages  []Package
 	OSList    []string
-	Tool      string
 	After     []string   // List of IDs or package names this rule depends on
 	Group     string
 
@@ -41,6 +40,11 @@ type Rule struct {
 	// Mkdir-specific fields
 	Mkdir      string // Directory path to create
 	MkdirPerms string // Octal permissions (e.g., "755", "700") - optional
+
+	// GPG Key-specific fields
+	GPGKeyURL    string // URL to the GPG key file
+	GPGKeyring   string // Name of the keyring (without path or .gpg extension)
+	GPGDebURL    string // Debian repository URL
 }
 
 // Parse parses content without include support
@@ -131,6 +135,12 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 		} else if strings.HasPrefix(line, "mkdir ") {
 			// Parse format: mkdir <path> [permissions: <octal>] [id: <id>] [after: <deps>] on: [<platforms>]
 			rule := parseMkdirRule(line)
+			if rule != nil {
+				rules = append(rules, *rule)
+			}
+		} else if strings.HasPrefix(line, "gpg-key ") {
+			// Parse format: gpg-key <url> keyring: <name> deb-url: <url> [id: <id>] [after: <deps>] on: [<platforms>]
+			rule := parseGPGKeyRule(line)
 			if rule != nil {
 				rules = append(rules, *rule)
 			}
@@ -242,7 +252,6 @@ func parseInstallRule(line string) *Rule {
 		Packages: pkgs,
 		OSList:   osList,
 		After:    dependencies,
-		Tool:     "package-manager",
 	}
 }
 
@@ -365,7 +374,6 @@ func parseCloneRule(line string) *Rule {
 		Branch:    branch,
 		OSList:    osList,
 		After:     dependencies,
-		Tool:      "git",
 	}
 }
 
@@ -463,7 +471,6 @@ func parseAsdfRule(line string) *Rule {
 		Action:       "asdf",
 		OSList:       osList,
 		After:        dependencies,
-		Tool:         "asdf-vm",
 		AsdfPackages: asdfPackages,
 	}
 }
@@ -604,7 +611,6 @@ func parseDecryptRule(line string) *Rule {
 		DecryptPasswordID: passwordID,
 		OSList:            osList,
 		After:             dependencies,
-		Tool:              "decrypt",
 	}
 }
 
@@ -710,7 +716,6 @@ func parseKnownHostsRule(line string) *Rule {
 		KnownHostsKey: keyType, // Will be empty if not specified
 		OSList:        osList,
 		After:         dependencies,
-		Tool:          "known_hosts",
 	}
 }
 
@@ -816,7 +821,130 @@ func parseMkdirRule(line string) *Rule {
 		MkdirPerms: permissions, // Will be empty if not specified
 		OSList:     osList,
 		After:      dependencies,
-		Tool:       "mkdir",
+	}
+}
+
+func parseGPGKeyRule(line string) *Rule {
+	// Remove "gpg-key " prefix
+	line = strings.TrimPrefix(line, "gpg-key ")
+
+	// Split by "on:" to get OS list (on: is optional)
+	parts := strings.Split(line, "on:")
+	var osListStr string
+	var rulePart string
+
+	if len(parts) == 2 {
+		// "on:" clause is present
+		osListStr = strings.TrimSpace(parts[1])
+		rulePart = strings.TrimSpace(parts[0])
+	} else if len(parts) == 1 {
+		// No "on:" clause - rule applies to all systems
+		rulePart = strings.TrimSpace(parts[0])
+		osListStr = ""
+	} else {
+		return nil
+	}
+
+	// Parse OS list [linux, mac, windows]
+	var osList []string
+	if osListStr != "" {
+		osListStr = strings.Trim(osListStr, "[]")
+		osList = strings.Split(osListStr, ",")
+		for i := range osList {
+			osList[i] = strings.TrimSpace(osList[i])
+		}
+	}
+
+	// Parse rule part: extract URL, keyring:, and deb-url:
+	var gpgKeyURL string
+	var keyring string
+	var debURL string
+	var id string
+	var dependencies []string
+
+	// Extract URL (first token)
+	fields := strings.Fields(rulePart)
+	if len(fields) == 0 {
+		return nil
+	}
+	gpgKeyURL = fields[0]
+	rulePart = strings.Join(fields[1:], " ")
+
+	// Extract keyring: value
+	if strings.Contains(rulePart, "keyring:") {
+		krParts := strings.Split(rulePart, "keyring:")
+		if len(krParts) >= 2 {
+			krValue := strings.TrimSpace(krParts[1])
+			// Get the keyring name (first word after keyring:)
+			krFields := strings.Fields(krValue)
+			if len(krFields) > 0 {
+				keyring = krFields[0]
+				// Reconstruct rulePart without the keyring: part
+				rulePart = krParts[0] + " " + strings.Join(krFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract deb-url: value
+	if strings.Contains(rulePart, "deb-url:") {
+		debParts := strings.Split(rulePart, "deb-url:")
+		if len(debParts) >= 2 {
+			debValue := strings.TrimSpace(debParts[1])
+			// Get the deb-url (we need to extract the quoted URL or single word)
+			// For now, let's handle it as a single URL up to the next space or end of string
+			debFields := strings.Fields(debValue)
+			if len(debFields) > 0 {
+				debURL = debFields[0]
+				// Reconstruct rulePart without the deb-url: part
+				rulePart = debParts[0] + " " + strings.Join(debFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract id: value
+	if strings.Contains(rulePart, "id:") {
+		idParts := strings.Split(rulePart, "id:")
+		if len(idParts) >= 2 {
+			idValue := strings.TrimSpace(idParts[1])
+			// Get the ID (first word after id:)
+			idFields := strings.Fields(idValue)
+			if len(idFields) > 0 {
+				id = idFields[0]
+				// Reconstruct rulePart without the id: part
+				rulePart = idParts[0] + " " + strings.Join(idFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract after: value
+	if strings.Contains(rulePart, "after:") {
+		afterParts := strings.Split(rulePart, "after:")
+		if len(afterParts) >= 2 {
+			afterValue := strings.TrimSpace(afterParts[1])
+			// Parse comma-separated dependencies
+			deps := strings.Split(afterValue, ",")
+			for _, dep := range deps {
+				dep = strings.TrimSpace(dep)
+				if dep != "" {
+					dependencies = append(dependencies, dep)
+				}
+			}
+		}
+	}
+
+	// Validate required fields
+	if gpgKeyURL == "" || keyring == "" || debURL == "" {
+		return nil
+	}
+
+	return &Rule{
+		ID:         id,
+		Action:     "gpg-key",
+		GPGKeyURL:  gpgKeyURL,
+		GPGKeyring: keyring,
+		GPGDebURL:  debURL,
+		OSList:     osList,
+		After:      dependencies,
 	}
 }
 

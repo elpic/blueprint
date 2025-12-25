@@ -16,7 +16,6 @@ import (
 	cryptopkg "github.com/elpic/blueprint/internal/crypto"
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
-	"github.com/elpic/blueprint/internal/logging"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
 	"golang.org/x/term"
@@ -76,7 +75,7 @@ type KnownHostsStatus struct {
 	OS        string `json:"os"`
 }
 
-// GPGKeyStatus tracks a GPG key and repository addition
+// GPGKeyStatus tracks an added GPG key and repository
 type GPGKeyStatus struct {
 	Keyring   string `json:"keyring"`
 	URL       string `json:"url"`
@@ -86,7 +85,7 @@ type GPGKeyStatus struct {
 	OS        string `json:"os"`
 }
 
-// Status represents the current state of installed packages, clones, decrypts, mkdirs, known_hosts, and gpg_keys
+// Status represents the current state of installed packages, clones, decrypts, mkdirs, known_hosts, and gpg keys
 type Status struct {
 	Packages   []PackageStatus    `json:"packages"`
 	Clones     []CloneStatus      `json:"clones"`
@@ -375,10 +374,66 @@ func displayRules(rules []parser.Rule) {
 			fmt.Printf("  ID: %s\n", ui.FormatDim(rule.ID))
 		}
 
-		// Display rule-specific information using handler
-		handler := handlerskg.NewHandler(rule, "", make(map[string]string))
-		if handler != nil {
-			handler.DisplayInfo()
+		// Display rule-specific information
+		if rule.Action == "clone" {
+			fmt.Printf("  URL: %s\n", ui.FormatInfo(rule.CloneURL))
+			fmt.Printf("  Path: %s\n", ui.FormatInfo(rule.ClonePath))
+			if rule.Branch != "" {
+				fmt.Printf("  Branch: %s\n", ui.FormatDim(rule.Branch))
+			}
+		} else if rule.Action == "asdf" {
+			if len(rule.AsdfPackages) > 0 {
+				fmt.Print("  Plugins: ")
+				for j, pkg := range rule.AsdfPackages {
+					if j > 0 {
+						fmt.Print(", ")
+					}
+					fmt.Print(ui.FormatInfo(pkg))
+				}
+				fmt.Println()
+			} else {
+				fmt.Printf("  Description: %s\n", ui.FormatInfo("Installs asdf version manager"))
+			}
+		} else if rule.Action == "uninstall" && rule.Tool == "asdf-vm" {
+			fmt.Printf("  Description: %s\n", ui.FormatError("Uninstalls asdf version manager"))
+		} else if rule.Action == "uninstall" && rule.Tool == "mkdir" {
+			fmt.Printf("  Path: %s\n", ui.FormatError(rule.Mkdir))
+			fmt.Printf("  Description: %s\n", ui.FormatError("Removes directory"))
+		} else if rule.Action == "uninstall" && rule.Tool == "known_hosts" {
+			fmt.Printf("  Host: %s\n", ui.FormatError(rule.KnownHosts))
+			fmt.Printf("  Description: %s\n", ui.FormatError("Removes SSH known host"))
+		} else if rule.Action == "decrypt" {
+			fmt.Printf("  File: %s\n", ui.FormatInfo(rule.DecryptFile))
+			fmt.Printf("  Path: %s\n", ui.FormatInfo(rule.DecryptPath))
+			if rule.Group != "" {
+				fmt.Printf("  Group: %s\n", ui.FormatDim(rule.Group))
+			}
+			if rule.DecryptPasswordID != "" {
+				fmt.Printf("  Password ID: %s\n", ui.FormatDim(rule.DecryptPasswordID))
+			}
+		} else if rule.Action == "known_hosts" {
+			fmt.Printf("  Host: %s\n", ui.FormatInfo(rule.KnownHosts))
+			if rule.KnownHostsKey != "" {
+				fmt.Printf("  Key Type: %s\n", ui.FormatDim(rule.KnownHostsKey))
+			} else {
+				fmt.Printf("  Key Type: %s\n", ui.FormatDim("auto-detect (ed25519, ecdsa, rsa)"))
+			}
+		} else if rule.Action == "mkdir" {
+			fmt.Printf("  Path: %s\n", ui.FormatInfo(rule.Mkdir))
+			if rule.MkdirPerms != "" {
+				fmt.Printf("  Permissions: %s\n", ui.FormatDim(rule.MkdirPerms))
+			}
+		} else {
+			if len(rule.Packages) > 0 {
+				fmt.Print("  Packages: ")
+				for j, pkg := range rule.Packages {
+					if j > 0 {
+						fmt.Print(", ")
+					}
+					fmt.Print(ui.FormatInfo(pkg.Name))
+				}
+				fmt.Println()
+			}
 		}
 
 		if len(rule.After) > 0 {
@@ -403,12 +458,37 @@ func displayRules(rules []parser.Rule) {
 			fmt.Println()
 		}
 
-		// Display command that will be executed - use handler's GetCommand method
-		if handler != nil {
-			cmd := handler.GetCommand()
-			if cmd != "" {
-				fmt.Printf("  Command: %s\n", ui.FormatDim(cmd))
+		if rule.Tool != "" {
+			fmt.Printf("  Tool: %s\n", ui.FormatDim(rule.Tool))
+		}
+
+		// Display command that will be executed (for install/uninstall only)
+		if rule.Action != "clone" && rule.Action != "asdf" && rule.Action != "uninstall" && rule.Action != "decrypt" && rule.Action != "known_hosts" && rule.Action != "mkdir" {
+			cmd := buildCommand(rule)
+			fmt.Printf("  Command: %s\n", ui.FormatDim(cmd))
+		} else if rule.Action == "uninstall" && rule.Tool == "asdf-vm" {
+			// For asdf uninstall, show what command will be executed
+			fmt.Printf("  Command: %s\n", ui.FormatDim("Remove ~/.asdf directory and clean shell configs"))
+		} else if rule.Action == "uninstall" && rule.Tool == "mkdir" {
+			// For mkdir uninstall, show what will be removed
+			fmt.Printf("  Command: %s\n", ui.FormatDim(fmt.Sprintf("rm -rf %s", rule.Mkdir)))
+		} else if rule.Action == "decrypt" {
+			// For decrypt, show what will be decrypted
+			fmt.Printf("  Command: %s\n", ui.FormatDim(fmt.Sprintf("decrypt %s to %s", rule.DecryptFile, rule.DecryptPath)))
+		} else if rule.Action == "known_hosts" {
+			// For known_hosts, show what will be added
+			if rule.KnownHostsKey != "" {
+				fmt.Printf("  Command: %s\n", ui.FormatDim(fmt.Sprintf("ssh-keyscan -t %s %s >> ~/.ssh/known_hosts", rule.KnownHostsKey, rule.KnownHosts)))
+			} else {
+				fmt.Printf("  Command: %s\n", ui.FormatDim(fmt.Sprintf("ssh-keyscan -t [ed25519|ecdsa|rsa] %s >> ~/.ssh/known_hosts", rule.KnownHosts)))
 			}
+		} else if rule.Action == "mkdir" {
+			// For mkdir, show the command that will be executed
+			cmd := fmt.Sprintf("mkdir -p %s", rule.Mkdir)
+			if rule.MkdirPerms != "" {
+				cmd += fmt.Sprintf(" && chmod %s %s", rule.MkdirPerms, rule.Mkdir)
+			}
+			fmt.Printf("  Command: %s\n", ui.FormatDim(cmd))
 		}
 		fmt.Println()
 	}
@@ -469,7 +549,6 @@ func needsSudo(command string) bool {
 
 	// Package managers that require sudo on Linux
 	// Both install and remove/uninstall commands need sudo
-	// Note: Handlers can implement the SudoAwareHandler interface to declare their own sudo requirements
 	sudoRequired := []string{
 		"apt", "apt-get", "aptitude",
 		"yum", "dnf",
@@ -484,14 +563,6 @@ func needsSudo(command string) bool {
 	cmdName := strings.Fields(command)[0]
 	for _, pm := range sudoRequired {
 		if cmdName == pm {
-			return true
-		}
-	}
-
-	// Check if this is a shell command that contains sudo
-	// (e.g., "sh -c 'sudo gpg ...'")
-	if cmdName == "sh" || cmdName == "bash" {
-		if strings.Contains(command, "sudo") {
 			return true
 		}
 	}
@@ -558,30 +629,36 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 		var err error
 		var actualCmd string
 
-		// Create appropriate handler based on rule action
+		// Create appropriate handler based on rule action using factory pattern
 		if rule.Action == "uninstall" {
-			// For uninstall, detect the resource type and display accordingly
-			ruleType := handlerskg.DetectRuleType(rule)
-			switch ruleType {
-			case "asdf":
+			// Special handling for uninstall - dispatch based on Tool field
+			switch rule.Tool {
+			case "asdf-vm":
 				fmt.Printf(" %s", ui.FormatError("asdf"))
 				actualCmd = "asdf-uninstall"
+				handler = handlerskg.NewAsdfHandler(rule, basePath)
+
 			case "mkdir":
 				fmt.Printf(" %s", ui.FormatError(rule.Mkdir))
 				actualCmd = fmt.Sprintf("rm -rf %s", rule.Mkdir)
-			case "clone":
+				handler = handlerskg.NewMkdirHandler(rule, basePath)
+
+			case "git":
 				fmt.Printf(" %s", ui.FormatError(rule.ClonePath))
 				actualCmd = "uninstall-clone"
+				handler = handlerskg.NewCloneHandler(rule, basePath)
+
 			case "decrypt":
 				fmt.Printf(" %s", ui.FormatError(rule.DecryptPath))
 				actualCmd = "uninstall-decrypt"
+				handler = handlerskg.NewDecryptHandler(rule, basePath, passwordCache)
+
 			case "known_hosts":
 				fmt.Printf(" %s", ui.FormatError(rule.KnownHosts))
 				actualCmd = "uninstall-known_hosts"
-			case "gpg-key":
-				fmt.Printf(" %s", ui.FormatError(rule.GPGKeyring))
-				actualCmd = "uninstall-gpg-key"
-			case "install":
+				handler = handlerskg.NewKnownHostsHandler(rule, basePath)
+
+			case "package-manager":
 				// For package uninstall
 				cmd := buildCommand(rule)
 				actualCmd = cmd
@@ -601,19 +678,21 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 				if packages != "" {
 					fmt.Printf(" %s", ui.FormatError(packages))
 				}
+
+				handler = handlerskg.NewInstallHandler(rule, basePath)
+
 			default:
-				fmt.Printf(" %s", ui.FormatError("unknown rule type"))
+				fmt.Printf(" %s", ui.FormatError("unknown uninstall tool: "+rule.Tool))
 				handler = nil
 			}
-
-			handler = handlerskg.NewHandler(rule, basePath, passwordCache)
 		} else {
-			// For other actions, create handler directly
-			handler = handlerskg.NewHandler(rule, basePath, passwordCache)
-		}
+			// Use factory pattern for all other actions
+			factory := handlerskg.GetHandlerFactory(rule.Action)
+			if factory != nil {
+				handler = factory(rule, basePath, passwordCache)
+			}
 
-		if handler != nil {
-		// Set action-specific UI formatting and command
+			// Set action-specific UI formatting and command
 			switch rule.Action {
 			case "clone":
 				fmt.Printf(" %s", ui.FormatInfo(rule.ClonePath))
@@ -632,10 +711,6 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 			case "known_hosts":
 				fmt.Printf(" %s", ui.FormatInfo(rule.KnownHosts))
 				actualCmd = fmt.Sprintf("known_hosts %s", rule.KnownHosts)
-
-			case "gpg-key":
-				fmt.Printf(" %s", ui.FormatInfo(rule.GPGKeyring))
-				actualCmd = fmt.Sprintf("gpg-key %s", rule.GPGKeyring)
 
 			case "mkdir":
 				fmt.Printf(" %s", ui.FormatInfo(rule.Mkdir))
@@ -672,11 +747,6 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 			}
 		}
 
-	// Get the actual command from the handler if not already set
-	if handler != nil && actualCmd == "" {
-		actualCmd = handler.GetCommand()
-	}
-
 		// Execute handler
 		if handler != nil {
 			// Call Down() for all uninstall actions
@@ -699,16 +769,10 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 		if err != nil {
 			fmt.Printf(" %s\n", ui.FormatError("Failed"))
 			fmt.Printf("       %s\n", ui.FormatError(err.Error()))
-		if logging.IsDebug() {
-			fmt.Printf("       %s: %s\n", ui.FormatDim("Command"), ui.FormatInfo(actualCmd))
-		}
 			record.Status = "error"
 			record.Error = err.Error()
 		} else {
 			fmt.Printf(" %s\n", ui.FormatSuccess("Done"))
-		if logging.IsDebug() {
-			fmt.Printf("       %s: %s\n", ui.FormatDim("Command"), ui.FormatInfo(actualCmd))
-		}
 			record.Status = "success"
 		}
 
@@ -839,11 +903,39 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 
 	// Process each rule by creating appropriate handler and calling UpdateStatus
 	for _, rule := range rules {
-		// Create handler for the rule (handles both install and uninstall)
-		handler := handlerskg.NewHandler(rule, "", passwordCache)
-		if handler == nil {
-			// Skip unknown actions
-			continue
+		var handler handlerskg.Handler
+
+		// Handle uninstall actions specially - dispatch based on Tool field
+		if rule.Action == "uninstall" {
+			switch rule.Tool {
+			case "asdf-vm":
+				handler = handlerskg.NewAsdfHandler(rule, "")
+			case "mkdir":
+				handler = handlerskg.NewMkdirHandler(rule, "")
+			case "git":
+				handler = handlerskg.NewCloneHandler(rule, "")
+			case "decrypt":
+				handler = handlerskg.NewDecryptHandler(rule, "", passwordCache)
+			case "known_hosts":
+				handler = handlerskg.NewKnownHostsHandler(rule, "")
+			case "gpg-key":
+				handler = handlerskg.NewGPGKeyHandler(rule, "")
+			case "package-manager":
+				handler = handlerskg.NewInstallHandler(rule, "")
+			default:
+				// Skip unknown uninstall tools
+				continue
+			}
+		} else {
+			// For non-uninstall actions, use factory pattern
+			factory := handlerskg.GetHandlerFactory(rule.Action)
+			if factory == nil {
+				// Skip unknown actions
+				continue
+			}
+
+			// Create handler using factory
+			handler = factory(rule, "", passwordCache)
 		}
 
 		// Let the handler update status
@@ -1017,14 +1109,14 @@ func convertHandlerKnownHosts(knownHosts []handlerskg.KnownHostsStatus) []KnownH
 
 func convertGPGKeys(gpgKeys []GPGKeyStatus) []handlerskg.GPGKeyStatus {
 	result := make([]handlerskg.GPGKeyStatus, len(gpgKeys))
-	for i, gpg := range gpgKeys {
+	for i, gk := range gpgKeys {
 		result[i] = handlerskg.GPGKeyStatus{
-			Keyring:   gpg.Keyring,
-			URL:       gpg.URL,
-			DebURL:    gpg.DebURL,
-			AddedAt:   gpg.AddedAt,
-			Blueprint: gpg.Blueprint,
-			OS:        gpg.OS,
+			Keyring:   gk.Keyring,
+			URL:       gk.URL,
+			DebURL:    gk.DebURL,
+			AddedAt:   gk.AddedAt,
+			Blueprint: gk.Blueprint,
+			OS:        gk.OS,
 		}
 	}
 	return result
@@ -1032,14 +1124,14 @@ func convertGPGKeys(gpgKeys []GPGKeyStatus) []handlerskg.GPGKeyStatus {
 
 func convertHandlerGPGKeys(gpgKeys []handlerskg.GPGKeyStatus) []GPGKeyStatus {
 	result := make([]GPGKeyStatus, len(gpgKeys))
-	for i, gpg := range gpgKeys {
+	for i, gk := range gpgKeys {
 		result[i] = GPGKeyStatus{
-			Keyring:   gpg.Keyring,
-			URL:       gpg.URL,
-			DebURL:    gpg.DebURL,
-			AddedAt:   gpg.AddedAt,
-			Blueprint: gpg.Blueprint,
-			OS:        gpg.OS,
+			Keyring:   gk.Keyring,
+			URL:       gk.URL,
+			DebURL:    gk.DebURL,
+			AddedAt:   gk.AddedAt,
+			Blueprint: gk.Blueprint,
+			OS:        gk.OS,
 		}
 	}
 	return result
@@ -1167,6 +1259,7 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 			Action:   "uninstall",
 			Packages: packagesToUninstall,
 			OSList:   []string{osName},
+			Tool:     "package-manager",
 		})
 	}
 
@@ -1179,6 +1272,7 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 					autoUninstallRules = append(autoUninstallRules, parser.Rule{
 						Action:   "uninstall",
 						OSList:   []string{osName},
+						Tool:     "asdf-vm",
 						ClonePath: clone.Path,
 					})
 				} else if clone.Path != "~/.asdf" && !currentClones[clone.Path] {
@@ -1188,6 +1282,7 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 						ClonePath: clone.Path,
 						CloneURL:  clone.URL,
 						OSList:    []string{osName},
+						Tool:      "git",
 					})
 				}
 			}
@@ -1202,6 +1297,7 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 					Action:      "uninstall",
 					DecryptPath: decrypt.DestPath,
 					OSList:      []string{osName},
+					Tool:        "decrypt",
 				})
 			}
 		}
@@ -1215,6 +1311,7 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 					Action: "uninstall",
 					Mkdir:  mkdir.Path,
 					OSList: []string{osName},
+					Tool:   "mkdir",
 				})
 			}
 		}
@@ -1228,6 +1325,7 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 					Action:     "uninstall",
 					KnownHosts: kh.Host,
 					OSList:     []string{osName},
+					Tool:       "known_hosts",
 				})
 			}
 		}
@@ -1235,12 +1333,15 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 
 	// Check GPG keys in status - if not in current rules, flag for uninstall
 	if status.GPGKeys != nil {
-		for _, gpg := range status.GPGKeys {
-			if gpg.Blueprint == normalizedBlueprintFile && gpg.OS == osName && !currentGPGKeys[gpg.Keyring] {
+		for _, gk := range status.GPGKeys {
+			if gk.Blueprint == normalizedBlueprintFile && gk.OS == osName && !currentGPGKeys[gk.Keyring] {
 				autoUninstallRules = append(autoUninstallRules, parser.Rule{
 					Action:     "uninstall",
-					GPGKeyring: gpg.Keyring,
+					GPGKeyring: gk.Keyring,
+					GPGKeyURL:  gk.URL,
+					GPGDebURL:  gk.DebURL,
 					OSList:     []string{osName},
+					Tool:       "gpg-key",
 				})
 			}
 		}
@@ -1462,6 +1563,59 @@ func extractSHAFromOutput(output string) string {
 	return ""
 }
 
+// extractPackagesFromCommand extracts package names from a command string
+func extractPackagesFromCommand(command string, action string) []string {
+	var packages []string
+
+	if action == "install" {
+		// Handle different install commands
+		if strings.Contains(command, "brew install") {
+			// Extract packages after "brew install"
+			parts := strings.Split(command, "brew install")
+			if len(parts) > 1 {
+				pkgStr := strings.TrimSpace(parts[1])
+				packages = strings.Fields(pkgStr)
+			}
+		} else if strings.Contains(command, "apt-get install") {
+			// Extract packages after "apt-get install -y"
+			// Remove sudo prefix if present
+			cmd := strings.TrimPrefix(command, "sudo ")
+			parts := strings.Split(cmd, "apt-get install")
+			if len(parts) > 1 {
+				pkgStr := strings.TrimSpace(parts[1])
+				// Remove -y flag
+				pkgStr = strings.ReplaceAll(pkgStr, "-y", "")
+				packages = strings.Fields(pkgStr)
+			}
+		}
+	} else if action == "uninstall" {
+		// Handle different uninstall commands
+		if strings.Contains(command, "brew uninstall") {
+			// Extract packages after "brew uninstall"
+			parts := strings.Split(command, "brew uninstall")
+			if len(parts) > 1 {
+				pkgStr := strings.TrimSpace(parts[1])
+				// Remove -y flag
+				pkgStr = strings.ReplaceAll(pkgStr, "-y", "")
+				packages = strings.Fields(pkgStr)
+			}
+		} else if strings.Contains(command, "apt-get remove") {
+			// Extract packages after "apt-get remove -y"
+			// Remove sudo prefix if present
+			cmd := strings.TrimPrefix(command, "sudo ")
+			parts := strings.Split(cmd, "apt-get remove")
+			if len(parts) > 1 {
+				pkgStr := strings.TrimSpace(parts[1])
+				// Remove -y flag
+				pkgStr = strings.ReplaceAll(pkgStr, "-y", "")
+				packages = strings.Fields(pkgStr)
+			}
+		}
+	}
+
+	return packages
+}
+
 // resolveDependencies performs topological sort on rules based on dependencies
 func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 	if len(rules) == 0 {
@@ -1501,7 +1655,7 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 			} else if rule.Action == "clone" {
 				// For clone rules without ID, use the clone path as key
 				ruleKey = rule.ClonePath
-			} else if rule.Action == "uninstall" && handlerskg.DetectRuleType(*rule) == "asdf" {
+			} else if rule.Action == "uninstall" && rule.Tool == "asdf-vm" {
 				// For asdf uninstall rules, use action as key
 				ruleKey = "uninstall-asdf"
 			} else if rule.Action == "asdf" {
@@ -1516,7 +1670,7 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 			} else if rule.Action == "mkdir" {
 				// For mkdir rules without ID, use the path as key
 				ruleKey = rule.Mkdir
-			} else if rule.Action == "uninstall" && handlerskg.DetectRuleType(*rule) == "mkdir" {
+			} else if rule.Action == "uninstall" && rule.Tool == "mkdir" {
 				// For mkdir uninstall rules without ID, use the path as key
 				ruleKey = rule.Mkdir
 			} else {
@@ -2173,22 +2327,12 @@ func promptForSudoPasswordWithOS(rules []parser.Rule, currentOS string) error {
 	// Note: rules passed in are already filtered by OS, so we don't need to check ruleAppliesToOS()
 	needsSudoPassword := false
 	for _, rule := range rules {
-		// First check if the handler implements SudoAwareHandler
-		handler := handlerskg.NewHandler(rule, "", make(map[string]string))
-		if sudoAwareHandler, ok := handler.(handlerskg.SudoAwareHandler); ok {
-			if sudoAwareHandler.NeedsSudo() {
+		// Check install/uninstall rules
+		if rule.Action == "install" || rule.Action == "uninstall" {
+			cmd := buildCommand(rule)
+			if needsSudo(cmd) {
 				needsSudoPassword = true
 				break
-			}
-		} else {
-			// Fall back to checking the command string
-			// Check install/uninstall rules
-			if rule.Action == "install" || rule.Action == "uninstall" {
-				cmd := buildCommand(rule)
-				if needsSudo(cmd) {
-					needsSudoPassword = true
-					break
-				}
 			}
 		}
 	}

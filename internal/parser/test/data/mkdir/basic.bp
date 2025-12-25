@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test basic directory creation
+mkdir /tmp/test

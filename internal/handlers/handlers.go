@@ -62,6 +62,16 @@ type KnownHostsStatus struct {
 	OS        string `json:"os"`
 }
 
+// GPGKeyStatus tracks an added GPG key and repository
+type GPGKeyStatus struct {
+	Keyring   string `json:"keyring"`
+	URL       string `json:"url"`
+	DebURL    string `json:"deb_url"`
+	AddedAt   string `json:"added_at"`
+	Blueprint string `json:"blueprint"`
+	OS        string `json:"os"`
+}
+
 // Status represents the current blueprint state
 type Status struct {
 	Packages   []PackageStatus    `json:"packages"`
@@ -69,6 +79,7 @@ type Status struct {
 	Decrypts   []DecryptStatus    `json:"decrypts"`
 	Mkdirs     []MkdirStatus      `json:"mkdirs"`
 	KnownHosts []KnownHostsStatus `json:"known_hosts"`
+	GPGKeys    []GPGKeyStatus     `json:"gpg_keys"`
 }
 
 // Handler is the interface that all command handlers must implement
@@ -84,6 +95,23 @@ type Handler interface {
 	// UpdateStatus updates the status with the result of executing this handler
 	// Takes the current status, execution records, blueprint path, and OS name
 	UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error
+
+	// GetCommand returns the actual command(s) that will be executed
+	// Used for display purposes (in DEBUG mode)
+	GetCommand() string
+
+	// DisplayInfo displays handler-specific information
+	// Used by the engine to show rule details in plan mode
+	DisplayInfo()
+}
+
+// SudoAwareHandler is an optional interface that handlers can implement
+// to specify their own sudo requirements. If a handler implements this,
+// the engine will use this method instead of the global needsSudo function.
+// This allows handlers to override sudo detection based on their specific needs.
+type SudoAwareHandler interface {
+	// NeedsSudo returns true if this handler requires sudo for its operations
+	NeedsSudo() bool
 }
 
 // BaseHandler contains common fields for all handlers
@@ -95,6 +123,66 @@ type BaseHandler struct {
 // HandlerFactory creates a handler for a given rule
 // passwordCache is optional and only used by DecryptHandler
 type HandlerFactory func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler
+
+// DetectRuleType determines the actual rule type based on the rule's content
+// This is used for "uninstall" actions where the original action is lost
+func DetectRuleType(rule parser.Rule) string {
+	if len(rule.Packages) > 0 {
+		return "install"
+	}
+	if rule.CloneURL != "" {
+		return "clone"
+	}
+	if rule.DecryptFile != "" {
+		return "decrypt"
+	}
+	if rule.Mkdir != "" {
+		return "mkdir"
+	}
+	if len(rule.AsdfPackages) > 0 {
+		return "asdf"
+	}
+	if rule.KnownHosts != "" {
+		return "known_hosts"
+	}
+	if rule.GPGKeyring != "" {
+		return "gpg-key"
+	}
+	return ""
+}
+
+// NewHandler creates a handler for the given rule
+// Returns nil if the action is not recognized
+func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+	action := rule.Action
+
+	// For uninstall actions, detect the actual rule type from the rule's content
+	if action == "uninstall" {
+		action = DetectRuleType(rule)
+		if action == "" {
+			return nil
+		}
+	}
+
+	switch action {
+	case "install":
+		return NewInstallHandler(rule, basePath)
+	case "clone":
+		return NewCloneHandler(rule, basePath)
+	case "decrypt":
+		return NewDecryptHandler(rule, basePath, passwordCache)
+	case "mkdir":
+		return NewMkdirHandler(rule, basePath)
+	case "asdf":
+		return NewAsdfHandler(rule, basePath)
+	case "known_hosts":
+		return NewKnownHostsHandler(rule, basePath)
+	case "gpg-key":
+		return NewGPGKeyHandler(rule, basePath)
+	default:
+		return nil
+	}
+}
 
 // GetHandlerFactory returns a handler factory function for the given action
 // If no factory is found for the action, returns nil
@@ -121,6 +209,9 @@ func GetHandlerFactory(action string) HandlerFactory {
 		"known_hosts": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
 			return NewKnownHostsHandler(rule, basePath)
 		},
+		"gpg-key": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
+			return NewGPGKeyHandler(rule, basePath)
+		},
 	}
 
 	return factories[action]
@@ -135,6 +226,21 @@ func normalizePath(filePath string) string {
 		return filepath.Clean(filePath)
 	}
 	return filepath.Clean(absPath)
+}
+
+func commandSuccessfullyExecuted(cmd string, records []ExecutionRecord) (*ExecutionRecord, bool) {
+	var resultRecord *ExecutionRecord
+	commandExecuted := false
+
+	for _, record := range records {
+		if record.Status == "success" && record.Command == cmd {
+			resultRecord = &record
+			commandExecuted = true
+			break
+		}
+	}
+
+	return resultRecord, commandExecuted
 }
 
 // extractSHAFromOutput extracts the SHA from clone operation output using regex
@@ -194,6 +300,19 @@ func removeKnownHostsStatus(knownHosts []KnownHostsStatus, host string, blueprin
 		normalizedStoredBlueprint := normalizePath(kh.Blueprint)
 		if !(kh.Host == host && normalizedStoredBlueprint == normalizedBlueprint && kh.OS == osName) {
 			result = append(result, kh)
+		}
+	}
+	return result
+}
+
+// removeGPGKeyStatus removes a GPG key from the status gpg_keys list
+func removeGPGKeyStatus(gpgKeys []GPGKeyStatus, keyring string, blueprint string, osName string) []GPGKeyStatus {
+	var result []GPGKeyStatus
+	normalizedBlueprint := normalizePath(blueprint)
+	for _, gk := range gpgKeys {
+		normalizedStoredBlueprint := normalizePath(gk.Blueprint)
+		if !(gk.Keyring == keyring && normalizedStoredBlueprint == normalizedBlueprint && gk.OS == osName) {
+			result = append(result, gk)
 		}
 	}
 	return result

@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test repository clone with specific branch
+clone https://github.com/user/dotfiles.git to: ~/.dotfiles branch: main on: [linux, mac]

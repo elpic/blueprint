@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/ui"
 )
 
 // KnownHostsHandler handles SSH known_hosts file management
@@ -28,103 +29,92 @@ func NewKnownHostsHandler(rule parser.Rule, basePath string) *KnownHostsHandler 
 
 // Up adds the host to known_hosts file
 func (h *KnownHostsHandler) Up() (string, error) {
-	// Get home directory
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
+	if _, err := knownHostsFile(true); err != nil {
+		return "", err
 	}
 
-	sshDir := filepath.Join(homeDir, ".ssh")
-	knownHostsPath := filepath.Join(sshDir, "known_hosts")
+	cmd := exec.Command("sh", "-c", h.GetCommand())
+	output, err := cmd.Output()
 
-	// Create .ssh directory with proper permissions (700)
-	if err := os.MkdirAll(sshDir, 0700); err != nil {
-		return "", fmt.Errorf("failed to create .ssh directory: %w", err)
+	if err == nil {
+		// Successfully added the host
+		// TODO: create a function to get keyType
+		// return fmt.Sprintf("Added %s to known_hosts (key type: %s)", h.Rule.KnownHosts, keyType), nil
+		return fmt.Sprintf("Added %s to known_hosts", h.Rule.KnownHosts), nil
 	}
 
-	// Create known_hosts file if it doesn't exist with proper permissions (600)
-	if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
-		if err := os.WriteFile(knownHostsPath, []byte{}, 0600); err != nil {
-			return "", fmt.Errorf("failed to create known_hosts file: %w", err)
-		}
+	// Collect error messages for each key type
+	errMsg := strings.TrimSpace(string(output))
+	if errMsg == "" {
+		errMsg = "unknown error"
 	}
 
-	// Determine which key types to try
-	keyTypes := []string{}
-	if h.Rule.KnownHostsKey != "" {
-		// If a specific key type was specified, use only that
-		keyTypes = []string{h.Rule.KnownHostsKey}
-	} else {
-		// Default to trying multiple key types in order of preference
-		keyTypes = []string{"ed25519", "ecdsa", "rsa"}
-	}
-
-	// Try each key type until one succeeds
-	var errors []string
-	for _, keyType := range keyTypes {
-		// Use shell to execute the command with pipes
-		shellCmd := fmt.Sprintf(`
-content=$(ssh-keyscan -t %s %s 2>&1)
-exit_code=$?
-if [ $exit_code -eq 0 ] && [ -n "$content" ]; then
-  if ! grep -q "$content" ~/.ssh/known_hosts 2>/dev/null; then
-    printf '%%s\n' "$content" >> ~/.ssh/known_hosts
-  fi
-  exit 0
-fi
-# Print the actual error from ssh-keyscan
-echo "$content" >&2
-exit 1
-`, keyType, h.Rule.KnownHosts)
-
-		cmd := exec.Command("sh", "-c", shellCmd)
-		output, err := cmd.CombinedOutput()
-
-		if err == nil {
-			// Successfully added the host
-			return fmt.Sprintf("Added %s to known_hosts (key type: %s)", h.Rule.KnownHosts, keyType), nil
-		}
-
-		// Collect error messages for each key type
-		errMsg := strings.TrimSpace(string(output))
-		if errMsg == "" {
-			errMsg = "unknown error"
-		}
-		errors = append(errors, fmt.Sprintf("%s: %s", keyType, errMsg))
-	}
-
-	// If we got here, none of the key types worked
-	return "", fmt.Errorf("failed to add host to known_hosts - tried: %s\nDetails:\n%s", strings.Join(keyTypes, ", "), strings.Join(errors, "\n"))
+	return "", fmt.Errorf("failed to add host to known_hosts - \nDetails:\n%s", errMsg)
 }
 
 // Down removes the host from known_hosts file
 func (h *KnownHostsHandler) Down() (string, error) {
-	// Get home directory
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	knownHostsPath := filepath.Join(homeDir, ".ssh", "known_hosts")
-
 	// Check if known_hosts file exists
-	if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
-		return "known_hosts file does not exist", nil
+	if _, err := knownHostsFile(false); err != nil {
+		return "", err
 	}
 
 	// Remove the host entry using sed
 	// sed removes lines that start with the host (including variations of IP addresses)
-	removeHostCmd := fmt.Sprintf(`
-sed -i.bak '/^%s[, ]/d' ~/.ssh/known_hosts 2>/dev/null || true
-rm -f ~/.ssh/known_hosts.bak 2>/dev/null || true
-`, escapeForSed(h.Rule.KnownHosts))
+	removeHostCmd := fmt.Sprintf(`sed -i.bak '/^%s[, ]/d' ~/.ssh/known_hosts 2>/dev/null || true &&  rm -f ~/.ssh/known_hosts.bak 2>/dev/null || true`, escapeForSed(h.Rule.KnownHosts))
 
 	cmd := exec.Command("sh", "-c", removeHostCmd)
+
+	// TODO: check if known_hosts is empty and remove it
 	if _, err := cmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not remove %s from known_hosts\n", h.Rule.KnownHosts)
 	}
 
 	return fmt.Sprintf("Removed %s from known_hosts", h.Rule.KnownHosts), nil
+}
+
+func sshDir(create bool) (string, error) {
+	var homePath string
+	var err error
+
+	if homePath, err = os.UserHomeDir(); err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	sshPath := filepath.Join(homePath, ".ssh")
+
+	if create {
+		// Create .ssh directory with proper permissions (700)
+		if err := os.MkdirAll(sshPath, 0700); err != nil {
+			return "", fmt.Errorf("failed to create .ssh directory: %w", err)
+		}
+	}
+
+	return sshPath, nil
+}
+
+func knownHostsFile(create bool) (string, error) {
+	sshPath, err := sshDir(create)
+
+	if (err != nil) {
+		return "", err
+	}
+
+	knownHostsPath := filepath.Join(sshPath, "known_hosts")
+
+	if create {
+		if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
+			if err := os.WriteFile(knownHostsPath, []byte{}, 0600); err != nil {
+				return "", fmt.Errorf("failed to create known_hosts file: %w", err)
+			}
+		}
+	} else {
+		if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
+			return "", fmt.Errorf("known_hosts file does not exist")
+		}
+	}
+
+	return knownHostsPath, nil
 }
 
 // escapeForSed escapes special characters for use in sed regex
@@ -142,6 +132,18 @@ func escapeForSed(s string) string {
 	return replacer.Replace(s)
 }
 
+// GetCommand returns the actual command(s) that will be executed
+func (h *KnownHostsHandler) GetCommand() string {
+	if h.Rule.Action == "uninstall" {
+		// Return the sed command for removing host
+		return fmt.Sprintf(`sed -i.bak '/^%s[, ]/d' ~/.ssh/known_hosts && rm -f ~/.ssh/known_hosts.bak`, escapeForSed(h.Rule.KnownHosts))
+	}
+
+	// For known_hosts add action, return the ssh-keyscan command
+	keyType := getKeyType(h)
+	return fmt.Sprintf("ssh-keyscan -t %s %s", keyType, h.Rule.KnownHosts)
+}
+
 // UpdateStatus updates the status after adding or removing a known host
 func (h *KnownHostsHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
 	// Normalize blueprint path for consistent storage and comparison
@@ -153,14 +155,14 @@ func (h *KnownHostsHandler) UpdateStatus(status *Status, records []ExecutionReco
 		commandExecuted := false
 		var keyType string
 		for _, record := range records {
-			if record.Status == "success" && strings.Contains(record.Command, "known_hosts") && strings.Contains(record.Command, h.Rule.KnownHosts) {
+			if record.Status == "success" && strings.Contains(record.Command, "ssh-keyscan") && strings.Contains(record.Command, h.Rule.KnownHosts) {
 				commandExecuted = true
-				// Extract key type from the output
-				if strings.Contains(record.Output, "ed25519") {
+				// Extract key type from the command
+				if strings.Contains(record.Command, "ed25519") {
 					keyType = "ed25519"
-				} else if strings.Contains(record.Output, "ecdsa") {
+				} else if strings.Contains(record.Command, "ecdsa") {
 					keyType = "ecdsa"
-				} else if strings.Contains(record.Output, "rsa") {
+				} else if strings.Contains(record.Command, "rsa") {
 					keyType = "rsa"
 				}
 				break
@@ -179,10 +181,36 @@ func (h *KnownHostsHandler) UpdateStatus(status *Status, records []ExecutionReco
 				OS:        osName,
 			})
 		}
-	} else if h.Rule.Action == "uninstall" && h.Rule.Tool == "known_hosts" {
+	} else if h.Rule.Action == "uninstall" && DetectRuleType(h.Rule) == "known_hosts" {
 		// Remove known host from status if uninstall was successful
 		status.KnownHosts = removeKnownHostsStatus(status.KnownHosts, h.Rule.KnownHosts, blueprint, osName)
 	}
 
 	return nil
+}
+
+func getKeyType(h *KnownHostsHandler) string {
+	keyType := "ed25519" // Default to ed25519
+
+	if h.Rule.KnownHostsKey != "" {
+		keyType = h.Rule.KnownHostsKey
+	}
+
+	return keyType
+}
+
+// DisplayInfo displays handler-specific information
+func (h *KnownHostsHandler) DisplayInfo() {
+	formatFunc := ui.FormatInfo
+	if h.Rule.Action == "uninstall" {
+		formatFunc = ui.FormatDim
+	}
+
+	fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("Host: %s", h.Rule.KnownHosts)))
+
+	keyTypeDisplay := h.Rule.KnownHostsKey
+	if keyTypeDisplay == "" {
+		keyTypeDisplay = "auto-detect (ed25519, ecdsa, rsa)"
+	}
+	fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("Key Type: %s", keyTypeDisplay)))
 }

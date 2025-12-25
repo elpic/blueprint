@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test single tool installation with asdf
+asdf install nodejs 18.0.0

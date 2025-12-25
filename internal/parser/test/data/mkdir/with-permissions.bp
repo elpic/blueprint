@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test directory creation with specific permissions
+mkdir /home/user/.ssh perms: 0700 id: ssh-dir on: [linux, mac]

@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test repository clone with dependencies
+clone https://github.com/user/config.git to: ~/config after: mkdir-config id: clone-config on: [linux]

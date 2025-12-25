@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test basic GPG key import
+gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/
