@@ -11,6 +11,7 @@ import (
 
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/ui"
 )
 
 // AsdfHandler handles asdf version manager operations
@@ -266,6 +267,31 @@ func (h *AsdfHandler) uninstallAsdfLinux() error {
 	return nil
 }
 
+// GetCommand returns the actual command(s) that will be executed
+func (h *AsdfHandler) GetCommand() string {
+	if h.Rule.Action == "uninstall" {
+		return "asdf uninstall"
+	}
+
+	// Asdf action - return installation command with all packages
+	if len(h.Rule.AsdfPackages) > 0 {
+		var commands []string
+		for _, pkg := range h.Rule.AsdfPackages {
+			parts := strings.Split(pkg, "@")
+			if len(parts) == 2 {
+				plugin := parts[0]
+				version := parts[1]
+				commands = append(commands, fmt.Sprintf("asdf install %s %s", plugin, version))
+			}
+		}
+		if len(commands) > 0 {
+			return strings.Join(commands, " && ")
+		}
+	}
+
+	return "asdf-init"
+}
+
 // UpdateStatus updates the status after installing or uninstalling asdf
 func (h *AsdfHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
 	// Normalize blueprint path for consistent storage and comparison
@@ -276,7 +302,8 @@ func (h *AsdfHandler) UpdateStatus(status *Status, records []ExecutionRecord, bl
 		commandExecuted := false
 		var asdfSHA string
 		for _, record := range records {
-			if record.Status == "success" && record.Command == "asdf-init" {
+			// Check if this is an asdf install command that succeeded
+			if record.Status == "success" && strings.Contains(record.Command, "asdf install") {
 				commandExecuted = true
 				// Extract SHA from output using regex
 				asdfSHA = extractSHAFromOutput(record.Output)
@@ -299,7 +326,7 @@ func (h *AsdfHandler) UpdateStatus(status *Status, records []ExecutionRecord, bl
 				OS:        osName,
 			})
 		}
-	} else if h.Rule.Action == "uninstall" && h.Rule.Tool == "asdf-vm" {
+	} else if h.Rule.Action == "uninstall" && DetectRuleType(h.Rule) == "asdf" {
 		// Check if asdf was uninstalled successfully
 		if succeededAsdfUninstall(records) {
 			// Remove asdf from status
@@ -311,10 +338,25 @@ func (h *AsdfHandler) UpdateStatus(status *Status, records []ExecutionRecord, bl
 	return nil
 }
 
+// DisplayInfo displays handler-specific information
+func (h *AsdfHandler) DisplayInfo() {
+	formatFunc := ui.FormatInfo
+	if h.Rule.Action == "uninstall" {
+		formatFunc = ui.FormatDim
+	}
+
+	if len(h.Rule.AsdfPackages) > 0 {
+		fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("Plugins: [%s]", strings.Join(h.Rule.AsdfPackages, ", "))))
+	} else {
+		fmt.Printf("  %s\n", formatFunc("Description: Installs asdf version manager"))
+	}
+}
+
 // succeededAsdfUninstall checks if asdf uninstall was successful
 func succeededAsdfUninstall(records []ExecutionRecord) bool {
 	for _, record := range records {
-		if record.Status == "success" && record.Command == "asdf-uninstall" {
+		// Check if any asdf uninstall command succeeded
+		if record.Status == "success" && record.Command == "asdf uninstall" {
 			return true
 		}
 	}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/ui"
 )
 
 // MkdirHandler handles directory creation with optional permissions
@@ -89,6 +90,27 @@ func (h *MkdirHandler) Down() (string, error) {
 	return fmt.Sprintf("Removed directory %s", path), nil
 }
 
+// GetCommand returns the actual command(s) that will be executed
+func (h *MkdirHandler) GetCommand() string {
+	path := h.Rule.Mkdir
+
+	// If this is an uninstall, return the rm command
+	if h.Rule.Action == "uninstall" {
+		removeCmd := fmt.Sprintf("rm -rf %s", mkdirEscapePath(path))
+		return removeCmd
+	}
+
+	// For mkdir action, build mkdir and optionally chmod commands
+	mkdirCmd := fmt.Sprintf("mkdir -p %s", mkdirEscapePath(path))
+
+	if h.Rule.MkdirPerms != "" {
+		chmodCmd := fmt.Sprintf("chmod %s %s", h.Rule.MkdirPerms, mkdirEscapePath(path))
+		return fmt.Sprintf("%s && %s", mkdirCmd, chmodCmd)
+	}
+
+	return mkdirCmd
+}
+
 // UpdateStatus updates the blueprint status after executing mkdir or uninstall-mkdir
 func (h *MkdirHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
 	// Normalize blueprint path for comparison
@@ -118,7 +140,7 @@ func (h *MkdirHandler) UpdateStatus(status *Status, records []ExecutionRecord, b
 				OS:        osName,
 			})
 		}
-	} else if h.Rule.Action == "uninstall" && h.Rule.Tool == "mkdir" {
+	} else if h.Rule.Action == "uninstall" && DetectRuleType(h.Rule) == "mkdir" {
 		// Check if mkdir was uninstalled successfully by checking if the directory no longer exists
 		expandedPath := h.Rule.Mkdir
 		if strings.HasPrefix(expandedPath, "~") {
@@ -135,6 +157,19 @@ func (h *MkdirHandler) UpdateStatus(status *Status, records []ExecutionRecord, b
 	}
 
 	return nil
+}
+
+// DisplayInfo displays handler-specific information
+func (h *MkdirHandler) DisplayInfo() {
+	formatFunc := ui.FormatInfo
+	if h.Rule.Action == "uninstall" {
+		formatFunc = ui.FormatDim
+	}
+
+	fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("Path: %s", h.Rule.Mkdir)))
+	if h.Rule.MkdirPerms != "" {
+		fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("Permissions: %s", h.Rule.MkdirPerms)))
+	}
 }
 
 // mkdirExpandPath expands ~ to home directory

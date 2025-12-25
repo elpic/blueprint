@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test file decryption with OS filters
+decrypt ./config.enc to: ~/.config/app.conf on: [linux, mac]

@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test multiple package installation
+install git vim wget curl

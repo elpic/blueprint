@@ -8,6 +8,7 @@ import (
 
 	cryptopkg "github.com/elpic/blueprint/internal/crypto"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/ui"
 )
 
 // DecryptHandler handles file decryption and cleanup
@@ -90,22 +91,25 @@ func (h *DecryptHandler) Down() (string, error) {
 	return "Decrypted file not found", nil
 }
 
+// GetCommand returns the actual command(s) that will be executed
+func (h *DecryptHandler) GetCommand() string {
+	if h.Rule.Action == "uninstall" {
+		return fmt.Sprintf("rm -f %s", h.Rule.DecryptPath)
+	}
+
+	// Decrypt action - show description since it's not a shell command
+	return fmt.Sprintf("Decrypt file: %s → %s", h.Rule.DecryptFile, h.Rule.DecryptPath)
+}
+
 // UpdateStatus updates the status after decrypting or removing a file
 func (h *DecryptHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
 	// Normalize blueprint path for consistent storage and comparison
 	blueprint = normalizePath(blueprint)
 
 	if h.Rule.Action == "decrypt" {
-		// Check if this rule's command was executed successfully
-		decryptCmd := fmt.Sprintf("decrypt %s to %s", h.Rule.DecryptFile, h.Rule.DecryptPath)
+		decryptCmd := h.GetCommand()
 
-		commandExecuted := false
-		for _, record := range records {
-			if record.Status == "success" && record.Command == decryptCmd {
-				commandExecuted = true
-				break
-			}
-		}
+		_, commandExecuted := commandSuccessfullyExecuted(decryptCmd, records)
 
 		if commandExecuted {
 			// Remove existing entry if present
@@ -119,7 +123,7 @@ func (h *DecryptHandler) UpdateStatus(status *Status, records []ExecutionRecord,
 				OS:          osName,
 			})
 		}
-	} else if h.Rule.Action == "uninstall" && h.Rule.Tool == "decrypt" {
+	} else if h.Rule.Action == "uninstall" && DetectRuleType(h.Rule) == "decrypt" {
 		// Check if decrypt file was removed by checking if file doesn't exist
 		expandedPath := expandPath(h.Rule.DecryptPath)
 		if _, err := os.Stat(expandedPath); os.IsNotExist(err) {
@@ -129,6 +133,23 @@ func (h *DecryptHandler) UpdateStatus(status *Status, records []ExecutionRecord,
 	}
 
 	return nil
+}
+
+// DisplayInfo displays handler-specific information
+func (h *DecryptHandler) DisplayInfo() {
+	formatFunc := ui.FormatInfo
+	if h.Rule.Action == "uninstall" {
+		formatFunc = ui.FormatDim
+	}
+
+	fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("File: %s", h.Rule.DecryptFile)))
+	fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("Path: %s", h.Rule.DecryptPath)))
+	if h.Rule.Group != "" {
+		fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("Group: %s", h.Rule.Group)))
+	}
+	if h.Rule.DecryptPasswordID != "" {
+		fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("Password ID: %s", h.Rule.DecryptPasswordID)))
+	}
 }
 
 // resolveFilePath resolves the file path, checking multiple locations

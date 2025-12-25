@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test basic repository clone
+clone https://github.com/user/repo.git to: ~/projects/repo

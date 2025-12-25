@@ -9,6 +9,7 @@ import (
 
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/ui"
 )
 
 // CloneHandler handles git repository cloning and cleanup
@@ -86,30 +87,33 @@ func (h *CloneHandler) Down() (string, error) {
 	return "Repository not found", nil
 }
 
+// GetCommand returns the actual command(s) that will be executed
+func (h *CloneHandler) GetCommand() string {
+	if h.Rule.Action == "uninstall" {
+		clonePath := h.Rule.ClonePath
+		return fmt.Sprintf("rm -rf %s", clonePath)
+	}
+
+	// Clone action - use go-git, so return descriptive command
+	if h.Rule.Branch != "" {
+		return fmt.Sprintf("git clone -b %s %s %s", h.Rule.Branch, h.Rule.CloneURL, h.Rule.ClonePath)
+	}
+
+	return fmt.Sprintf("git clone %s %s", h.Rule.CloneURL, h.Rule.ClonePath)
+}
+
 // UpdateStatus updates the status after cloning or removing a repository
 func (h *CloneHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
 	// Normalize blueprint path for consistent storage and comparison
 	blueprint = normalizePath(blueprint)
 
 	if h.Rule.Action == "clone" {
-		// Check if this rule's command was executed successfully
-		cloneCmd := fmt.Sprintf("git clone %s %s", h.Rule.CloneURL, h.Rule.ClonePath)
-		if h.Rule.Branch != "" {
-			cloneCmd = fmt.Sprintf("git clone -b %s %s %s", h.Rule.Branch, h.Rule.CloneURL, h.Rule.ClonePath)
-		}
+		cloneCmd := h.GetCommand()
 
-		commandExecuted := false
-		var cloneSHA string
-		for _, record := range records {
-			if record.Status == "success" && record.Command == cloneCmd {
-				commandExecuted = true
-				// Extract SHA from the records
-				cloneSHA = extractSHAFromOutput(record.Output)
-				break
-			}
-		}
+		record, commandExecuted := commandSuccessfullyExecuted(cloneCmd, records)
 
 		if commandExecuted {
+			cloneSHA := extractSHAFromOutput(record.Output)
 			// Remove existing entry if present
 			status.Clones = removeCloneStatus(status.Clones, h.Rule.ClonePath, blueprint, osName)
 			// Add new entry
@@ -122,7 +126,7 @@ func (h *CloneHandler) UpdateStatus(status *Status, records []ExecutionRecord, b
 				OS:        osName,
 			})
 		}
-	} else if h.Rule.Action == "uninstall" && h.Rule.Tool == "git" {
+	} else if h.Rule.Action == "uninstall" && DetectRuleType(h.Rule) == "clone" {
 		// Check if clone was removed by checking if directory doesn't exist
 		expandedPath := expandPath(h.Rule.ClonePath)
 		if _, err := os.Stat(expandedPath); os.IsNotExist(err) {
@@ -132,6 +136,20 @@ func (h *CloneHandler) UpdateStatus(status *Status, records []ExecutionRecord, b
 	}
 
 	return nil
+}
+
+// DisplayInfo displays handler-specific information
+func (h *CloneHandler) DisplayInfo() {
+	formatFunc := ui.FormatInfo
+	if h.Rule.Action == "uninstall" {
+		formatFunc = ui.FormatDim
+	}
+
+	fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("URL: %s", h.Rule.CloneURL)))
+	fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("Path: %s", h.Rule.ClonePath)))
+	if h.Rule.Branch != "" {
+		fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("Branch: %s", h.Rule.Branch)))
+	}
 }
 
 // expandPath expands ~ to home directory

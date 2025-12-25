@@ -20,7 +20,8 @@
       "Bash(awk:*)",
       "Bash(xargs kill -9)",
       "Bash(./blueprint status:*)",
-      "Bash(./blueprint history:*)"
+      "Bash(./blueprint history:*)",
+      "Bash(go test:*)"
     ],
     "deny": [],
     "ask": []

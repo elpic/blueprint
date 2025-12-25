@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test GPG key import with dependencies
+gpg-key https://download.docker.com/linux/ubuntu/gpg keyring: docker deb-url: https://download.docker.com/linux/ubuntu after: base-setup id: docker-gpg-key on: [linux]

@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test directory creation with dependencies
+mkdir /opt/app after: base-tools on: [linux]

@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test multiple tool installations with asdf
+asdf install nodejs 18.0.0 ruby 3.1.0 python 3.11.0

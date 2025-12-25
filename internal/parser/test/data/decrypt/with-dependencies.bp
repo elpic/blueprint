@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test file decryption with dependencies
+decrypt ./certs.enc to: /etc/ssl/certs/app.crt after: mkdir-certs id: decrypt-certs on: [linux]

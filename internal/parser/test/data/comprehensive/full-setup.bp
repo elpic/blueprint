@@ -1,0 +1,22 @@
+#!/usr/bin/env blueprint
+
+# Comprehensive blueprint with all handler types
+mkdir ~/.config id: config-dir on: [linux, mac]
+mkdir ~/.ssh id: ssh-dir after: config-dir on: [linux, mac]
+
+install git curl wget id: base-tools on: [linux, mac]
+install vim build-essential id: dev-packages on: [linux, mac]
+
+asdf nodejs 18.0.0 id: nodejs-setup on: [linux, mac]
+asdf ruby 3.1.0 python 3.11.0 id: dev-tools after: nodejs-setup on: [linux, mac]
+
+clone https://github.com/user/dotfiles.git to: ~/dotfiles id: clone-dotfiles after: config-dir on: [linux, mac]
+clone https://github.com/user/projects.git to: ~/projects id: clone-projects on: [linux, mac]
+
+decrypt ./secrets.enc to: ~/.ssh/id_rsa id: ssh-key after: ssh-dir on: [linux, mac]
+decrypt ./config.enc to: ~/.config/app.conf id: app-config after: config-dir on: [linux, mac]
+
+known_hosts github.com id: github-hosts after: ssh-dir on: [linux, mac]
+known_hosts gitlab.example.com id: gitlab-hosts on: [linux, mac]
+
+gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: import-gpg-key after: ssh-key on: [linux]

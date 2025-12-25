@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test asdf installation with dependencies
+asdf install golang 1.21.0 after: base-tools id: golang-setup on: [linux]

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/ui"
 )
 
 // InstallHandler handles package installation and uninstallation
@@ -48,6 +49,24 @@ func (h *InstallHandler) Down() (string, error) {
 	return executeCommandWithCache(cmd)
 }
 
+// GetCommand returns the actual command(s) that will be executed
+func (h *InstallHandler) GetCommand() string {
+	if h.Rule.Action == "uninstall" {
+		cmd := h.buildUninstallCommand(h.Rule)
+		if needsSudo(cmd) {
+			cmd = "sudo " + cmd
+		}
+		return cmd
+	}
+
+	// Install action
+	cmd := h.buildCommand()
+	if needsSudo(cmd) {
+		cmd = "sudo " + cmd
+	}
+	return cmd
+}
+
 // UpdateStatus updates the status after installing or uninstalling packages
 func (h *InstallHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
 	// Normalize blueprint path for consistent storage and comparison
@@ -60,14 +79,8 @@ func (h *InstallHandler) UpdateStatus(status *Status, records []ExecutionRecord,
 			cmd = "sudo " + cmd
 		}
 
-		// Look for a successful execution record matching this command
-		commandExecuted := false
-		for _, record := range records {
-			if record.Status == "success" && record.Command == cmd {
-				commandExecuted = true
-				break
-			}
-		}
+
+		_, commandExecuted := commandSuccessfullyExecuted(cmd, records)
 
 		if commandExecuted {
 			// Add or update package status
@@ -159,6 +172,25 @@ func getOSName() string {
 		return "linux"
 	default:
 		return runtime.GOOS
+	}
+}
+
+// DisplayInfo displays handler-specific information
+func (h *InstallHandler) DisplayInfo() {
+	if h.Rule.Action == "uninstall" {
+		// For uninstall, display packages in a dimmed format
+		packageNames := make([]string, len(h.Rule.Packages))
+		for i, pkg := range h.Rule.Packages {
+			packageNames[i] = pkg.Name
+		}
+		fmt.Printf("  %s\n", ui.FormatDim(fmt.Sprintf("Packages: [%s]", strings.Join(packageNames, ", "))))
+	} else {
+		// For install, display packages in info format
+		packageNames := make([]string, len(h.Rule.Packages))
+		for i, pkg := range h.Rule.Packages {
+			packageNames[i] = pkg.Name
+		}
+		fmt.Printf("  %s\n", ui.FormatInfo(fmt.Sprintf("Packages: [%s]", strings.Join(packageNames, ", "))))
 	}
 }
 

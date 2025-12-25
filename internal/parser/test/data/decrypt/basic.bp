@@ -1,0 +1,4 @@
+#!/usr/bin/env blueprint
+
+# Test basic file decryption
+decrypt ./secrets.enc to: ~/.ssh/id_rsa
