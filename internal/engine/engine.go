@@ -778,7 +778,7 @@ func saveHistory(records []ExecutionRecord) error {
 	// Read existing history
 	var allRecords []ExecutionRecord
 	if data, err := os.ReadFile(historyPath); err == nil {
-		json.Unmarshal(data, &allRecords)
+		_ = json.Unmarshal(data, &allRecords)
 	}
 
 	// Append new records
@@ -810,7 +810,7 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 	// Load existing status
 	var status Status
 	if data, err := os.ReadFile(statusPath); err == nil {
-		json.Unmarshal(data, &status)
+		_ = json.Unmarshal(data, &status)
 	}
 
 	// Convert engine ExecutionRecords to handler ExecutionRecords
@@ -1343,7 +1343,7 @@ func deleteRemovedClones(currentRules []parser.Rule, blueprintFile string, osNam
 	// Write updated status to file
 	updatedData, err := json.MarshalIndent(status, "", "  ")
 	if err == nil {
-		os.WriteFile(statusPath, updatedData, 0644)
+		_ = os.WriteFile(statusPath, updatedData, 0644)
 	}
 
 	return deletedCount
@@ -1432,7 +1432,7 @@ func deleteRemovedDecryptFiles(currentRules []parser.Rule, blueprintFile string,
 	// Write updated status to file
 	updatedData, err := json.MarshalIndent(status, "", "  ")
 	if err == nil {
-		os.WriteFile(statusPath, updatedData, 0644)
+		_ = os.WriteFile(statusPath, updatedData, 0644)
 	}
 
 	return deletedCount
@@ -2525,7 +2525,7 @@ func PrintHistory(runNumber int, stepNumber int) {
 			// If stepNumber is specified, only show that step
 			if stepNumber >= 0 {
 				ruleNumInt := 0
-				fmt.Sscanf(ruleNum, "%d", &ruleNumInt)
+			_, _ = fmt.Sscanf(ruleNum, "%d", &ruleNumInt)
 				if ruleNumInt != stepNumber {
 					continue
 				}

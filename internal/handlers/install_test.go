@@ -300,12 +300,12 @@ func TestInstallHandlerDisplayInfo(t *testing.T) {
 
 			handler.DisplayInfo()
 
-			w.Close()
+			_ = w.Close()
 			os.Stdout = old
 
 			// Read captured output
 			var buf bytes.Buffer
-			io.Copy(&buf, r)
+			_, _ = io.Copy(&buf, r)
 			output := buf.String()
 
 			// Verify expected content is present

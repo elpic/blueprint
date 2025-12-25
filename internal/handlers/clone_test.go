@@ -62,7 +62,7 @@ func TestCloneHandlerDown(t *testing.T) {
 	testRepo := filepath.Join(tmpDir, "test-repo")
 
 	// Create a test directory to represent cloned repo
-	os.MkdirAll(testRepo, 0755)
+	_ = os.MkdirAll(testRepo, 0755)
 
 	tests := []struct {
 		name      string
@@ -99,7 +99,7 @@ func TestCloneHandlerDown(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Recreate repo for test
 			if tt.name == "remove existing cloned repository" {
-				os.MkdirAll(testRepo, 0755)
+				_ = os.MkdirAll(testRepo, 0755)
 			}
 
 			handler := NewCloneHandler(tt.rule, "")
@@ -257,12 +257,12 @@ func TestCloneHandlerDisplayInfo(t *testing.T) {
 
 			handler.DisplayInfo()
 
-			w.Close()
+			_ = w.Close()
 			os.Stdout = old
 
 			// Read captured output
 			var buf bytes.Buffer
-			io.Copy(&buf, r)
+			_, _ = io.Copy(&buf, r)
 			output := buf.String()
 
 			// Verify expected content is present

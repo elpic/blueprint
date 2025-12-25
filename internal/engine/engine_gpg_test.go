@@ -443,7 +443,7 @@ func TestGPGKeyConversionRoundtrip(t *testing.T) {
 	// Convert to map (simulating JSON encoding)
 	data, _ := json.Marshal(original)
 	var decoded GPGKeyStatus
-	json.Unmarshal(data, &decoded)
+	_ = json.Unmarshal(data, &decoded)
 
 	// Verify no data loss
 	if decoded.Keyring != original.Keyring ||

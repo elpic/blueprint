@@ -128,7 +128,7 @@ func CloneRepository(input string, verbose bool) (string, string, error) {
 
 	if err != nil {
 		// Clean up the temporary directory on error
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		return "", "", fmt.Errorf("failed to clone repository: %w", err)
 	}
 
