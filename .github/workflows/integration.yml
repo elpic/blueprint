@@ -26,9 +26,10 @@ jobs:
         uses: extractions/setup-just@v2
 
       - name: Run unit tests with coverage
-        run: just test --coverage -v
+        run: just test "--coverage -v"
 
       - name: Generate coverage report
+        if: hashFiles('coverage.out') != ''
         run: |
           go tool cover -html=coverage.out -o coverage.html
 
@@ -37,12 +38,11 @@ jobs:
         if: always()
         with:
           name: coverage-report
-          path: |
-            coverage.out
-            coverage.html
+          path: coverage.*
 
       - name: Calculate coverage percentage
         id: coverage
+        if: hashFiles('coverage.out') != ''
         run: |
           coverage=$(go tool cover -func coverage.out | grep total | awk '{print $3}' | sed 's/%//')
           echo "current_coverage=$coverage" >> $GITHUB_OUTPUT
@@ -58,7 +58,7 @@ jobs:
 
           # Checkout main and get coverage
           git checkout main
-          just test --coverage -v || true
+          just test "--coverage -v" || true
           main_coverage=$(go tool cover -func coverage.out | grep total | awk '{print $3}' | sed 's/%//')
 
           # Restore changes

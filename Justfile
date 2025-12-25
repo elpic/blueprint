@@ -29,10 +29,11 @@ build-macos:
   GOOS=darwin GOARCH=arm64 go build -o blueprint-macos-arm64 ./cmd/blueprint
   @echo "✓ macOS binaries built"
 
-# Run tests with optional filters and flags
-# Usage: just test [feature] [flags]
+# Run tests with optional flags
+# Usage: just test [flags]
+# Examples: just test "-v", just test "--coverage -v"
 # Flags: -v, --verbose, --coverage
-test FEATURE="" FLAGS="":
+test FLAGS="":
   #!/bin/bash
   set -e
 
@@ -89,9 +90,10 @@ help:
   @echo "  just build-macos    - Build for macOS (amd64 and arm64)"
   @echo ""
   @echo "TEST:"
-  @echo "  just test           - Run all tests"
-  @echo "  just test -v        - Run all tests with verbose output"
-  @echo "  just test --coverage - Run all tests with coverage report"
+  @echo "  just test                      - Run all tests"
+  @echo "  just test \"-v\"                 - Run all tests with verbose output"
+  @echo "  just test \"--coverage\"         - Run all tests with coverage report"
+  @echo "  just test \"--coverage -v\"      - Run all tests with coverage and verbose"
   @echo ""
   @echo "QUALITY CHECKS:"
   @echo "  just lint           - Run golangci-lint"
