@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -319,11 +320,18 @@ func removeGPGKeyStatus(gpgKeys []GPGKeyStatus, keyring string, blueprint string
 	return result
 }
 
-// abbreviateBlueprintPath shortens blueprint file paths for display by showing only the filename
+// abbreviateBlueprintPath shortens blueprint paths for display
+// Shows relative paths for blueprints in the repo, full paths for external ones
 func abbreviateBlueprintPath(path string) string {
-	lastSlash := strings.LastIndex(path, "/")
-	if lastSlash >= 0 && lastSlash < len(path)-1 {
-		return path[lastSlash+1:]
+	// Try to get the current working directory
+	cwd, err := os.Getwd()
+	if err == nil && strings.HasPrefix(path, cwd) {
+		// Path is within the repo, show relative path
+		relPath, err := filepath.Rel(cwd, path)
+		if err == nil {
+			return relPath
+		}
 	}
+	// Path is outside the repo or error getting cwd, show full path
 	return path
 }
