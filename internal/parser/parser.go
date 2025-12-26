@@ -7,6 +7,27 @@ import (
 	"strings"
 )
 
+// validateFilePath ensures the resolved path is within the allowed base directory
+func validateFilePath(filePath, baseDir string) (string, error) {
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return "", fmt.Errorf("invalid file path: %w", err)
+	}
+
+	absBase, err := filepath.Abs(baseDir)
+	if err != nil {
+		return "", fmt.Errorf("invalid base directory: %w", err)
+	}
+
+	// Ensure the resolved path is within the base directory
+	relPath, err := filepath.Rel(absBase, absPath)
+	if err != nil || strings.HasPrefix(relPath, "..") {
+		return "", fmt.Errorf("path traversal attempt detected: %s", filePath)
+	}
+
+	return absPath, nil
+}
+
 type Package struct {
 	Name    string
 	Version string

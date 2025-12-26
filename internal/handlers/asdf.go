@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -48,8 +49,16 @@ func (h *AsdfHandler) Up() (string, error) {
 			return "", fmt.Errorf("invalid asdf package format: %s, expected format: plugin@version", pkg)
 		}
 
-		plugin := parts[0]
-		version := parts[1]
+		plugin := strings.TrimSpace(parts[0])
+		version := strings.TrimSpace(parts[1])
+
+		// Validate plugin and version names (reject shell metacharacters)
+		if !isValidAsdfIdentifier(plugin) {
+			return "", fmt.Errorf("invalid plugin name: %s (contains invalid characters)", plugin)
+		}
+		if !isValidAsdfIdentifier(version) {
+			return "", fmt.Errorf("invalid version: %s (contains invalid characters)", version)
+		}
 
 		// Add plugin
 		addPluginCmd := fmt.Sprintf("asdf plugin add %s 2>/dev/null || true", plugin)
@@ -85,8 +94,13 @@ func (h *AsdfHandler) Down() (string, error) {
 			continue
 		}
 
-		plugin := parts[0]
-		version := parts[1]
+		plugin := strings.TrimSpace(parts[0])
+		version := strings.TrimSpace(parts[1])
+
+		// Validate plugin and version names
+		if !isValidAsdfIdentifier(plugin) || !isValidAsdfIdentifier(version) {
+			continue
+		}
 
 		// Uninstall version
 		uninstallCmd := fmt.Sprintf("asdf uninstall %s %s", plugin, version)
@@ -102,7 +116,12 @@ func (h *AsdfHandler) Down() (string, error) {
 			continue
 		}
 
-		plugin := parts[0]
+		plugin := strings.TrimSpace(parts[0])
+
+		// Validate plugin name
+		if !isValidAsdfIdentifier(plugin) {
+			continue
+		}
 
 		// Remove plugin
 		removeCmd := fmt.Sprintf("asdf plugin remove %s 2>/dev/null || true", plugin)
@@ -361,5 +380,19 @@ func succeededAsdfUninstall(records []ExecutionRecord) bool {
 		}
 	}
 	return false
+}
+
+// isValidAsdfIdentifier validates that a plugin or version name is safe to use in shell commands
+// It only allows alphanumeric characters, dots, hyphens, and underscores
+func isValidAsdfIdentifier(identifier string) bool {
+	if identifier == "" {
+		return false
+	}
+	// Match pattern: alphanumeric, dots, hyphens, underscores, plus sign
+	matched, err := regexp.MatchString(`^[a-zA-Z0-9._\-+]+$`, identifier)
+	if err != nil {
+		return false
+	}
+	return matched
 }
 

@@ -740,7 +740,7 @@ func getHistoryPath() (string, error) {
 	blueprintDir := filepath.Join(homeDir, ".blueprint")
 
 	// Create directory if it doesn't exist
-	if err := os.MkdirAll(blueprintDir, 0755); err != nil {
+	if err := os.MkdirAll(blueprintDir, 0750); err != nil {
 		return "", fmt.Errorf("failed to create .blueprint directory: %w", err)
 	}
 
@@ -757,11 +757,47 @@ func getStatusPath() (string, error) {
 	blueprintDir := filepath.Join(homeDir, ".blueprint")
 
 	// Create directory if it doesn't exist
-	if err := os.MkdirAll(blueprintDir, 0755); err != nil {
+	if err := os.MkdirAll(blueprintDir, 0750); err != nil {
 		return "", fmt.Errorf("failed to create .blueprint directory: %w", err)
 	}
 
 	return filepath.Join(blueprintDir, "status.json"), nil
+}
+
+// validateBlueprintPath validates that a file path is within the blueprint directory
+// This prevents path traversal attacks
+func validateBlueprintPath(filePath string) error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	blueprintDir := filepath.Join(homeDir, ".blueprint")
+	blueprintDirAbs, err := filepath.Abs(blueprintDir)
+	if err != nil {
+		return fmt.Errorf("invalid blueprint directory: %w", err)
+	}
+
+	filePathAbs, err := filepath.Abs(filePath)
+	if err != nil {
+		return fmt.Errorf("invalid file path: %w", err)
+	}
+
+	// Ensure the file path is within the blueprint directory
+	relPath, err := filepath.Rel(blueprintDirAbs, filePathAbs)
+	if err != nil || strings.HasPrefix(relPath, "..") {
+		return fmt.Errorf("path traversal attempt detected: %s", filePath)
+	}
+
+	return nil
+}
+
+// readBlueprintFile safely reads a file from the blueprint directory after validation
+func readBlueprintFile(filePath string) ([]byte, error) {
+	if err := validateBlueprintPath(filePath); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(filePath)
 }
 
 // saveHistory saves execution records to ~/.blueprint/history.json
@@ -777,7 +813,7 @@ func saveHistory(records []ExecutionRecord) error {
 
 	// Read existing history
 	var allRecords []ExecutionRecord
-	if data, err := os.ReadFile(historyPath); err == nil {
+	if data, err := readBlueprintFile(historyPath); err == nil {
 		_ = json.Unmarshal(data, &allRecords)
 	}
 
@@ -790,7 +826,7 @@ func saveHistory(records []ExecutionRecord) error {
 		return fmt.Errorf("failed to marshal history: %w", err)
 	}
 
-	if err := os.WriteFile(historyPath, data, 0644); err != nil {
+	if err := os.WriteFile(historyPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write history file: %w", err)
 	}
 
@@ -809,7 +845,7 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 
 	// Load existing status
 	var status Status
-	if data, err := os.ReadFile(statusPath); err == nil {
+	if data, err := readBlueprintFile(statusPath); err == nil {
 		_ = json.Unmarshal(data, &status)
 	}
 
@@ -869,7 +905,7 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 		return fmt.Errorf("failed to marshal status: %w", err)
 	}
 
-	if err := os.WriteFile(statusPath, data, 0644); err != nil {
+	if err := os.WriteFile(statusPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write status file: %w", err)
 	}
 
@@ -1107,7 +1143,7 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 		return autoUninstallRules
 	}
 
-	statusData, err := os.ReadFile(statusPath)
+	statusData, err := readBlueprintFile(statusPath)
 	if err != nil {
 		// No status file yet, nothing to uninstall
 		return autoUninstallRules
@@ -1259,7 +1295,7 @@ func deleteRemovedClones(currentRules []parser.Rule, blueprintFile string, osNam
 	}
 
 	// Read status file
-	data, err := os.ReadFile(statusPath)
+	data, err := readBlueprintFile(statusPath)
 	if err != nil {
 		// No status yet, nothing to delete
 		return 0
@@ -1343,7 +1379,7 @@ func deleteRemovedClones(currentRules []parser.Rule, blueprintFile string, osNam
 	// Write updated status to file
 	updatedData, err := json.MarshalIndent(status, "", "  ")
 	if err == nil {
-		_ = os.WriteFile(statusPath, updatedData, 0644)
+		_ = os.WriteFile(statusPath, updatedData, 0600)
 	}
 
 	return deletedCount
@@ -1359,7 +1395,7 @@ func deleteRemovedDecryptFiles(currentRules []parser.Rule, blueprintFile string,
 	}
 
 	// Read status file
-	data, err := os.ReadFile(statusPath)
+	data, err := readBlueprintFile(statusPath)
 	if err != nil {
 		// No status yet, nothing to delete
 		return 0
@@ -1432,7 +1468,7 @@ func deleteRemovedDecryptFiles(currentRules []parser.Rule, blueprintFile string,
 	// Write updated status to file
 	updatedData, err := json.MarshalIndent(status, "", "  ")
 	if err == nil {
-		_ = os.WriteFile(statusPath, updatedData, 0644)
+		_ = os.WriteFile(statusPath, updatedData, 0600)
 	}
 
 	return deletedCount
@@ -1810,7 +1846,7 @@ func setupAsdfInShells(asdfPath string) error {
 		if strings.Contains(configFile, ".config") {
 			configDir := filepath.Dir(configFile)
 			if _, err := os.Stat(configDir); os.IsNotExist(err) {
-				if err := os.MkdirAll(configDir, 0755); err != nil {
+				if err := os.MkdirAll(configDir, 0750); err != nil {
 					return err
 				}
 			}
@@ -1852,7 +1888,7 @@ func addAsdfSourceToFile(filePath string, sourceCmd string) error {
 	}
 	content += "\n# asdf initialization\n" + sourceCmd + "\n"
 
-	return os.WriteFile(filePath, []byte(content), 0644)
+	return os.WriteFile(filePath, []byte(content), 0600)
 }
 
 // executeUninstallAsdf handles asdf uninstallation and cleanup
@@ -2044,7 +2080,7 @@ func removeAsdfSourceFromFile(filePath string) error {
 		newContent = strings.ReplaceAll(newContent, "\n\n\n", "\n\n")
 	}
 
-	return os.WriteFile(filePath, []byte(newContent), 0644)
+	return os.WriteFile(filePath, []byte(newContent), 0600)
 }
 
 // EncryptFile encrypts a file and saves it with .enc extension
@@ -2216,7 +2252,7 @@ func PrintStatus() {
 	}
 
 	// Read status file
-	data, err := os.ReadFile(statusPath)
+	data, err := readBlueprintFile(statusPath)
 	if err != nil {
 		fmt.Printf("%s\n", ui.FormatInfo("No status file found. Run 'blueprint apply' to create one."))
 		return
@@ -2389,7 +2425,7 @@ func getBlueprintDir() (string, error) {
 	blueprintDir := filepath.Join(homeDir, ".blueprint")
 
 	// Create directory if it doesn't exist
-	if err := os.MkdirAll(blueprintDir, 0755); err != nil {
+	if err := os.MkdirAll(blueprintDir, 0750); err != nil {
 		return "", fmt.Errorf("failed to create .blueprint directory: %w", err)
 	}
 
@@ -2407,7 +2443,7 @@ func getNextRunNumber() (int, error) {
 
 	// Read current run number
 	var runNumber int
-	if data, err := os.ReadFile(runNumberFile); err == nil {
+	if data, err := readBlueprintFile(runNumberFile); err == nil {
 		_, _ = fmt.Sscanf(string(data), "%d", &runNumber)
 	}
 
@@ -2415,7 +2451,7 @@ func getNextRunNumber() (int, error) {
 	runNumber++
 
 	// Write back
-	if err := os.WriteFile(runNumberFile, []byte(fmt.Sprintf("%d", runNumber)), 0644); err != nil {
+	if err := os.WriteFile(runNumberFile, []byte(fmt.Sprintf("%d", runNumber)), 0600); err != nil {
 		return 0, err
 	}
 
@@ -2430,14 +2466,14 @@ func saveRuleOutput(runNumber, ruleIndex int, output, stderr string) error {
 	}
 
 	historyDir := filepath.Join(blueprintDir, "history", fmt.Sprintf("%d", runNumber))
-	if err := os.MkdirAll(historyDir, 0755); err != nil {
+	if err := os.MkdirAll(historyDir, 0750); err != nil {
 		return err
 	}
 
 	outputFile := filepath.Join(historyDir, fmt.Sprintf("%d.output", ruleIndex))
 	content := fmt.Sprintf("=== STDOUT ===\n%s\n\n=== STDERR ===\n%s\n", output, stderr)
 
-	return os.WriteFile(outputFile, []byte(content), 0644)
+	return os.WriteFile(outputFile, []byte(content), 0600)
 }
 
 // getLatestRunNumber returns the latest run number from the history directory
@@ -2533,7 +2569,7 @@ func PrintHistory(runNumber int, stepNumber int) {
 
 			outputPath := filepath.Join(historyDir, entry.Name())
 
-			content, err := os.ReadFile(outputPath)
+			content, err := readBlueprintFile(outputPath)
 			if err != nil {
 				continue
 			}

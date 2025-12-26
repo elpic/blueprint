@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"regexp"
@@ -42,22 +41,17 @@ func (h *MkdirHandler) Up() (string, error) {
 		}
 	}
 
-	// Create directory with mkdir -p
-	mkdirCmd := fmt.Sprintf("mkdir -p %s", mkdirEscapePath(path))
-	cmd := exec.Command("sh", "-c", mkdirCmd)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("failed to create directory %s: %s", path, strings.TrimSpace(string(output)))
+	// Create directory with mkdir -p (use default 0750 if no perms specified)
+	mode := os.FileMode(0750)
+	if h.Rule.MkdirPerms != "" {
+		// Parse the octal permission string
+		var octal int
+		_, _ = fmt.Sscanf(h.Rule.MkdirPerms, "%o", &octal)
+		mode = os.FileMode(octal)
 	}
 
-	// Apply permissions if specified
-	if h.Rule.MkdirPerms != "" {
-		chmodCmd := fmt.Sprintf("chmod %s %s", h.Rule.MkdirPerms, mkdirEscapePath(path))
-		cmd := exec.Command("sh", "-c", chmodCmd)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			return "", fmt.Errorf("failed to set permissions on %s: %s", path, strings.TrimSpace(string(output)))
-		}
+	if err := os.MkdirAll(path, mode); err != nil {
+		return "", fmt.Errorf("failed to create directory %s: %w", path, err)
 	}
 
 	// Return success message
@@ -80,11 +74,8 @@ func (h *MkdirHandler) Down() (string, error) {
 	}
 
 	// Remove directory recursively
-	removeCmd := fmt.Sprintf("rm -rf %s", mkdirEscapePath(path))
-	cmd := exec.Command("sh", "-c", removeCmd)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("failed to remove directory %s: %s", path, strings.TrimSpace(string(output)))
+	if err := os.RemoveAll(path); err != nil {
+		return "", fmt.Errorf("failed to remove directory %s: %w", path, err)
 	}
 
 	return fmt.Sprintf("Removed directory %s", path), nil
@@ -94,21 +85,21 @@ func (h *MkdirHandler) Down() (string, error) {
 func (h *MkdirHandler) GetCommand() string {
 	path := h.Rule.Mkdir
 
-	// If this is an uninstall, return the rm command
+	// If this is an uninstall, show the directory removal
 	if h.Rule.Action == "uninstall" {
-		removeCmd := fmt.Sprintf("rm -rf %s", mkdirEscapePath(path))
-		return removeCmd
+		return fmt.Sprintf("rm -rf %s", path)
 	}
 
-	// For mkdir action, build mkdir and optionally chmod commands
-	mkdirCmd := fmt.Sprintf("mkdir -p %s", mkdirEscapePath(path))
+	// For mkdir action, show the directory creation
+	// Escape path if it contains spaces
+	escapedPath := mkdirEscapePath(path)
+	msg := fmt.Sprintf("mkdir -p %s", escapedPath)
 
 	if h.Rule.MkdirPerms != "" {
-		chmodCmd := fmt.Sprintf("chmod %s %s", h.Rule.MkdirPerms, mkdirEscapePath(path))
-		return fmt.Sprintf("%s && %s", mkdirCmd, chmodCmd)
+		msg += fmt.Sprintf(" && chmod %s %s", h.Rule.MkdirPerms, escapedPath)
 	}
 
-	return mkdirCmd
+	return msg
 }
 
 // UpdateStatus updates the blueprint status after executing mkdir or uninstall-mkdir
@@ -117,15 +108,13 @@ func (h *MkdirHandler) UpdateStatus(status *Status, records []ExecutionRecord, b
 	blueprint = normalizePath(blueprint)
 
 	if h.Rule.Action == "mkdir" {
-		// Check if mkdir was executed successfully
-		mkdirCmd := fmt.Sprintf("mkdir -p %s", h.Rule.Mkdir)
+		// Check if mkdir was executed successfully by looking for the GetCommand output
+		expectedCmd := h.GetCommand()
 		mkdirExecuted := false
 		for _, record := range records {
-			if record.Status == "success" {
-				if record.Command == mkdirCmd || strings.HasPrefix(record.Command, mkdirCmd+" (chmod ") {
-					mkdirExecuted = true
-					break
-				}
+			if record.Status == "success" && record.Command == expectedCmd {
+				mkdirExecuted = true
+				break
 			}
 		}
 

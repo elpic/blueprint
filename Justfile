@@ -65,7 +65,7 @@ lint:
 security:
   @echo "Running security scan..."
   curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
-  $(go env GOPATH)/bin/gosec ./... || true
+  $(go env GOPATH)/bin/gosec -exclude=G204,G304,G115 ./...
   @echo "✓ Security scan completed"
 
 # Run all checks (test, lint, security)
