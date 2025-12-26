@@ -68,6 +68,10 @@ security:
   $(go env GOPATH)/bin/gosec -exclude=G204,G304,G115 ./...
   @echo "✓ Security scan completed"
 
+# Run quick checks (test and security, no lint)
+verify: test security
+  @echo "✓ All checks passed"
+
 # Run all checks (test, lint, security)
 check: test lint security
   @echo "✓ All checks passed"
@@ -98,6 +102,7 @@ help:
   @echo "QUALITY CHECKS:"
   @echo "  just lint           - Run golangci-lint"
   @echo "  just security       - Run security scan (gosec)"
+  @echo "  just verify         - Run quick checks (test and security, no lint)"
   @echo "  just check          - Run all checks (test, lint, security)"
   @echo ""
   @echo "MAINTENANCE:"
