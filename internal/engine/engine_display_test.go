@@ -386,9 +386,10 @@ func TestHistoryRecordIntegration(t *testing.T) {
 	blueprint2Ops := 0
 
 	for _, op := range operations {
-		if op.Blueprint == "/test/blueprint1.bp" {
+		switch op.Blueprint {
+		case "/test/blueprint1.bp":
 			blueprint1Ops++
-		} else if op.Blueprint == "/test/blueprint2.bp" {
+		case "/test/blueprint2.bp":
 			blueprint2Ops++
 		}
 	}

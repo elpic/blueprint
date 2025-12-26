@@ -259,7 +259,7 @@ func removePackageStatus(packages []PackageStatus, name string, blueprint string
 	normalizedBlueprint := normalizePath(blueprint)
 	for _, pkg := range packages {
 		normalizedStoredBlueprint := normalizePath(pkg.Blueprint)
-		if !(pkg.Name == name && normalizedStoredBlueprint == normalizedBlueprint && pkg.OS == osName) {
+		if pkg.Name != name || normalizedStoredBlueprint != normalizedBlueprint || pkg.OS != osName {
 			result = append(result, pkg)
 		}
 	}
@@ -272,7 +272,7 @@ func removeCloneStatus(clones []CloneStatus, path string, blueprint string, osNa
 	normalizedBlueprint := normalizePath(blueprint)
 	for _, clone := range clones {
 		normalizedStoredBlueprint := normalizePath(clone.Blueprint)
-		if !(clone.Path == path && normalizedStoredBlueprint == normalizedBlueprint && clone.OS == osName) {
+		if clone.Path != path || normalizedStoredBlueprint != normalizedBlueprint || clone.OS != osName {
 			result = append(result, clone)
 		}
 	}
@@ -285,7 +285,7 @@ func removeDecryptStatus(decrypts []DecryptStatus, destPath string, blueprint st
 	normalizedBlueprint := normalizePath(blueprint)
 	for _, decrypt := range decrypts {
 		normalizedStoredBlueprint := normalizePath(decrypt.Blueprint)
-		if !(decrypt.DestPath == destPath && normalizedStoredBlueprint == normalizedBlueprint && decrypt.OS == osName) {
+		if decrypt.DestPath != destPath || normalizedStoredBlueprint != normalizedBlueprint || decrypt.OS != osName {
 			result = append(result, decrypt)
 		}
 	}
@@ -298,7 +298,7 @@ func removeKnownHostsStatus(knownHosts []KnownHostsStatus, host string, blueprin
 	normalizedBlueprint := normalizePath(blueprint)
 	for _, kh := range knownHosts {
 		normalizedStoredBlueprint := normalizePath(kh.Blueprint)
-		if !(kh.Host == host && normalizedStoredBlueprint == normalizedBlueprint && kh.OS == osName) {
+		if kh.Host != host || normalizedStoredBlueprint != normalizedBlueprint || kh.OS != osName {
 			result = append(result, kh)
 		}
 	}
@@ -311,7 +311,7 @@ func removeGPGKeyStatus(gpgKeys []GPGKeyStatus, keyring string, blueprint string
 	normalizedBlueprint := normalizePath(blueprint)
 	for _, gk := range gpgKeys {
 		normalizedStoredBlueprint := normalizePath(gk.Blueprint)
-		if !(gk.Keyring == keyring && normalizedStoredBlueprint == normalizedBlueprint && gk.OS == osName) {
+		if gk.Keyring != keyring || normalizedStoredBlueprint != normalizedBlueprint || gk.OS != osName {
 			result = append(result, gk)
 		}
 	}

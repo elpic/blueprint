@@ -24,7 +24,7 @@ func TestGPGKeyHandlerUpOutput(t *testing.T) {
 	// We can't actually run this on macOS since it requires Linux commands
 	// but we can verify the handler was created correctly
 	if handler == nil {
-		t.Error("NewGPGKeyHandler() returned nil")
+		t.Fatal("NewGPGKeyHandler() returned nil")
 	}
 
 	if handler.Rule.GPGKeyring != "test-repo" {

@@ -211,7 +211,7 @@ func removeMkdirStatus(mkdirs []MkdirStatus, path string, blueprint string, osNa
 	for _, mkdir := range mkdirs {
 		// Also normalize the stored blueprint for comparison
 		normalizedStoredBlueprint := normalizePath(mkdir.Blueprint)
-		if !(mkdir.Path == path && normalizedStoredBlueprint == normalizedBlueprint && mkdir.OS == osName) {
+		if mkdir.Path != path || normalizedStoredBlueprint != normalizedBlueprint || mkdir.OS != osName {
 			result = append(result, mkdir)
 		}
 	}

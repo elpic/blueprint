@@ -62,9 +62,7 @@ func (h *AsdfHandler) Up() (string, error) {
 
 		// Add plugin
 		addPluginCmd := fmt.Sprintf("asdf plugin add %s 2>/dev/null || true", plugin)
-		if err := exec.Command("sh", "-c", addPluginCmd).Run(); err != nil {
-			// Continue even if plugin add fails (might already exist)
-		}
+		_ = exec.Command("sh", "-c", addPluginCmd).Run() // Continue even if plugin add fails (might already exist)
 
 		// Install version
 		installCmd := fmt.Sprintf("asdf install %s %s", plugin, version)
@@ -104,9 +102,7 @@ func (h *AsdfHandler) Down() (string, error) {
 
 		// Uninstall version
 		uninstallCmd := fmt.Sprintf("asdf uninstall %s %s", plugin, version)
-		if err := exec.Command("sh", "-c", uninstallCmd).Run(); err != nil {
-			// Continue even if uninstall fails
-		}
+		_ = exec.Command("sh", "-c", uninstallCmd).Run() // Continue even if uninstall fails
 	}
 
 	// Remove plugins
@@ -125,9 +121,7 @@ func (h *AsdfHandler) Down() (string, error) {
 
 		// Remove plugin
 		removeCmd := fmt.Sprintf("asdf plugin remove %s 2>/dev/null || true", plugin)
-		if err := exec.Command("sh", "-c", removeCmd).Run(); err != nil {
-			// Continue even if remove fails
-		}
+		_ = exec.Command("sh", "-c", removeCmd).Run() // Continue even if remove fails
 	}
 
 	// Uninstall asdf completely
@@ -162,9 +156,7 @@ func (h *AsdfHandler) installAsdf() error {
 func (h *AsdfHandler) installAsdfMacOS() error {
 	// First install coreutils as dependency (continue if it fails, might already be installed)
 	depCmd := "brew install coreutils 2>/dev/null || true"
-	if _, err := executeCommandWithCache(depCmd); err != nil {
-		// Continue even if coreutils fails
-	}
+	_, _ = executeCommandWithCache(depCmd) // Continue even if coreutils fails
 
 	// Install asdf via Homebrew
 	installCmd := "brew install asdf"
@@ -180,9 +172,7 @@ func (h *AsdfHandler) installAsdfMacOS() error {
 func (h *AsdfHandler) installAsdfLinux() error {
 	// Install dependencies: bash
 	depCmd := "DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq bash 2>/dev/null || true"
-	if _, err := executeCommandWithCache(depCmd); err != nil {
-		// Don't fail - bash might already be installed
-	}
+	_, _ = executeCommandWithCache(depCmd) // Don't fail - bash might already be installed
 
 	// Get home directory
 	homeDir, err := os.UserHomeDir()
@@ -279,9 +269,7 @@ func (h *AsdfHandler) uninstallAsdfLinux() error {
 
 	// Clean up sed backup file if it was created
 	cleanupCmd := `rm -f ~/.bashrc.bak`
-	if _, err := executeCommandWithCache(cleanupCmd); err != nil {
-		// Ignore errors on cleanup
-	}
+	_, _ = executeCommandWithCache(cleanupCmd) // Ignore errors on cleanup
 
 	return nil
 }

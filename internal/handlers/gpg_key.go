@@ -72,10 +72,7 @@ func (h *GPGKeyHandler) Down() (string, error) {
 	combinedCmd := fmt.Sprintf("sh -c 'sudo rm -f %s && sudo rm -f %s && sudo apt update 2>/dev/null || true'",
 		sourcesListPath, keyringPath)
 
-	_, err := executeCommandWithCache(combinedCmd)
-	if err != nil {
-		// Don't fail - files might not exist or apt update might fail
-	}
+	_, _ = executeCommandWithCache(combinedCmd) // Don't fail - files might not exist or apt update might fail
 
 	return fmt.Sprintf("Removed GPG key %s and repository", keyring), nil
 }
