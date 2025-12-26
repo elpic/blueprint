@@ -19,7 +19,7 @@ func TestKnownHostsHandlerGetCommand(t *testing.T) {
 		{
 			name: "add host to known_hosts",
 			rule: parser.Rule{
-				Action:    "known_hosts",
+				Action:     "known_hosts",
 				KnownHosts: "github.com",
 			},
 			expected: "ssh-keyscan -t ed25519 github.com",
@@ -27,9 +27,9 @@ func TestKnownHostsHandlerGetCommand(t *testing.T) {
 		{
 			name: "add host with specific key type",
 			rule: parser.Rule{
-				Action:         "known_hosts",
-				KnownHosts:     "example.com",
-				KnownHostsKey:  "rsa",
+				Action:        "known_hosts",
+				KnownHosts:    "example.com",
+				KnownHostsKey: "rsa",
 			},
 			expected: "ssh-keyscan -t rsa example.com",
 		},
@@ -243,12 +243,12 @@ func TestKnownHostsHandlerDisplayInfo(t *testing.T) {
 
 			handler.DisplayInfo()
 
-			w.Close()
+			_ = w.Close()
 			os.Stdout = old
 
 			// Read captured output
 			var buf bytes.Buffer
-			io.Copy(&buf, r)
+			_, _ = io.Copy(&buf, r)
 			output := buf.String()
 
 			// Verify expected content is present

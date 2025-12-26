@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -48,14 +49,20 @@ func (h *AsdfHandler) Up() (string, error) {
 			return "", fmt.Errorf("invalid asdf package format: %s, expected format: plugin@version", pkg)
 		}
 
-		plugin := parts[0]
-		version := parts[1]
+		plugin := strings.TrimSpace(parts[0])
+		version := strings.TrimSpace(parts[1])
+
+		// Validate plugin and version names (reject shell metacharacters)
+		if !isValidAsdfIdentifier(plugin) {
+			return "", fmt.Errorf("invalid plugin name: %s (contains invalid characters)", plugin)
+		}
+		if !isValidAsdfIdentifier(version) {
+			return "", fmt.Errorf("invalid version: %s (contains invalid characters)", version)
+		}
 
 		// Add plugin
 		addPluginCmd := fmt.Sprintf("asdf plugin add %s 2>/dev/null || true", plugin)
-		if err := exec.Command("sh", "-c", addPluginCmd).Run(); err != nil {
-			// Continue even if plugin add fails (might already exist)
-		}
+		_ = exec.Command("sh", "-c", addPluginCmd).Run() // Continue even if plugin add fails (might already exist)
 
 		// Install version
 		installCmd := fmt.Sprintf("asdf install %s %s", plugin, version)
@@ -85,14 +92,17 @@ func (h *AsdfHandler) Down() (string, error) {
 			continue
 		}
 
-		plugin := parts[0]
-		version := parts[1]
+		plugin := strings.TrimSpace(parts[0])
+		version := strings.TrimSpace(parts[1])
+
+		// Validate plugin and version names
+		if !isValidAsdfIdentifier(plugin) || !isValidAsdfIdentifier(version) {
+			continue
+		}
 
 		// Uninstall version
 		uninstallCmd := fmt.Sprintf("asdf uninstall %s %s", plugin, version)
-		if err := exec.Command("sh", "-c", uninstallCmd).Run(); err != nil {
-			// Continue even if uninstall fails
-		}
+		_ = exec.Command("sh", "-c", uninstallCmd).Run() // Continue even if uninstall fails
 	}
 
 	// Remove plugins
@@ -102,13 +112,16 @@ func (h *AsdfHandler) Down() (string, error) {
 			continue
 		}
 
-		plugin := parts[0]
+		plugin := strings.TrimSpace(parts[0])
+
+		// Validate plugin name
+		if !isValidAsdfIdentifier(plugin) {
+			continue
+		}
 
 		// Remove plugin
 		removeCmd := fmt.Sprintf("asdf plugin remove %s 2>/dev/null || true", plugin)
-		if err := exec.Command("sh", "-c", removeCmd).Run(); err != nil {
-			// Continue even if remove fails
-		}
+		_ = exec.Command("sh", "-c", removeCmd).Run() // Continue even if remove fails
 	}
 
 	// Uninstall asdf completely
@@ -143,9 +156,7 @@ func (h *AsdfHandler) installAsdf() error {
 func (h *AsdfHandler) installAsdfMacOS() error {
 	// First install coreutils as dependency (continue if it fails, might already be installed)
 	depCmd := "brew install coreutils 2>/dev/null || true"
-	if _, err := executeCommandWithCache(depCmd); err != nil {
-		// Continue even if coreutils fails
-	}
+	_, _ = executeCommandWithCache(depCmd) // Continue even if coreutils fails
 
 	// Install asdf via Homebrew
 	installCmd := "brew install asdf"
@@ -161,9 +172,7 @@ func (h *AsdfHandler) installAsdfMacOS() error {
 func (h *AsdfHandler) installAsdfLinux() error {
 	// Install dependencies: bash
 	depCmd := "DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq bash 2>/dev/null || true"
-	if _, err := executeCommandWithCache(depCmd); err != nil {
-		// Don't fail - bash might already be installed
-	}
+	_, _ = executeCommandWithCache(depCmd) // Don't fail - bash might already be installed
 
 	// Get home directory
 	homeDir, err := os.UserHomeDir()
@@ -260,9 +269,7 @@ func (h *AsdfHandler) uninstallAsdfLinux() error {
 
 	// Clean up sed backup file if it was created
 	cleanupCmd := `rm -f ~/.bashrc.bak`
-	if _, err := executeCommandWithCache(cleanupCmd); err != nil {
-		// Ignore errors on cleanup
-	}
+	_, _ = executeCommandWithCache(cleanupCmd) // Ignore errors on cleanup
 
 	return nil
 }
@@ -363,3 +370,16 @@ func succeededAsdfUninstall(records []ExecutionRecord) bool {
 	return false
 }
 
+// isValidAsdfIdentifier validates that a plugin or version name is safe to use in shell commands
+// It only allows alphanumeric characters, dots, hyphens, and underscores
+func isValidAsdfIdentifier(identifier string) bool {
+	if identifier == "" {
+		return false
+	}
+	// Match pattern: alphanumeric, dots, hyphens, underscores, plus sign
+	matched, err := regexp.MatchString(`^[a-zA-Z0-9._\-+]+$`, identifier)
+	if err != nil {
+		return false
+	}
+	return matched
+}

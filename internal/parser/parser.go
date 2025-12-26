@@ -13,24 +13,24 @@ type Package struct {
 }
 
 type Rule struct {
-	ID        string     // Unique identifier for this rule
-	Action    string     // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "known_hosts", or "gpg-key"
-	Packages  []Package
-	OSList    []string
-	After     []string   // List of IDs or package names this rule depends on
-	Group     string
+	ID       string // Unique identifier for this rule
+	Action   string // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "known_hosts", or "gpg-key"
+	Packages []Package
+	OSList   []string
+	After    []string // List of IDs or package names this rule depends on
+	Group    string
 
 	// Clone-specific fields
-	CloneURL  string     // Git repository URL
-	ClonePath string     // Destination path for cloned repository
-	Branch    string     // Branch to clone (optional, defaults to repo default)
+	CloneURL  string // Git repository URL
+	ClonePath string // Destination path for cloned repository
+	Branch    string // Branch to clone (optional, defaults to repo default)
 
 	// ASDF-specific fields
 	AsdfPackages []string // List of "plugin@version" for asdf (e.g., "nodejs@21.4.0")
 
 	// Decrypt-specific fields
-	DecryptFile     string // Source encrypted file
-	DecryptPath     string // Destination path for decrypted file
+	DecryptFile       string // Source encrypted file
+	DecryptPath       string // Destination path for decrypted file
 	DecryptPasswordID string // Password ID to use for decryption
 
 	// KnownHosts-specific fields
@@ -42,9 +42,9 @@ type Rule struct {
 	MkdirPerms string // Octal permissions (e.g., "755", "700") - optional
 
 	// GPG Key-specific fields
-	GPGKeyURL    string // URL to the GPG key file
-	GPGKeyring   string // Name of the keyring (without path or .gpg extension)
-	GPGDebURL    string // Debian repository URL
+	GPGKeyURL  string // URL to the GPG key file
+	GPGKeyring string // Name of the keyring (without path or .gpg extension)
+	GPGDebURL  string // Debian repository URL
 }
 
 // Parse parses content without include support
@@ -947,4 +947,3 @@ func parseGPGKeyRule(line string) *Rule {
 		After:      dependencies,
 	}
 }
-

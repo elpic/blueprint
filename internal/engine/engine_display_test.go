@@ -228,9 +228,9 @@ func TestGPGKeyUninstallDisplay(t *testing.T) {
 // TestRuleIDForDisplay tests that rule IDs are available for display
 func TestRuleIDForDisplay(t *testing.T) {
 	tests := []struct {
-		name   string
-		rule   parser.Rule
-		hasID  bool
+		name  string
+		rule  parser.Rule
+		hasID bool
 	}{
 		{
 			name: "gpg-key with ID",
@@ -386,9 +386,10 @@ func TestHistoryRecordIntegration(t *testing.T) {
 	blueprint2Ops := 0
 
 	for _, op := range operations {
-		if op.Blueprint == "/test/blueprint1.bp" {
+		switch op.Blueprint {
+		case "/test/blueprint1.bp":
 			blueprint1Ops++
-		} else if op.Blueprint == "/test/blueprint2.bp" {
+		case "/test/blueprint2.bp":
 			blueprint2Ops++
 		}
 	}

@@ -1,0 +1,183 @@
+name: integration
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Run unit tests with coverage
+        run: just test "--coverage -v"
+
+      - name: Generate coverage report
+        if: hashFiles('coverage.out') != ''
+        run: |
+          go tool cover -html=coverage.out -o coverage.html
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.*
+
+      - name: Calculate coverage percentage
+        id: coverage
+        if: hashFiles('coverage.out') != ''
+        run: |
+          coverage=$(go tool cover -func coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "current_coverage=$coverage" >> $GITHUB_OUTPUT
+          echo "Coverage: ${coverage}%"
+
+      - name: Compare coverage with main branch (PR only)
+        run: |
+          # Fetch main branch coverage
+          git fetch origin main:main
+
+          # Stash current changes
+          git stash
+
+          # Checkout main and get coverage
+          git checkout main
+          just test "--coverage -v" || true
+          main_coverage=$(go tool cover -func coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+
+          # Restore changes
+          git checkout -
+          git stash pop || true
+
+          # Get current coverage
+          current_coverage=$(go tool cover -func coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+
+          # Calculate difference
+          diff=$(echo "$current_coverage - $main_coverage" | bc)
+
+          echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Current Coverage | ${current_coverage}% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Main Branch Coverage | ${main_coverage}% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Difference | ${diff}% |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if (( $(echo "$diff > 0" | bc -l) )); then
+            echo "✅ Coverage increased by ${diff}%" >> $GITHUB_STEP_SUMMARY
+          elif (( $(echo "$diff < 0" | bc -l) )); then
+            echo "⚠️ Coverage decreased by ${diff#-}%" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "➡️ Coverage unchanged" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  lint:
+    name: Run Linter
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Run linter
+        run: just lint
+
+  build:
+    name: Build Binary
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Build binary
+        run: just build
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: blueprint-binaries
+          path: blueprint-*
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [test, lint, build]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Download blueprint binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: blueprint-binaries
+
+      - name: Make binaries executable
+        run: |
+          chmod +x blueprint-*
+
+      - name: Run integration tests
+        run: |
+          go test -v -race -run Integration ./...
+
+  security:
+    name: Security Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Run security scan
+        run: just security

@@ -13,5 +13,3 @@ blueprint-*
 
 # Go build cache
 vendor/
-*.mod
-*.sum

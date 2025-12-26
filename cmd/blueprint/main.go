@@ -35,10 +35,10 @@ func main() {
 		runNumber := 0
 		stepNumber := -1
 		if len(os.Args) >= 3 {
-			fmt.Sscanf(os.Args[2], "%d", &runNumber)
+			_, _ = fmt.Sscanf(os.Args[2], "%d", &runNumber)
 		}
 		if len(os.Args) >= 4 {
-			fmt.Sscanf(os.Args[3], "%d", &stepNumber)
+			_, _ = fmt.Sscanf(os.Args[3], "%d", &stepNumber)
 		}
 		engine.PrintHistory(runNumber, stepNumber)
 	case "plan":
@@ -79,4 +79,3 @@ func main() {
 		engine.Run(mode, false)
 	}
 }
-

@@ -29,10 +29,11 @@ build-macos:
   GOOS=darwin GOARCH=arm64 go build -o blueprint-macos-arm64 ./cmd/blueprint
   @echo "✓ macOS binaries built"
 
-# Run tests with optional filters and flags
-# Usage: just test [feature] [flags]
+# Run tests with optional flags
+# Usage: just test [flags]
+# Examples: just test "-v", just test "--coverage -v"
 # Flags: -v, --verbose, --coverage
-test FEATURE="" FLAGS="":
+test FLAGS="":
   #!/bin/bash
   set -e
 
@@ -44,7 +45,7 @@ test FEATURE="" FLAGS="":
     VERBOSE="-v"
   fi
   if [[ "{{FLAGS}}" == *"--coverage"* ]]; then
-    COVERAGE="-cover"
+    COVERAGE="-coverprofile=coverage.out"
   fi
 
   if [[ -n "$COVERAGE" ]]; then
@@ -52,6 +53,34 @@ test FEATURE="" FLAGS="":
   else
     go test $VERBOSE ./...
   fi
+
+# Format code with gofmt
+format:
+  @echo "Formatting code..."
+  go fmt ./...
+  @echo "✓ Code formatted"
+
+# Run linter (golangci-lint)
+lint:
+  @echo "Running linter..."
+  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+  $(go env GOPATH)/bin/golangci-lint run ./... --timeout=5m
+  @echo "✓ Lint checks passed"
+
+# Run security scanner (gosec)
+security:
+  @echo "Running security scan..."
+  curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+  $(go env GOPATH)/bin/gosec -exclude=G204,G304,G115 ./...
+  @echo "✓ Security scan completed"
+
+# Run quick checks (test and security, no lint)
+verify: test security
+  @echo "✓ All checks passed"
+
+# Run all checks (test, lint, security)
+check: test lint security
+  @echo "✓ All checks passed"
 
 # Clean build artifacts
 clean:
@@ -71,11 +100,17 @@ help:
   @echo "  just build-macos    - Build for macOS (amd64 and arm64)"
   @echo ""
   @echo "TEST:"
-  @echo "  just test           - Run all tests"
+  @echo "  just test                      - Run all tests"
+  @echo "  just test \"-v\"                 - Run all tests with verbose output"
+  @echo "  just test \"--coverage\"         - Run all tests with coverage report"
+  @echo "  just test \"--coverage -v\"      - Run all tests with coverage and verbose"
   @echo ""
-  @echo "TEST FLAGS (can be combined):"
-  @echo "  just test -v                    - Run all tests with verbose output"
-  @echo "  just test --coverage            - Run all tests with coverage report"
+  @echo "QUALITY CHECKS:"
+  @echo "  just format         - Format code with gofmt"
+  @echo "  just lint           - Run golangci-lint"
+  @echo "  just security       - Run security scan (gosec)"
+  @echo "  just verify         - Run quick checks (test and security, no lint)"
+  @echo "  just check          - Run all checks (test, lint, security)"
   @echo ""
   @echo "MAINTENANCE:"
   @echo "  just clean          - Remove all build artifacts"

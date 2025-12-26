@@ -72,13 +72,13 @@ func (h *InstallHandler) UpdateStatus(status *Status, records []ExecutionRecord,
 	// Normalize blueprint path for consistent storage and comparison
 	blueprint = normalizePath(blueprint)
 
-	if h.Rule.Action == "install" {
+	switch h.Rule.Action {
+	case "install":
 		// Check if this rule's command was executed successfully
 		cmd := h.buildCommand()
 		if needsSudo(cmd) {
 			cmd = "sudo " + cmd
 		}
-
 
 		_, commandExecuted := commandSuccessfullyExecuted(cmd, records)
 
@@ -96,7 +96,7 @@ func (h *InstallHandler) UpdateStatus(status *Status, records []ExecutionRecord,
 				})
 			}
 		}
-	} else if h.Rule.Action == "uninstall" {
+	case "uninstall":
 		// Remove uninstalled packages from status
 		for _, pkg := range h.Rule.Packages {
 			status.Packages = removePackageStatus(status.Packages, pkg.Name, blueprint, osName)

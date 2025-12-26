@@ -239,7 +239,6 @@ func TestAutoUninstallRulesFormat(t *testing.T) {
 		t.Errorf("Action: got %q, want 'uninstall'", rule.Action)
 	}
 
-
 	if rule.GPGKeyring != "test-repo" {
 		t.Errorf("GPGKeyring: got %q, want 'test-repo'", rule.GPGKeyring)
 	}
@@ -371,9 +370,10 @@ func TestGPGKeyStatusMultipleBlueprints(t *testing.T) {
 	blueprint2Keys := 0
 
 	for _, gpg := range status.GPGKeys {
-		if gpg.Blueprint == "/test/blueprint1.bp" {
+		switch gpg.Blueprint {
+		case "/test/blueprint1.bp":
 			blueprint1Keys++
-		} else if gpg.Blueprint == "/test/blueprint2.bp" {
+		case "/test/blueprint2.bp":
 			blueprint2Keys++
 		}
 	}
@@ -412,7 +412,7 @@ func TestGPGKeyStatusRemoval(t *testing.T) {
 	// Remove repo1 from linux
 	var filtered []GPGKeyStatus
 	for _, gpg := range status.GPGKeys {
-		if !(gpg.Keyring == "repo1" && gpg.Blueprint == "/test/blueprint.bp" && gpg.OS == "linux") {
+		if gpg.Keyring != "repo1" || gpg.Blueprint != "/test/blueprint.bp" || gpg.OS != "linux" {
 			filtered = append(filtered, gpg)
 		}
 	}
@@ -443,7 +443,7 @@ func TestGPGKeyConversionRoundtrip(t *testing.T) {
 	// Convert to map (simulating JSON encoding)
 	data, _ := json.Marshal(original)
 	var decoded GPGKeyStatus
-	json.Unmarshal(data, &decoded)
+	_ = json.Unmarshal(data, &decoded)
 
 	// Verify no data loss
 	if decoded.Keyring != original.Keyring ||

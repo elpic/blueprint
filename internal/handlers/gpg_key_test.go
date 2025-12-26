@@ -24,7 +24,7 @@ func TestGPGKeyHandlerUpOutput(t *testing.T) {
 	// We can't actually run this on macOS since it requires Linux commands
 	// but we can verify the handler was created correctly
 	if handler == nil {
-		t.Error("NewGPGKeyHandler() returned nil")
+		t.Fatal("NewGPGKeyHandler() returned nil")
 	}
 
 	if handler.Rule.GPGKeyring != "test-repo" {
@@ -163,8 +163,8 @@ func TestGPGKeyHandlerUpdateStatus(t *testing.T) {
 // TestGPGKeyHandlerNewGPGKeyHandler tests the NewGPGKeyHandler factory function
 func TestGPGKeyHandlerNewGPGKeyHandler(t *testing.T) {
 	tests := []struct {
-		name    string
-		rule    parser.Rule
+		name     string
+		rule     parser.Rule
 		basePath string
 	}{
 		{
@@ -244,9 +244,9 @@ func TestGPGKeyHandlerCommandConstruction(t *testing.T) {
 // TestGPGKeyHandlerRemoveGPGKeyStatus tests the removeGPGKeyStatus helper
 func TestGPGKeyHandlerRemoveGPGKeyStatus(t *testing.T) {
 	tests := []struct {
-		name     string
-		gpgKeys  []GPGKeyStatus
-		keyring  string
+		name      string
+		gpgKeys   []GPGKeyStatus
+		keyring   string
 		blueprint string
 		osName    string
 		expected  int
@@ -655,12 +655,12 @@ func TestGPGKeyHandlerDisplayInfo(t *testing.T) {
 
 			handler.DisplayInfo()
 
-			w.Close()
+			_ = w.Close()
 			os.Stdout = old
 
 			// Read captured output
 			var buf bytes.Buffer
-			io.Copy(&buf, r)
+			_, _ = io.Copy(&buf, r)
 			output := buf.String()
 
 			// Verify expected content is present
@@ -700,8 +700,8 @@ func TestGPGKeyHandlerSudoAwareInterface(t *testing.T) {
 // TestGPGKeyHandlerNeedsSudo tests the NeedsSudo method specifically
 func TestGPGKeyHandlerNeedsSudo(t *testing.T) {
 	tests := []struct {
-		name        string
-		rule        parser.Rule
+		name         string
+		rule         parser.Rule
 		expectedSudo bool
 	}{
 		{

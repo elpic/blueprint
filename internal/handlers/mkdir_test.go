@@ -28,9 +28,9 @@ func TestMkdirHandlerGetCommand(t *testing.T) {
 		{
 			name: "mkdir with permissions",
 			rule: parser.Rule{
-				Action:       "mkdir",
-				Mkdir:        "/tmp/test-dir",
-				MkdirPerms:   "755",
+				Action:     "mkdir",
+				Mkdir:      "/tmp/test-dir",
+				MkdirPerms: "755",
 			},
 			expected: "mkdir -p /tmp/test-dir && chmod 755 /tmp/test-dir",
 		},
@@ -130,7 +130,7 @@ func TestMkdirHandlerDown(t *testing.T) {
 	testDir := filepath.Join(tmpDir, "test-remove")
 
 	// Create a directory first
-	os.MkdirAll(testDir, 0755)
+	_ = os.MkdirAll(testDir, 0755)
 
 	tests := []struct {
 		name      string
@@ -167,7 +167,7 @@ func TestMkdirHandlerDown(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Recreate dir for each test
 			if tt.name == "remove existing directory" {
-				os.MkdirAll(testDir, 0755)
+				_ = os.MkdirAll(testDir, 0755)
 			}
 
 			handler := NewMkdirHandler(tt.rule, "")
@@ -318,12 +318,12 @@ func TestMkdirHandlerDisplayInfo(t *testing.T) {
 
 			handler.DisplayInfo()
 
-			w.Close()
+			_ = w.Close()
 			os.Stdout = old
 
 			// Read captured output
 			var buf bytes.Buffer
-			io.Copy(&buf, r)
+			_, _ = io.Copy(&buf, r)
 			output := buf.String()
 
 			// Verify expected content is present

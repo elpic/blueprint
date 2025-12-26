@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -29,6 +30,11 @@ func NewKnownHostsHandler(rule parser.Rule, basePath string) *KnownHostsHandler 
 
 // Up adds the host to known_hosts file
 func (h *KnownHostsHandler) Up() (string, error) {
+	// Validate hostname
+	if !isValidHostname(h.Rule.KnownHosts) {
+		return "", fmt.Errorf("invalid hostname: %s (contains invalid characters)", h.Rule.KnownHosts)
+	}
+
 	if _, err := knownHostsFile(true); err != nil {
 		return "", err
 	}
@@ -54,6 +60,11 @@ func (h *KnownHostsHandler) Up() (string, error) {
 
 // Down removes the host from known_hosts file
 func (h *KnownHostsHandler) Down() (string, error) {
+	// Validate hostname
+	if !isValidHostname(h.Rule.KnownHosts) {
+		return "", fmt.Errorf("invalid hostname: %s (contains invalid characters)", h.Rule.KnownHosts)
+	}
+
 	// Check if known_hosts file exists
 	if _, err := knownHostsFile(false); err != nil {
 		return "", err
@@ -96,7 +107,7 @@ func sshDir(create bool) (string, error) {
 func knownHostsFile(create bool) (string, error) {
 	sshPath, err := sshDir(create)
 
-	if (err != nil) {
+	if err != nil {
 		return "", err
 	}
 
@@ -213,4 +224,18 @@ func (h *KnownHostsHandler) DisplayInfo() {
 		keyTypeDisplay = "auto-detect (ed25519, ecdsa, rsa)"
 	}
 	fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("Key Type: %s", keyTypeDisplay)))
+}
+
+// isValidHostname validates that a hostname is safe to use in shell commands
+// Allows alphanumeric, dots, hyphens, and underscores (valid DNS names and IPs)
+func isValidHostname(hostname string) bool {
+	if hostname == "" {
+		return false
+	}
+	// Match valid hostname pattern: alphanumeric, dots, hyphens, underscores
+	matched, err := regexp.MatchString(`^[a-zA-Z0-9._\-]+$`, hostname)
+	if err != nil {
+		return false
+	}
+	return matched
 }

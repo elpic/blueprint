@@ -3,16 +3,6 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
-	"os/user"
-	"path/filepath"
-	"regexp"
-	"runtime"
-	"sort"
-	"strconv"
-	"strings"
-	"time"
 	cryptopkg "github.com/elpic/blueprint/internal/crypto"
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
@@ -20,6 +10,15 @@ import (
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
 	"golang.org/x/term"
+	"os"
+	"os/exec"
+	"os/user"
+	"path/filepath"
+	"runtime"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
 )
 
 type ExecutionRecord struct {
@@ -122,7 +121,7 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 			fmt.Printf("Error: %v\n", err)
 			return
 		}
-		defer gitpkg.CleanupRepository(tempDir)
+		defer func() { _ = gitpkg.CleanupRepository(tempDir) }()
 
 		// Find setup file in the cloned repo
 		setupPath, err = gitpkg.FindSetupFile(tempDir, setupFile)
@@ -245,7 +244,7 @@ func Run(file string, dry bool) {
 			fmt.Printf("Error: %v\n", err)
 			return
 		}
-		defer gitpkg.CleanupRepository(tempDir)
+		defer func() { _ = gitpkg.CleanupRepository(tempDir) }()
 
 		// Find setup file in the cloned repo
 		setupPath, err = gitpkg.FindSetupFile(tempDir, setupFile)
@@ -433,13 +432,14 @@ func buildCommand(rule parser.Rule) string {
 		targetOS = strings.TrimSpace(rule.OSList[0])
 	}
 
-	if rule.Action == "install" {
+	switch rule.Action {
+	case "install":
 		// Use brew for macOS, apt for Linux
 		if targetOS == "mac" {
 			return fmt.Sprintf("brew install %s", pkgNames)
 		}
 		return fmt.Sprintf("apt-get install -y %s", pkgNames)
-	} else if rule.Action == "uninstall" {
+	case "uninstall":
 		// Uninstall commands
 		if targetOS == "mac" {
 			return fmt.Sprintf("brew uninstall -y %s", pkgNames)
@@ -613,7 +613,7 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 		}
 
 		if handler != nil {
-		// Set action-specific UI formatting and command
+			// Set action-specific UI formatting and command
 			switch rule.Action {
 			case "clone":
 				fmt.Printf(" %s", ui.FormatInfo(rule.ClonePath))
@@ -672,10 +672,10 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 			}
 		}
 
-	// Get the actual command from the handler if not already set
-	if handler != nil && actualCmd == "" {
-		actualCmd = handler.GetCommand()
-	}
+		// Get the actual command from the handler if not already set
+		if handler != nil && actualCmd == "" {
+			actualCmd = handler.GetCommand()
+		}
 
 		// Execute handler
 		if handler != nil {
@@ -699,16 +699,16 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 		if err != nil {
 			fmt.Printf(" %s\n", ui.FormatError("Failed"))
 			fmt.Printf("       %s\n", ui.FormatError(err.Error()))
-		if logging.IsDebug() {
-			fmt.Printf("       %s: %s\n", ui.FormatDim("Command"), ui.FormatInfo(actualCmd))
-		}
+			if logging.IsDebug() {
+				fmt.Printf("       %s: %s\n", ui.FormatDim("Command"), ui.FormatInfo(actualCmd))
+			}
 			record.Status = "error"
 			record.Error = err.Error()
 		} else {
 			fmt.Printf(" %s\n", ui.FormatSuccess("Done"))
-		if logging.IsDebug() {
-			fmt.Printf("       %s: %s\n", ui.FormatDim("Command"), ui.FormatInfo(actualCmd))
-		}
+			if logging.IsDebug() {
+				fmt.Printf("       %s: %s\n", ui.FormatDim("Command"), ui.FormatInfo(actualCmd))
+			}
 			record.Status = "success"
 		}
 
@@ -740,7 +740,7 @@ func getHistoryPath() (string, error) {
 	blueprintDir := filepath.Join(homeDir, ".blueprint")
 
 	// Create directory if it doesn't exist
-	if err := os.MkdirAll(blueprintDir, 0755); err != nil {
+	if err := os.MkdirAll(blueprintDir, 0750); err != nil {
 		return "", fmt.Errorf("failed to create .blueprint directory: %w", err)
 	}
 
@@ -757,11 +757,47 @@ func getStatusPath() (string, error) {
 	blueprintDir := filepath.Join(homeDir, ".blueprint")
 
 	// Create directory if it doesn't exist
-	if err := os.MkdirAll(blueprintDir, 0755); err != nil {
+	if err := os.MkdirAll(blueprintDir, 0750); err != nil {
 		return "", fmt.Errorf("failed to create .blueprint directory: %w", err)
 	}
 
 	return filepath.Join(blueprintDir, "status.json"), nil
+}
+
+// validateBlueprintPath validates that a file path is within the blueprint directory
+// This prevents path traversal attacks
+func validateBlueprintPath(filePath string) error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	blueprintDir := filepath.Join(homeDir, ".blueprint")
+	blueprintDirAbs, err := filepath.Abs(blueprintDir)
+	if err != nil {
+		return fmt.Errorf("invalid blueprint directory: %w", err)
+	}
+
+	filePathAbs, err := filepath.Abs(filePath)
+	if err != nil {
+		return fmt.Errorf("invalid file path: %w", err)
+	}
+
+	// Ensure the file path is within the blueprint directory
+	relPath, err := filepath.Rel(blueprintDirAbs, filePathAbs)
+	if err != nil || strings.HasPrefix(relPath, "..") {
+		return fmt.Errorf("path traversal attempt detected: %s", filePath)
+	}
+
+	return nil
+}
+
+// readBlueprintFile safely reads a file from the blueprint directory after validation
+func readBlueprintFile(filePath string) ([]byte, error) {
+	if err := validateBlueprintPath(filePath); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(filePath)
 }
 
 // saveHistory saves execution records to ~/.blueprint/history.json
@@ -777,8 +813,8 @@ func saveHistory(records []ExecutionRecord) error {
 
 	// Read existing history
 	var allRecords []ExecutionRecord
-	if data, err := os.ReadFile(historyPath); err == nil {
-		json.Unmarshal(data, &allRecords)
+	if data, err := readBlueprintFile(historyPath); err == nil {
+		_ = json.Unmarshal(data, &allRecords)
 	}
 
 	// Append new records
@@ -790,7 +826,7 @@ func saveHistory(records []ExecutionRecord) error {
 		return fmt.Errorf("failed to marshal history: %w", err)
 	}
 
-	if err := os.WriteFile(historyPath, data, 0644); err != nil {
+	if err := os.WriteFile(historyPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write history file: %w", err)
 	}
 
@@ -809,8 +845,8 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 
 	// Load existing status
 	var status Status
-	if data, err := os.ReadFile(statusPath); err == nil {
-		json.Unmarshal(data, &status)
+	if data, err := readBlueprintFile(statusPath); err == nil {
+		_ = json.Unmarshal(data, &status)
 	}
 
 	// Convert engine ExecutionRecords to handler ExecutionRecords
@@ -869,7 +905,7 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 		return fmt.Errorf("failed to marshal status: %w", err)
 	}
 
-	if err := os.WriteFile(statusPath, data, 0644); err != nil {
+	if err := os.WriteFile(statusPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write status file: %w", err)
 	}
 
@@ -1045,54 +1081,6 @@ func convertHandlerGPGKeys(gpgKeys []handlerskg.GPGKeyStatus) []GPGKeyStatus {
 	return result
 }
 
-// removePackageStatus removes a package from the status packages list
-func removePackageStatus(packages []PackageStatus, name string, blueprint string, osName string) []PackageStatus {
-	var result []PackageStatus
-	for _, pkg := range packages {
-		if !(pkg.Name == name && pkg.Blueprint == blueprint && pkg.OS == osName) {
-			result = append(result, pkg)
-		}
-	}
-	return result
-}
-
-// removeCloneStatus removes a clone from the status clones list
-func removeCloneStatus(clones []CloneStatus, path string, blueprint string, osName string) []CloneStatus {
-	var result []CloneStatus
-	for _, clone := range clones {
-		if !(clone.Path == path && clone.Blueprint == blueprint && clone.OS == osName) {
-			result = append(result, clone)
-		}
-	}
-	return result
-}
-
-// removeDecryptStatus removes a decrypted file from the status decrypts list
-func removeDecryptStatus(decrypts []DecryptStatus, destPath string, blueprint string, osName string) []DecryptStatus {
-	var result []DecryptStatus
-	for _, decrypt := range decrypts {
-		if !(decrypt.DestPath == destPath && decrypt.Blueprint == blueprint && decrypt.OS == osName) {
-			result = append(result, decrypt)
-		}
-	}
-	return result
-}
-
-// removeMkdirStatus removes a mkdir from the status mkdirs list
-func removeMkdirStatus(mkdirs []MkdirStatus, path string, blueprint string, osName string) []MkdirStatus {
-	var result []MkdirStatus
-	// Normalize blueprint for comparison to handle path variations like /tmp vs /private/tmp
-	normalizedBlueprint := normalizePath(blueprint)
-	for _, mkdir := range mkdirs {
-		// Also normalize the stored blueprint for comparison
-		normalizedStoredBlueprint := normalizePath(mkdir.Blueprint)
-		if !(mkdir.Path == path && normalizedStoredBlueprint == normalizedBlueprint && mkdir.OS == osName) {
-			result = append(result, mkdir)
-		}
-	}
-	return result
-}
-
 // getAutoUninstallRules compares status with current rules and generates uninstall rules for removed resources
 // Uses a generic approach: any resource in status but not in current rules gets flagged for removal
 func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osName string) []parser.Rule {
@@ -1107,7 +1095,7 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 		return autoUninstallRules
 	}
 
-	statusData, err := os.ReadFile(statusPath)
+	statusData, err := readBlueprintFile(statusPath)
 	if err != nil {
 		// No status file yet, nothing to uninstall
 		return autoUninstallRules
@@ -1177,8 +1165,8 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 				// Special handling for asdf which is tracked as ~/.asdf in clones
 				if clone.Path == "~/.asdf" && !asdfInCurrentRules {
 					autoUninstallRules = append(autoUninstallRules, parser.Rule{
-						Action:   "uninstall",
-						OSList:   []string{osName},
+						Action:    "uninstall",
+						OSList:    []string{osName},
 						ClonePath: clone.Path,
 					})
 				} else if clone.Path != "~/.asdf" && !currentClones[clone.Path] {
@@ -1259,7 +1247,7 @@ func deleteRemovedClones(currentRules []parser.Rule, blueprintFile string, osNam
 	}
 
 	// Read status file
-	data, err := os.ReadFile(statusPath)
+	data, err := readBlueprintFile(statusPath)
 	if err != nil {
 		// No status yet, nothing to delete
 		return 0
@@ -1277,9 +1265,10 @@ func deleteRemovedClones(currentRules []parser.Rule, blueprintFile string, osNam
 	// Get current clone paths from blueprint rules (including asdf)
 	currentClonePaths := make(map[string]bool)
 	for _, rule := range currentRules {
-		if rule.Action == "clone" {
+		switch rule.Action {
+		case "clone":
 			currentClonePaths[rule.ClonePath] = true
-		} else if rule.Action == "asdf" {
+		case "asdf":
 			// asdf uses ~/.asdf as the path
 			currentClonePaths["~/.asdf"] = true
 		}
@@ -1343,7 +1332,7 @@ func deleteRemovedClones(currentRules []parser.Rule, blueprintFile string, osNam
 	// Write updated status to file
 	updatedData, err := json.MarshalIndent(status, "", "  ")
 	if err == nil {
-		os.WriteFile(statusPath, updatedData, 0644)
+		_ = os.WriteFile(statusPath, updatedData, 0600)
 	}
 
 	return deletedCount
@@ -1359,7 +1348,7 @@ func deleteRemovedDecryptFiles(currentRules []parser.Rule, blueprintFile string,
 	}
 
 	// Read status file
-	data, err := os.ReadFile(statusPath)
+	data, err := readBlueprintFile(statusPath)
 	if err != nil {
 		// No status yet, nothing to delete
 		return 0
@@ -1432,7 +1421,7 @@ func deleteRemovedDecryptFiles(currentRules []parser.Rule, blueprintFile string,
 	// Write updated status to file
 	updatedData, err := json.MarshalIndent(status, "", "  ")
 	if err == nil {
-		os.WriteFile(statusPath, updatedData, 0644)
+		_ = os.WriteFile(statusPath, updatedData, 0600)
 	}
 
 	return deletedCount
@@ -1448,18 +1437,6 @@ func normalizePath(filePath string) string {
 		return filepath.Clean(filePath)
 	}
 	return filepath.Clean(absPath)
-}
-
-// extractSHAFromOutput extracts the SHA from clone operation output using regex
-// Handles formats like: "Cloned (SHA: abc123def)" or "Updated (SHA: abc123def)"
-func extractSHAFromOutput(output string) string {
-	// Look for pattern "(SHA: <sha>)" where sha is hex characters (case-insensitive)
-	re := regexp.MustCompile(`\(SHA:\s*([a-fA-F0-9]+)\)`)
-	matches := re.FindStringSubmatch(output)
-	if len(matches) > 1 {
-		return matches[1]
-	}
-	return ""
 }
 
 // resolveDependencies performs topological sort on rules based on dependencies
@@ -1567,484 +1544,6 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 	}
 
 	return sorted, nil
-}
-
-// executeClone handles git clone operations with SHA tracking
-func executeClone(rule parser.Rule) (string, string, error) {
-	oldSHA, newSHA, status, err := gitpkg.CloneOrUpdateRepository(rule.CloneURL, rule.ClonePath, rule.Branch)
-
-	if err != nil {
-		return "", "", err
-	}
-
-	// Format status message with SHA info (include full SHA for status tracking)
-	statusMsg := status
-	if oldSHA != "" && newSHA != "" && oldSHA != newSHA {
-		statusMsg = fmt.Sprintf("Updated (SHA changed: %s → %s) (SHA: %s)", oldSHA[:8], newSHA[:8], newSHA)
-	} else if newSHA != "" && status == "Cloned" {
-		statusMsg = fmt.Sprintf("Cloned (SHA: %s)", newSHA)
-	} else if newSHA != "" {
-		// Already up to date or no changes, but still include SHA for status tracking
-		statusMsg = fmt.Sprintf("%s (SHA: %s)", status, newSHA)
-	}
-
-	return "", statusMsg, nil
-}
-
-// getShellInfo detects the user's current shell and returns shell executable and config file
-func getShellInfo() (shellExe, configFile string, err error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", "", err
-	}
-
-	// Get the user's shell from $SHELL environment variable
-	userShell := os.Getenv("SHELL")
-	if userShell == "" {
-		// Fallback: try to detect from common shell executables
-		if _, err := exec.LookPath("zsh"); err == nil {
-			userShell = "zsh"
-		} else if _, err := exec.LookPath("bash"); err == nil {
-			userShell = "bash"
-		} else {
-			return "bash", filepath.Join(homeDir, ".bashrc"), nil // Default fallback
-		}
-	}
-
-	// Extract shell name from path (e.g., "/bin/zsh" -> "zsh")
-	shellName := filepath.Base(userShell)
-
-	// Determine the appropriate config file based on shell
-	var configPath string
-	switch shellName {
-	case "zsh":
-		configPath = filepath.Join(homeDir, ".zshrc")
-	case "bash":
-		configPath = filepath.Join(homeDir, ".bashrc")
-	case "fish":
-		configPath = filepath.Join(homeDir, ".config/fish/config.fish")
-	default:
-		// Default to bash
-		configPath = filepath.Join(homeDir, ".bashrc")
-		shellName = "bash"
-	}
-
-	return shellName, configPath, nil
-}
-
-// executeAsdf handles asdf installation and shell integration
-func executeAsdf(rule parser.Rule) (string, string, error) {
-	asdfPath := os.ExpandEnv("$HOME/.asdf")
-	var asdfStatusMsg string
-
-	// Detect user's shell
-	shellName, _, err := getShellInfo()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to detect shell: %w", err)
-	}
-
-	// Check if asdf is already installed
-	if _, err := os.Stat(asdfPath); err == nil {
-		// asdf already exists, check for updates
-		oldSHA, newSHA, _, err := gitpkg.CloneOrUpdateRepository(
-			"https://github.com/asdf-vm/asdf.git",
-			asdfPath,
-			"",
-		)
-
-		if err != nil {
-			return "", "", err
-		}
-
-		// Format status message
-		if oldSHA != "" && newSHA != "" && oldSHA != newSHA {
-			asdfStatusMsg = fmt.Sprintf("Updated (SHA changed: %s → %s) (SHA: %s)", oldSHA[:8], newSHA[:8], newSHA)
-		} else if newSHA != "" {
-			// Already installed, include SHA for status tracking
-			asdfStatusMsg = fmt.Sprintf("Already installed (SHA: %s)", newSHA)
-		} else {
-			asdfStatusMsg = "Already installed"
-		}
-	} else {
-		// Clone asdf if not installed
-		_, newSHA, cloneStatus, err := gitpkg.CloneOrUpdateRepository(
-			"https://github.com/asdf-vm/asdf.git",
-			asdfPath,
-			"",
-		)
-
-		if err != nil {
-			return "", "", err
-		}
-
-		// Setup asdf in shell configuration files
-		if err := setupAsdfInShells(asdfPath); err != nil {
-			return "", "", fmt.Errorf("asdf installed but failed to setup in shells: %w", err)
-		}
-
-		// Format status message with SHA (include full SHA for status tracking)
-		if newSHA != "" && cloneStatus == "Cloned" {
-			asdfStatusMsg = fmt.Sprintf("Installed (SHA: %s)", newSHA)
-		} else if newSHA != "" {
-			// Include SHA even if not cloned status
-			asdfStatusMsg = fmt.Sprintf("%s (SHA: %s)", cloneStatus, newSHA)
-		} else {
-			asdfStatusMsg = cloneStatus
-		}
-	}
-
-	// Now handle plugin installations if any
-	if len(rule.AsdfPackages) == 0 {
-		return "", asdfStatusMsg, nil
-	}
-
-	// Build source command based on detected shell
-	var sourceCmd string
-	switch shellName {
-	case "fish":
-		sourceCmd = fmt.Sprintf("source %s/asdf.fish", asdfPath)
-	case "zsh":
-		sourceCmd = fmt.Sprintf(". %s/asdf.sh", asdfPath)
-	default:
-		sourceCmd = fmt.Sprintf(". %s/asdf.sh", asdfPath)
-	}
-
-	// Process each plugin@version entry
-	var pluginOutput strings.Builder
-	for _, pkg := range rule.AsdfPackages {
-		// Parse plugin@version format
-		var plugin string
-		var version string
-
-		if strings.Contains(pkg, "@") {
-			parts := strings.Split(pkg, "@")
-			plugin = parts[0]
-			version = strings.Join(parts[1:], "@") // Handle versions with @ (rare but possible)
-		} else {
-			plugin = pkg
-			version = "latest"
-		}
-
-		// Build commands with proper shell sourcing
-		// Step 1: Add plugin if not already added
-		addCmd := fmt.Sprintf("%s && asdf plugin add %s 2>/dev/null || true", sourceCmd, plugin)
-		cmd := exec.Command(shellName, "-c", addCmd)
-		if err := cmd.Run(); err != nil {
-			// Some plugins might fail to add if already added, that's okay
-			fmt.Printf("Note: Could not add plugin %s (may already exist)\n", plugin)
-		}
-
-		// Step 2: Install specific version
-		if version != "latest" && version != "" {
-			installCmd := fmt.Sprintf("%s && asdf install %s %s", sourceCmd, plugin, version)
-			cmd = exec.Command(shellName, "-c", installCmd)
-			if output, err := cmd.CombinedOutput(); err != nil {
-				return string(output), "", fmt.Errorf("failed to install %s@%s: %w", plugin, version, err)
-			}
-		}
-
-		// Step 3: Set global version
-		if version != "latest" && version != "" {
-			globalCmd := fmt.Sprintf("%s && asdf global %s %s", sourceCmd, plugin, version)
-			cmd = exec.Command(shellName, "-c", globalCmd)
-			if output, err := cmd.CombinedOutput(); err != nil {
-				return string(output), "", fmt.Errorf("failed to set global version for %s: %w", plugin, err)
-			}
-			pluginOutput.WriteString(fmt.Sprintf("\n  - %s@%s", plugin, version))
-		} else {
-			pluginOutput.WriteString(fmt.Sprintf("\n  - %s (latest)", plugin))
-		}
-	}
-
-	// Combine asdf status with plugin installation status
-	statusMsg := fmt.Sprintf("%s, plugins installed:%s", asdfStatusMsg, pluginOutput.String())
-	return "", statusMsg, nil
-}
-
-// setupAsdfInShells adds asdf initialization to shell configuration files
-func setupAsdfInShells(asdfPath string) error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-
-	// Detect user's shell to know which config files to update
-	shellName, _, err := getShellInfo()
-	if err != nil {
-		shellName = "bash" // Fallback to bash
-	}
-
-	// Determine which config files to update based on the detected shell
-	var configFiles []string
-	switch shellName {
-	case "zsh":
-		configFiles = []string{
-			filepath.Join(homeDir, ".zshrc"),
-			filepath.Join(homeDir, ".zsh_profile"),
-		}
-	case "fish":
-		configFiles = []string{
-			filepath.Join(homeDir, ".config/fish/config.fish"),
-		}
-	default: // bash
-		configFiles = []string{
-			filepath.Join(homeDir, ".bashrc"),
-			filepath.Join(homeDir, ".bash_profile"),
-		}
-	}
-
-	// Determine the source command based on shell
-	var sourceCmd string
-	switch shellName {
-	case "fish":
-		sourceCmd = fmt.Sprintf("source %s/asdf.fish", asdfPath)
-	case "zsh":
-		sourceCmd = fmt.Sprintf(". %s/asdf.sh", asdfPath)
-	default: // bash
-		sourceCmd = fmt.Sprintf(". %s/asdf.sh", asdfPath)
-	}
-
-	// Add to all relevant config files
-	for _, configFile := range configFiles {
-		// Create parent directory if needed (for fish)
-		if strings.Contains(configFile, ".config") {
-			configDir := filepath.Dir(configFile)
-			if _, err := os.Stat(configDir); os.IsNotExist(err) {
-				if err := os.MkdirAll(configDir, 0755); err != nil {
-					return err
-				}
-			}
-		}
-
-		// Add to config file if it exists, or create it
-		if _, err := os.Stat(configFile); err == nil {
-			if err := addAsdfSourceToFile(configFile, sourceCmd); err != nil {
-				return err
-			}
-		} else if configFile == filepath.Join(homeDir, ".zshrc") || configFile == filepath.Join(homeDir, ".bashrc") {
-			// For main shell config files, create them if they don't exist
-			if err := addAsdfSourceToFile(configFile, sourceCmd); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-// addAsdfSourceToFile adds the asdf source command to a shell config file if not already present
-func addAsdfSourceToFile(filePath string, sourceCmd string) error {
-	// Read existing content if file exists
-	var content string
-	if data, err := os.ReadFile(filePath); err == nil {
-		content = string(data)
-		// Check if asdf is already sourced in this file
-		if strings.Contains(content, "asdf.sh") || strings.Contains(content, "asdf.fish") {
-			return nil // Already configured
-		}
-	} else if !os.IsNotExist(err) {
-		return err // Return error if it's not a "file not found" error
-	}
-
-	// Add source command at the end
-	if content != "" && !strings.HasSuffix(content, "\n") {
-		content += "\n"
-	}
-	content += "\n# asdf initialization\n" + sourceCmd + "\n"
-
-	return os.WriteFile(filePath, []byte(content), 0644)
-}
-
-// executeUninstallAsdf handles asdf uninstallation and cleanup
-func executeUninstallAsdf() (string, error) {
-	asdfPath := os.ExpandEnv("$HOME/.asdf")
-
-	// Check if asdf is installed
-	if _, err := os.Stat(asdfPath); err != nil {
-		// asdf not found, nothing to uninstall
-		return "asdf was not installed", nil
-	}
-
-	// Remove asdf directory
-	if err := os.RemoveAll(asdfPath); err != nil {
-		return "", fmt.Errorf("failed to remove asdf directory: %w", err)
-	}
-
-	// Clean up shell configuration files
-	if err := removeAsdfFromShells(); err != nil {
-		return "", fmt.Errorf("asdf removed but failed to clean up shells: %w", err)
-	}
-
-	return "asdf uninstalled", nil
-}
-
-// executeDecrypt handles decryption of encrypted files
-func executeDecrypt(rule parser.Rule, basePath string) (string, error) {
-	// Expand home directory in source file path
-	sourceFile := os.ExpandEnv(rule.DecryptFile)
-	if strings.HasPrefix(sourceFile, "~") {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("failed to get home directory: %w", err)
-		}
-		sourceFile = filepath.Join(homeDir, sourceFile[1:])
-	}
-
-	// Check if source file exists (first check relative to basePath)
-	if !filepath.IsAbs(sourceFile) {
-		relativeSourceFile := filepath.Join(basePath, sourceFile)
-		if _, err := os.Stat(relativeSourceFile); err == nil {
-			sourceFile = relativeSourceFile
-		}
-	}
-
-	// Check if source file exists
-	if _, err := os.Stat(sourceFile); err != nil {
-		return "", fmt.Errorf("encrypted file not found: %s (looked in %s and current directory)", sourceFile, basePath)
-	}
-
-	// Expand home directory in destination path
-	destPath := os.ExpandEnv(rule.DecryptPath)
-	if strings.HasPrefix(destPath, "~") {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("failed to get home directory: %w", err)
-		}
-		destPath = filepath.Join(homeDir, destPath[1:])
-	}
-
-	// Create parent directory if it doesn't exist
-	destDir := filepath.Dir(destPath)
-	if _, err := os.Stat(destDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(destDir, 0700); err != nil {
-			return "", fmt.Errorf("failed to create destination directory: %w", err)
-		}
-	}
-
-	// Read encrypted file
-	encryptedData, err := os.ReadFile(sourceFile)
-	if err != nil {
-		return "", fmt.Errorf("failed to read encrypted file: %w", err)
-	}
-
-	// Get password using password-id (should be cached from upfront prompting)
-	passwordID := rule.DecryptPasswordID
-	if passwordID == "" {
-		passwordID = "default"
-	}
-
-	// Get password from cache (should have been populated during upfront prompting)
-	password, exists := passwordCache[passwordID]
-	if !exists {
-		return "", fmt.Errorf("password for password-id '%s' not found in cache (should have been prompted at startup)", passwordID)
-	}
-
-	// Decrypt file
-	plaintext, err := cryptopkg.DecryptFile(encryptedData, password)
-	if err != nil {
-		return "", fmt.Errorf("decryption failed: %w", err)
-	}
-
-	// Write decrypted data to destination with restricted permissions
-	if err := os.WriteFile(destPath, plaintext, 0600); err != nil {
-		return "", fmt.Errorf("failed to write decrypted file: %w", err)
-	}
-
-	return fmt.Sprintf("Decrypted to %s", destPath), nil
-}
-
-// removeAsdfFromShells removes asdf initialization from shell configuration files
-func removeAsdfFromShells() error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-
-	// Detect user's shell to know which config files to clean up
-	shellName, _, err := getShellInfo()
-	if err != nil {
-		shellName = "bash" // Fallback to bash
-	}
-
-	// Determine which config files to clean up based on the detected shell
-	var configFiles []string
-	switch shellName {
-	case "zsh":
-		configFiles = []string{
-			filepath.Join(homeDir, ".zshrc"),
-			filepath.Join(homeDir, ".zsh_profile"),
-		}
-	case "fish":
-		configFiles = []string{
-			filepath.Join(homeDir, ".config/fish/config.fish"),
-		}
-	default: // bash
-		configFiles = []string{
-			filepath.Join(homeDir, ".bashrc"),
-			filepath.Join(homeDir, ".bash_profile"),
-		}
-	}
-
-	// Remove from all relevant config files
-	for _, configFile := range configFiles {
-		if _, err := os.Stat(configFile); err == nil {
-			if err := removeAsdfSourceFromFile(configFile); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-// removeAsdfSourceFromFile removes asdf initialization from a shell config file
-func removeAsdfSourceFromFile(filePath string) error {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return err
-	}
-
-	content := string(data)
-
-	// Check if asdf is sourced in this file
-	if !strings.Contains(content, "asdf.sh") && !strings.Contains(content, "asdf.fish") {
-		return nil // Not configured
-	}
-
-	// Remove asdf-related lines
-	lines := strings.Split(content, "\n")
-	var result []string
-	skipNextBlank := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		// Skip asdf initialization comment and source lines
-		if strings.Contains(trimmed, "asdf initialization") {
-			skipNextBlank = true
-			continue
-		}
-		if strings.Contains(trimmed, "asdf.sh") || strings.Contains(trimmed, "asdf.fish") {
-			skipNextBlank = true
-			continue
-		}
-
-		// Skip blank line after asdf lines if needed
-		if skipNextBlank && trimmed == "" {
-			skipNextBlank = false
-			continue
-		}
-
-		result = append(result, line)
-	}
-
-	newContent := strings.Join(result, "\n")
-	// Clean up multiple consecutive blank lines
-	for strings.Contains(newContent, "\n\n\n") {
-		newContent = strings.ReplaceAll(newContent, "\n\n\n", "\n\n")
-	}
-
-	return os.WriteFile(filePath, []byte(newContent), 0644)
 }
 
 // EncryptFile encrypts a file and saves it with .enc extension
@@ -2216,7 +1715,7 @@ func PrintStatus() {
 	}
 
 	// Read status file
-	data, err := os.ReadFile(statusPath)
+	data, err := readBlueprintFile(statusPath)
 	if err != nil {
 		fmt.Printf("%s\n", ui.FormatInfo("No status file found. Run 'blueprint apply' to create one."))
 		return
@@ -2389,7 +1888,7 @@ func getBlueprintDir() (string, error) {
 	blueprintDir := filepath.Join(homeDir, ".blueprint")
 
 	// Create directory if it doesn't exist
-	if err := os.MkdirAll(blueprintDir, 0755); err != nil {
+	if err := os.MkdirAll(blueprintDir, 0750); err != nil {
 		return "", fmt.Errorf("failed to create .blueprint directory: %w", err)
 	}
 
@@ -2407,15 +1906,15 @@ func getNextRunNumber() (int, error) {
 
 	// Read current run number
 	var runNumber int
-	if data, err := os.ReadFile(runNumberFile); err == nil {
-		fmt.Sscanf(string(data), "%d", &runNumber)
+	if data, err := readBlueprintFile(runNumberFile); err == nil {
+		_, _ = fmt.Sscanf(string(data), "%d", &runNumber)
 	}
 
 	// Increment for next run
 	runNumber++
 
 	// Write back
-	if err := os.WriteFile(runNumberFile, []byte(fmt.Sprintf("%d", runNumber)), 0644); err != nil {
+	if err := os.WriteFile(runNumberFile, []byte(fmt.Sprintf("%d", runNumber)), 0600); err != nil {
 		return 0, err
 	}
 
@@ -2430,14 +1929,14 @@ func saveRuleOutput(runNumber, ruleIndex int, output, stderr string) error {
 	}
 
 	historyDir := filepath.Join(blueprintDir, "history", fmt.Sprintf("%d", runNumber))
-	if err := os.MkdirAll(historyDir, 0755); err != nil {
+	if err := os.MkdirAll(historyDir, 0750); err != nil {
 		return err
 	}
 
 	outputFile := filepath.Join(historyDir, fmt.Sprintf("%d.output", ruleIndex))
 	content := fmt.Sprintf("=== STDOUT ===\n%s\n\n=== STDERR ===\n%s\n", output, stderr)
 
-	return os.WriteFile(outputFile, []byte(content), 0644)
+	return os.WriteFile(outputFile, []byte(content), 0600)
 }
 
 // getLatestRunNumber returns the latest run number from the history directory
@@ -2457,7 +1956,7 @@ func getLatestRunNumber() (int, error) {
 	for _, entry := range entries {
 		if entry.IsDir() {
 			runNum := 0
-			fmt.Sscanf(entry.Name(), "%d", &runNum)
+			_, _ = fmt.Sscanf(entry.Name(), "%d", &runNum)
 			if runNum > latestRun {
 				latestRun = runNum
 			}
@@ -2525,7 +2024,7 @@ func PrintHistory(runNumber int, stepNumber int) {
 			// If stepNumber is specified, only show that step
 			if stepNumber >= 0 {
 				ruleNumInt := 0
-				fmt.Sscanf(ruleNum, "%d", &ruleNumInt)
+				_, _ = fmt.Sscanf(ruleNum, "%d", &ruleNumInt)
 				if ruleNumInt != stepNumber {
 					continue
 				}
@@ -2533,7 +2032,7 @@ func PrintHistory(runNumber int, stepNumber int) {
 
 			outputPath := filepath.Join(historyDir, entry.Name())
 
-			content, err := os.ReadFile(outputPath)
+			content, err := readBlueprintFile(outputPath)
 			if err != nil {
 				continue
 			}

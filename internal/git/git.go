@@ -49,10 +49,11 @@ func IsGitURL(input string) bool {
 // ParseGitURL parses a git URL with optional branch and path
 // Format: repo.git[@branch][:path/to/file.bp]
 // Examples:
-//   https://github.com/user/repo.git
-//   https://github.com/user/repo.git@main
-//   https://github.com/user/repo.git:config/setup.bp
-//   https://github.com/user/repo.git@dev:config/setup.bp
+//
+//	https://github.com/user/repo.git
+//	https://github.com/user/repo.git@main
+//	https://github.com/user/repo.git:config/setup.bp
+//	https://github.com/user/repo.git@dev:config/setup.bp
 func ParseGitURL(input string) GitURLParams {
 	params := GitURLParams{
 		Path: "setup.bp", // Default path
@@ -77,7 +78,7 @@ func ParseGitURL(input string) GitURLParams {
 	if gitIdx := strings.Index(baseURL, ".git"); gitIdx >= 0 {
 		afterGit := baseURL[gitIdx+4:] // afterGit starts after ".git"
 		if strings.HasPrefix(afterGit, ":") {
-			params.Path = afterGit[1:] // Remove the leading :
+			params.Path = afterGit[1:]   // Remove the leading :
 			baseURL = baseURL[:gitIdx+4] // Keep everything up to and including .git
 		}
 	}
@@ -128,7 +129,7 @@ func CloneRepository(input string, verbose bool) (string, string, error) {
 
 	if err != nil {
 		// Clean up the temporary directory on error
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		return "", "", fmt.Errorf("failed to clone repository: %w", err)
 	}
 

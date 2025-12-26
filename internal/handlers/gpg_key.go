@@ -38,7 +38,7 @@ func (h *GPGKeyHandler) Up() (string, error) {
 
 	// Write sources list content to temp file
 	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("sources-%s.list", keyring))
-	err := os.WriteFile(tmpFile, []byte(debSourceLine+"\n"), 0644)
+	err := os.WriteFile(tmpFile, []byte(debSourceLine+"\n"), 0600)
 	if err != nil {
 		return "", fmt.Errorf("failed to write sources file: %w", err)
 	}
@@ -50,12 +50,12 @@ func (h *GPGKeyHandler) Up() (string, error) {
 
 	_, err = executeCommandWithCache(combinedCmd)
 	if err != nil {
-		os.Remove(tmpFile)
+		_ = os.Remove(tmpFile)
 		return "", fmt.Errorf("failed to add GPG key and repository: %w", err)
 	}
 
 	// Clean up temp file
-	os.Remove(tmpFile)
+	_ = os.Remove(tmpFile)
 
 	return fmt.Sprintf("Added GPG key %s and repository %s", keyring, debURL), nil
 }
@@ -72,10 +72,7 @@ func (h *GPGKeyHandler) Down() (string, error) {
 	combinedCmd := fmt.Sprintf("sh -c 'sudo rm -f %s && sudo rm -f %s && sudo apt update 2>/dev/null || true'",
 		sourcesListPath, keyringPath)
 
-	_, err := executeCommandWithCache(combinedCmd)
-	if err != nil {
-		// Don't fail - files might not exist or apt update might fail
-	}
+	_, _ = executeCommandWithCache(combinedCmd) // Don't fail - files might not exist or apt update might fail
 
 	return fmt.Sprintf("Removed GPG key %s and repository", keyring), nil
 }
