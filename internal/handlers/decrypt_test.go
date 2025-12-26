@@ -53,7 +53,7 @@ func TestDecryptHandlerDown(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "decrypted-file")
 
 	// Create a test file
-	os.WriteFile(testFile, []byte("secret"), 0600)
+	_ = os.WriteFile(testFile, []byte("secret"), 0600)
 
 	tests := []struct {
 		name      string
@@ -90,7 +90,7 @@ func TestDecryptHandlerDown(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Recreate file for test
 			if tt.name == "remove existing decrypted file" {
-				os.WriteFile(testFile, []byte("secret"), 0600)
+				_ = os.WriteFile(testFile, []byte("secret"), 0600)
 			}
 
 			passwordCache := make(map[string]string)

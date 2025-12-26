@@ -50,12 +50,12 @@ func (h *GPGKeyHandler) Up() (string, error) {
 
 	_, err = executeCommandWithCache(combinedCmd)
 	if err != nil {
-		os.Remove(tmpFile)
+		_ = os.Remove(tmpFile)
 		return "", fmt.Errorf("failed to add GPG key and repository: %w", err)
 	}
 
 	// Clean up temp file
-	os.Remove(tmpFile)
+	_ = os.Remove(tmpFile)
 
 	return fmt.Sprintf("Added GPG key %s and repository %s", keyring, debURL), nil
 }

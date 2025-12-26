@@ -122,7 +122,7 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 			fmt.Printf("Error: %v\n", err)
 			return
 		}
-		defer gitpkg.CleanupRepository(tempDir)
+		defer func() { _ = gitpkg.CleanupRepository(tempDir) }()
 
 		// Find setup file in the cloned repo
 		setupPath, err = gitpkg.FindSetupFile(tempDir, setupFile)
@@ -245,7 +245,7 @@ func Run(file string, dry bool) {
 			fmt.Printf("Error: %v\n", err)
 			return
 		}
-		defer gitpkg.CleanupRepository(tempDir)
+		defer func() { _ = gitpkg.CleanupRepository(tempDir) }()
 
 		// Find setup file in the cloned repo
 		setupPath, err = gitpkg.FindSetupFile(tempDir, setupFile)
@@ -2408,7 +2408,7 @@ func getNextRunNumber() (int, error) {
 	// Read current run number
 	var runNumber int
 	if data, err := os.ReadFile(runNumberFile); err == nil {
-		fmt.Sscanf(string(data), "%d", &runNumber)
+		_, _ = fmt.Sscanf(string(data), "%d", &runNumber)
 	}
 
 	// Increment for next run
@@ -2457,7 +2457,7 @@ func getLatestRunNumber() (int, error) {
 	for _, entry := range entries {
 		if entry.IsDir() {
 			runNum := 0
-			fmt.Sscanf(entry.Name(), "%d", &runNum)
+			_, _ = fmt.Sscanf(entry.Name(), "%d", &runNum)
 			if runNum > latestRun {
 				latestRun = runNum
 			}
