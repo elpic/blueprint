@@ -54,6 +54,12 @@ test FLAGS="":
     go test $VERBOSE ./...
   fi
 
+# Format code with gofmt
+format:
+  @echo "Formatting code..."
+  go fmt ./...
+  @echo "✓ Code formatted"
+
 # Run linter (golangci-lint)
 lint:
   @echo "Running linter..."
@@ -100,6 +106,7 @@ help:
   @echo "  just test \"--coverage -v\"      - Run all tests with coverage and verbose"
   @echo ""
   @echo "QUALITY CHECKS:"
+  @echo "  just format         - Format code with gofmt"
   @echo "  just lint           - Run golangci-lint"
   @echo "  just security       - Run security scan (gosec)"
   @echo "  just verify         - Run quick checks (test and security, no lint)"
