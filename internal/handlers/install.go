@@ -225,7 +225,7 @@ func (h *InstallHandler) DisplayStatus(packages []PackageStatus) {
 			ui.FormatInfo(pkg.Name),
 			ui.FormatDim(timeStr),
 			ui.FormatDim(pkg.OS),
-			ui.FormatDim(pkg.Blueprint),
+			ui.FormatDim(abbreviateBlueprintPath(pkg.Blueprint)),
 		)
 	}
 }

@@ -3,6 +3,7 @@ package handlers
 import (
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/elpic/blueprint/internal/parser"
 )
@@ -316,4 +317,13 @@ func removeGPGKeyStatus(gpgKeys []GPGKeyStatus, keyring string, blueprint string
 		}
 	}
 	return result
+}
+
+// abbreviateBlueprintPath shortens blueprint file paths for display by showing only the filename
+func abbreviateBlueprintPath(path string) string {
+	lastSlash := strings.LastIndex(path, "/")
+	if lastSlash >= 0 && lastSlash < len(path)-1 {
+		return path[lastSlash+1:]
+	}
+	return path
 }

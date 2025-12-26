@@ -204,7 +204,7 @@ func (h *DecryptHandler) DisplayStatus(decrypts []DecryptStatus) {
 			ui.FormatInfo(decrypt.DestPath),
 			ui.FormatDim(timeStr),
 			ui.FormatDim(decrypt.OS),
-			ui.FormatDim(decrypt.Blueprint),
+			ui.FormatDim(abbreviateBlueprintPath(decrypt.Blueprint)),
 		)
 		fmt.Printf("     %s %s\n",
 			ui.FormatDim("From:"),

@@ -186,7 +186,7 @@ func (h *CloneHandler) DisplayStatus(clones []CloneStatus) {
 			ui.FormatInfo(clone.Path),
 			ui.FormatDim(timeStr),
 			ui.FormatDim(clone.OS),
-			ui.FormatDim(clone.Blueprint),
+			ui.FormatDim(abbreviateBlueprintPath(clone.Blueprint)),
 		)
 		fmt.Printf("     %s %s\n",
 			ui.FormatDim("URL:"),

@@ -240,7 +240,7 @@ func (h *MkdirHandler) DisplayStatus(mkdirs []MkdirStatus) {
 			ui.FormatInfo(mkdir.Path),
 			ui.FormatDim(timeStr),
 			ui.FormatDim(mkdir.OS),
-			ui.FormatDim(mkdir.Blueprint),
+			ui.FormatDim(abbreviateBlueprintPath(mkdir.Blueprint)),
 		)
 	}
 }
