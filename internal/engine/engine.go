@@ -31,14 +31,16 @@ type ExecutionRecord struct {
 	Error     string `json:"error,omitempty"`
 }
 
-// Type aliases to use handler definitions
-type PackageStatus = handlerskg.PackageStatus
-type CloneStatus = handlerskg.CloneStatus
-type DecryptStatus = handlerskg.DecryptStatus
-type MkdirStatus = handlerskg.MkdirStatus
-type KnownHostsStatus = handlerskg.KnownHostsStatus
-type GPGKeyStatus = handlerskg.GPGKeyStatus
-type Status = handlerskg.Status
+// Re-export handler types for backward compatibility
+type (
+	PackageStatus    = handlerskg.PackageStatus
+	CloneStatus      = handlerskg.CloneStatus
+	DecryptStatus    = handlerskg.DecryptStatus
+	MkdirStatus      = handlerskg.MkdirStatus
+	KnownHostsStatus = handlerskg.KnownHostsStatus
+	GPGKeyStatus     = handlerskg.GPGKeyStatus
+	Status           = handlerskg.Status
+)
 
 // passwordCache stores decryption passwords by password-id to avoid re-prompting
 var passwordCache = make(map[string]string)
@@ -808,16 +810,6 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 		}
 	}
 
-	// Convert engine Status to handler Status
-	handlerStatus := handlerskg.Status{
-		Packages:   convertPackages(status.Packages),
-		Clones:     convertClones(status.Clones),
-		Decrypts:   convertDecrypts(status.Decrypts),
-		Mkdirs:     convertMkdirs(status.Mkdirs),
-		KnownHosts: convertKnownHosts(status.KnownHosts),
-		GPGKeys:    convertGPGKeys(status.GPGKeys),
-	}
-
 	// Process each rule by creating appropriate handler and calling UpdateStatus
 	for _, rule := range rules {
 		// Create handler for the rule (handles both install and uninstall)
@@ -828,20 +820,10 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 		}
 
 		// Let the handler update status
-		if err := handler.UpdateStatus(&handlerStatus, handlerRecords, blueprint, osName); err != nil {
+		if err := handler.UpdateStatus(&status, handlerRecords, blueprint, osName); err != nil {
 			// Log but don't fail on status update errors
 			fmt.Fprintf(os.Stderr, "Warning: failed to update status for rule %v: %v\n", rule.Action, err)
 		}
-	}
-
-	// Convert handler Status back to engine Status
-	status = Status{
-		Packages:   convertHandlerPackages(handlerStatus.Packages),
-		Clones:     convertHandlerClones(handlerStatus.Clones),
-		Decrypts:   convertHandlerDecrypts(handlerStatus.Decrypts),
-		Mkdirs:     convertHandlerMkdirs(handlerStatus.Mkdirs),
-		KnownHosts: convertHandlerKnownHosts(handlerStatus.KnownHosts),
-		GPGKeys:    convertHandlerGPGKeys(handlerStatus.GPGKeys),
 	}
 
 	// Write status to file
@@ -857,174 +839,6 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 	return nil
 }
 
-// Helper functions to convert between engine and handler status types
-func convertPackages(packages []PackageStatus) []handlerskg.PackageStatus {
-	result := make([]handlerskg.PackageStatus, len(packages))
-	for i, pkg := range packages {
-		result[i] = handlerskg.PackageStatus{
-			Name:        pkg.Name,
-			InstalledAt: pkg.InstalledAt,
-			Blueprint:   pkg.Blueprint,
-			OS:          pkg.OS,
-		}
-	}
-	return result
-}
-
-func convertClones(clones []CloneStatus) []handlerskg.CloneStatus {
-	result := make([]handlerskg.CloneStatus, len(clones))
-	for i, clone := range clones {
-		result[i] = handlerskg.CloneStatus{
-			URL:       clone.URL,
-			Path:      clone.Path,
-			SHA:       clone.SHA,
-			ClonedAt:  clone.ClonedAt,
-			Blueprint: clone.Blueprint,
-			OS:        clone.OS,
-		}
-	}
-	return result
-}
-
-func convertDecrypts(decrypts []DecryptStatus) []handlerskg.DecryptStatus {
-	result := make([]handlerskg.DecryptStatus, len(decrypts))
-	for i, decrypt := range decrypts {
-		result[i] = handlerskg.DecryptStatus{
-			SourceFile:  decrypt.SourceFile,
-			DestPath:    decrypt.DestPath,
-			DecryptedAt: decrypt.DecryptedAt,
-			Blueprint:   decrypt.Blueprint,
-			OS:          decrypt.OS,
-		}
-	}
-	return result
-}
-
-func convertMkdirs(mkdirs []MkdirStatus) []handlerskg.MkdirStatus {
-	result := make([]handlerskg.MkdirStatus, len(mkdirs))
-	for i, mkdir := range mkdirs {
-		result[i] = handlerskg.MkdirStatus{
-			Path:      mkdir.Path,
-			CreatedAt: mkdir.CreatedAt,
-			Blueprint: mkdir.Blueprint,
-			OS:        mkdir.OS,
-		}
-	}
-	return result
-}
-
-func convertHandlerPackages(packages []handlerskg.PackageStatus) []PackageStatus {
-	result := make([]PackageStatus, len(packages))
-	for i, pkg := range packages {
-		result[i] = PackageStatus{
-			Name:        pkg.Name,
-			InstalledAt: pkg.InstalledAt,
-			Blueprint:   pkg.Blueprint,
-			OS:          pkg.OS,
-		}
-	}
-	return result
-}
-
-func convertHandlerClones(clones []handlerskg.CloneStatus) []CloneStatus {
-	result := make([]CloneStatus, len(clones))
-	for i, clone := range clones {
-		result[i] = CloneStatus{
-			URL:       clone.URL,
-			Path:      clone.Path,
-			SHA:       clone.SHA,
-			ClonedAt:  clone.ClonedAt,
-			Blueprint: clone.Blueprint,
-			OS:        clone.OS,
-		}
-	}
-	return result
-}
-
-func convertHandlerDecrypts(decrypts []handlerskg.DecryptStatus) []DecryptStatus {
-	result := make([]DecryptStatus, len(decrypts))
-	for i, decrypt := range decrypts {
-		result[i] = DecryptStatus{
-			SourceFile:  decrypt.SourceFile,
-			DestPath:    decrypt.DestPath,
-			DecryptedAt: decrypt.DecryptedAt,
-			Blueprint:   decrypt.Blueprint,
-			OS:          decrypt.OS,
-		}
-	}
-	return result
-}
-
-func convertHandlerMkdirs(mkdirs []handlerskg.MkdirStatus) []MkdirStatus {
-	result := make([]MkdirStatus, len(mkdirs))
-	for i, mkdir := range mkdirs {
-		result[i] = MkdirStatus{
-			Path:      mkdir.Path,
-			CreatedAt: mkdir.CreatedAt,
-			Blueprint: mkdir.Blueprint,
-			OS:        mkdir.OS,
-		}
-	}
-	return result
-}
-
-func convertKnownHosts(knownHosts []KnownHostsStatus) []handlerskg.KnownHostsStatus {
-	result := make([]handlerskg.KnownHostsStatus, len(knownHosts))
-	for i, kh := range knownHosts {
-		result[i] = handlerskg.KnownHostsStatus{
-			Host:      kh.Host,
-			KeyType:   kh.KeyType,
-			AddedAt:   kh.AddedAt,
-			Blueprint: kh.Blueprint,
-			OS:        kh.OS,
-		}
-	}
-	return result
-}
-
-func convertHandlerKnownHosts(knownHosts []handlerskg.KnownHostsStatus) []KnownHostsStatus {
-	result := make([]KnownHostsStatus, len(knownHosts))
-	for i, kh := range knownHosts {
-		result[i] = KnownHostsStatus{
-			Host:      kh.Host,
-			KeyType:   kh.KeyType,
-			AddedAt:   kh.AddedAt,
-			Blueprint: kh.Blueprint,
-			OS:        kh.OS,
-		}
-	}
-	return result
-}
-
-func convertGPGKeys(gpgKeys []GPGKeyStatus) []handlerskg.GPGKeyStatus {
-	result := make([]handlerskg.GPGKeyStatus, len(gpgKeys))
-	for i, gpg := range gpgKeys {
-		result[i] = handlerskg.GPGKeyStatus{
-			Keyring:   gpg.Keyring,
-			URL:       gpg.URL,
-			DebURL:    gpg.DebURL,
-			AddedAt:   gpg.AddedAt,
-			Blueprint: gpg.Blueprint,
-			OS:        gpg.OS,
-		}
-	}
-	return result
-}
-
-func convertHandlerGPGKeys(gpgKeys []handlerskg.GPGKeyStatus) []GPGKeyStatus {
-	result := make([]GPGKeyStatus, len(gpgKeys))
-	for i, gpg := range gpgKeys {
-		result[i] = GPGKeyStatus{
-			Keyring:   gpg.Keyring,
-			URL:       gpg.URL,
-			DebURL:    gpg.DebURL,
-			AddedAt:   gpg.AddedAt,
-			Blueprint: gpg.Blueprint,
-			OS:        gpg.OS,
-		}
-	}
-	return result
-}
 
 // getAutoUninstallRules compares status with current rules and generates uninstall rules for removed resources
 // Uses a generic approach: any resource in status but not in current rules gets flagged for removal
