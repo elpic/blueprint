@@ -114,12 +114,12 @@ func TestDecryptHandlerDown(t *testing.T) {
 
 func TestDecryptHandlerUpdateStatus(t *testing.T) {
 	tests := []struct {
-		name           string
-		rule           parser.Rule
-		records        []ExecutionRecord
-		initialStatus  Status
+		name             string
+		rule             parser.Rule
+		records          []ExecutionRecord
+		initialStatus    Status
 		expectedDecrypts int
-		shouldContain  bool
+		shouldContain    bool
 	}{
 		{
 			name: "add decrypted file to status",

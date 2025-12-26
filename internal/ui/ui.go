@@ -8,12 +8,12 @@ import (
 
 // Color styles
 var (
-	Success    = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)   // Green
-	Error      = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true)   // Red
-	Info       = lipgloss.NewStyle().Foreground(lipgloss.Color("4")).Bold(true)   // Blue
-	Highlight  = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true)   // Yellow
-	Dim        = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))              // Gray
-	Header     = lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Bold(true).Underline(true) // Magenta
+	Success   = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)                 // Green
+	Error     = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true)                 // Red
+	Info      = lipgloss.NewStyle().Foreground(lipgloss.Color("4")).Bold(true)                 // Blue
+	Highlight = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true)                 // Yellow
+	Dim       = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))                            // Gray
+	Header    = lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Bold(true).Underline(true) // Magenta
 )
 
 // FormatHeader formats a header message

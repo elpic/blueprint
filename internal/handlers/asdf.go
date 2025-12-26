@@ -383,4 +383,3 @@ func isValidAsdfIdentifier(identifier string) bool {
 	}
 	return matched
 }
-

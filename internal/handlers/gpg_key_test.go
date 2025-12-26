@@ -163,8 +163,8 @@ func TestGPGKeyHandlerUpdateStatus(t *testing.T) {
 // TestGPGKeyHandlerNewGPGKeyHandler tests the NewGPGKeyHandler factory function
 func TestGPGKeyHandlerNewGPGKeyHandler(t *testing.T) {
 	tests := []struct {
-		name    string
-		rule    parser.Rule
+		name     string
+		rule     parser.Rule
 		basePath string
 	}{
 		{
@@ -244,9 +244,9 @@ func TestGPGKeyHandlerCommandConstruction(t *testing.T) {
 // TestGPGKeyHandlerRemoveGPGKeyStatus tests the removeGPGKeyStatus helper
 func TestGPGKeyHandlerRemoveGPGKeyStatus(t *testing.T) {
 	tests := []struct {
-		name     string
-		gpgKeys  []GPGKeyStatus
-		keyring  string
+		name      string
+		gpgKeys   []GPGKeyStatus
+		keyring   string
 		blueprint string
 		osName    string
 		expected  int
@@ -700,8 +700,8 @@ func TestGPGKeyHandlerSudoAwareInterface(t *testing.T) {
 // TestGPGKeyHandlerNeedsSudo tests the NeedsSudo method specifically
 func TestGPGKeyHandlerNeedsSudo(t *testing.T) {
 	tests := []struct {
-		name        string
-		rule        parser.Rule
+		name         string
+		rule         parser.Rule
 		expectedSudo bool
 	}{
 		{

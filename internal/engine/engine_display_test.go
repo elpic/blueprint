@@ -228,9 +228,9 @@ func TestGPGKeyUninstallDisplay(t *testing.T) {
 // TestRuleIDForDisplay tests that rule IDs are available for display
 func TestRuleIDForDisplay(t *testing.T) {
 	tests := []struct {
-		name   string
-		rule   parser.Rule
-		hasID  bool
+		name  string
+		rule  parser.Rule
+		hasID bool
 	}{
 		{
 			name: "gpg-key with ID",

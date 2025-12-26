@@ -3,6 +3,13 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	cryptopkg "github.com/elpic/blueprint/internal/crypto"
+	gitpkg "github.com/elpic/blueprint/internal/git"
+	handlerskg "github.com/elpic/blueprint/internal/handlers"
+	"github.com/elpic/blueprint/internal/logging"
+	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/ui"
+	"golang.org/x/term"
 	"os"
 	"os/exec"
 	"os/user"
@@ -12,13 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	cryptopkg "github.com/elpic/blueprint/internal/crypto"
-	gitpkg "github.com/elpic/blueprint/internal/git"
-	handlerskg "github.com/elpic/blueprint/internal/handlers"
-	"github.com/elpic/blueprint/internal/logging"
-	"github.com/elpic/blueprint/internal/parser"
-	"github.com/elpic/blueprint/internal/ui"
-	"golang.org/x/term"
 )
 
 type ExecutionRecord struct {
@@ -613,7 +613,7 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 		}
 
 		if handler != nil {
-		// Set action-specific UI formatting and command
+			// Set action-specific UI formatting and command
 			switch rule.Action {
 			case "clone":
 				fmt.Printf(" %s", ui.FormatInfo(rule.ClonePath))
@@ -672,10 +672,10 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 			}
 		}
 
-	// Get the actual command from the handler if not already set
-	if handler != nil && actualCmd == "" {
-		actualCmd = handler.GetCommand()
-	}
+		// Get the actual command from the handler if not already set
+		if handler != nil && actualCmd == "" {
+			actualCmd = handler.GetCommand()
+		}
 
 		// Execute handler
 		if handler != nil {
@@ -699,16 +699,16 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 		if err != nil {
 			fmt.Printf(" %s\n", ui.FormatError("Failed"))
 			fmt.Printf("       %s\n", ui.FormatError(err.Error()))
-		if logging.IsDebug() {
-			fmt.Printf("       %s: %s\n", ui.FormatDim("Command"), ui.FormatInfo(actualCmd))
-		}
+			if logging.IsDebug() {
+				fmt.Printf("       %s: %s\n", ui.FormatDim("Command"), ui.FormatInfo(actualCmd))
+			}
 			record.Status = "error"
 			record.Error = err.Error()
 		} else {
 			fmt.Printf(" %s\n", ui.FormatSuccess("Done"))
-		if logging.IsDebug() {
-			fmt.Printf("       %s: %s\n", ui.FormatDim("Command"), ui.FormatInfo(actualCmd))
-		}
+			if logging.IsDebug() {
+				fmt.Printf("       %s: %s\n", ui.FormatDim("Command"), ui.FormatInfo(actualCmd))
+			}
 			record.Status = "success"
 		}
 
@@ -1165,8 +1165,8 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 				// Special handling for asdf which is tracked as ~/.asdf in clones
 				if clone.Path == "~/.asdf" && !asdfInCurrentRules {
 					autoUninstallRules = append(autoUninstallRules, parser.Rule{
-						Action:   "uninstall",
-						OSList:   []string{osName},
+						Action:    "uninstall",
+						OSList:    []string{osName},
 						ClonePath: clone.Path,
 					})
 				} else if clone.Path != "~/.asdf" && !currentClones[clone.Path] {
@@ -2024,7 +2024,7 @@ func PrintHistory(runNumber int, stepNumber int) {
 			// If stepNumber is specified, only show that step
 			if stepNumber >= 0 {
 				ruleNumInt := 0
-			_, _ = fmt.Sscanf(ruleNum, "%d", &ruleNumInt)
+				_, _ = fmt.Sscanf(ruleNum, "%d", &ruleNumInt)
 				if ruleNumInt != stepNumber {
 					continue
 				}

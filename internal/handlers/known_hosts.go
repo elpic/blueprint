@@ -107,7 +107,7 @@ func sshDir(create bool) (string, error) {
 func knownHostsFile(create bool) (string, error) {
 	sshPath, err := sshDir(create)
 
-	if (err != nil) {
+	if err != nil {
 		return "", err
 	}
 

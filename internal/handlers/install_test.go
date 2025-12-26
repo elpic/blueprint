@@ -19,9 +19,9 @@ func TestInstallHandlerGetCommand(t *testing.T) {
 		{
 			name: "install single package on mac",
 			rule: parser.Rule{
-				Action:  "install",
+				Action:   "install",
 				Packages: []parser.Package{{Name: "curl"}},
-				OSList:  []string{"mac"},
+				OSList:   []string{"mac"},
 			},
 			expected: "sudo brew install curl",
 		},
@@ -41,18 +41,18 @@ func TestInstallHandlerGetCommand(t *testing.T) {
 		{
 			name: "install on linux",
 			rule: parser.Rule{
-				Action:  "install",
+				Action:   "install",
 				Packages: []parser.Package{{Name: "curl"}},
-				OSList:  []string{"linux"},
+				OSList:   []string{"linux"},
 			},
 			expected: "sudo apt-get install -y curl",
 		},
 		{
 			name: "uninstall package on mac",
 			rule: parser.Rule{
-				Action:  "uninstall",
+				Action:   "uninstall",
 				Packages: []parser.Package{{Name: "curl"}},
-				OSList:  []string{"mac"},
+				OSList:   []string{"mac"},
 			},
 			expected: "sudo brew uninstall -y curl",
 		},
@@ -145,19 +145,19 @@ func TestInstallHandlerNeedsSudo(t *testing.T) {
 
 func TestInstallHandlerUpdateStatus(t *testing.T) {
 	tests := []struct {
-		name              string
-		rule              parser.Rule
-		records           []ExecutionRecord
-		initialStatus     Status
-		expectedPackages  int
-		shouldContainPkg  bool
-		expectedPkgName   string
+		name             string
+		rule             parser.Rule
+		records          []ExecutionRecord
+		initialStatus    Status
+		expectedPackages int
+		shouldContainPkg bool
+		expectedPkgName  string
 	}{
 		{
 			name: "add installed package to status",
 			rule: parser.Rule{
-				Action:  "install",
-				OSList:  []string{"linux"},
+				Action: "install",
+				OSList: []string{"linux"},
 				Packages: []parser.Package{
 					{Name: "curl"},
 				},
@@ -198,8 +198,8 @@ func TestInstallHandlerUpdateStatus(t *testing.T) {
 		{
 			name: "multiple packages",
 			rule: parser.Rule{
-				Action:  "install",
-				OSList:  []string{"linux"},
+				Action: "install",
+				OSList: []string{"linux"},
 				Packages: []parser.Package{
 					{Name: "git"},
 					{Name: "curl"},

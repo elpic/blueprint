@@ -9,12 +9,12 @@ import (
 // TestGPGKeyStatusPersistenceFlow tests that GPG key status is properly persisted
 func TestGPGKeyStatusPersistenceFlow(t *testing.T) {
 	tests := []struct {
-		name          string
-		blueprint     string
-		os            string
-		keyring       string
-		url           string
-		debURL        string
+		name      string
+		blueprint string
+		os        string
+		keyring   string
+		url       string
+		debURL    string
 	}{
 		{
 			name:      "GPG key status for wezterm",

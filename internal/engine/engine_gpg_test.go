@@ -239,7 +239,6 @@ func TestAutoUninstallRulesFormat(t *testing.T) {
 		t.Errorf("Action: got %q, want 'uninstall'", rule.Action)
 	}
 
-
 	if rule.GPGKeyring != "test-repo" {
 		t.Errorf("GPGKeyring: got %q, want 'test-repo'", rule.GPGKeyring)
 	}

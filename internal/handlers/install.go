@@ -80,7 +80,6 @@ func (h *InstallHandler) UpdateStatus(status *Status, records []ExecutionRecord,
 			cmd = "sudo " + cmd
 		}
 
-
 		_, commandExecuted := commandSuccessfullyExecuted(cmd, records)
 
 		if commandExecuted {

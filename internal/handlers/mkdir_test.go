@@ -28,9 +28,9 @@ func TestMkdirHandlerGetCommand(t *testing.T) {
 		{
 			name: "mkdir with permissions",
 			rule: parser.Rule{
-				Action:       "mkdir",
-				Mkdir:        "/tmp/test-dir",
-				MkdirPerms:   "755",
+				Action:     "mkdir",
+				Mkdir:      "/tmp/test-dir",
+				MkdirPerms: "755",
 			},
 			expected: "mkdir -p /tmp/test-dir && chmod 755 /tmp/test-dir",
 		},
