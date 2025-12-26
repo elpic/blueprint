@@ -217,3 +217,30 @@ func removeMkdirStatus(mkdirs []MkdirStatus, path string, blueprint string, osNa
 	}
 	return result
 }
+
+// DisplayStatus displays created directory status information
+func (h *MkdirHandler) DisplayStatus(mkdirs []MkdirStatus) {
+	if len(mkdirs) == 0 {
+		return
+	}
+
+	fmt.Printf("\n%s\n", ui.FormatHighlight("Created Directories:"))
+	for _, mkdir := range mkdirs {
+		// Parse timestamp for display
+		t, err := time.Parse(time.RFC3339, mkdir.CreatedAt)
+		var timeStr string
+		if err == nil {
+			timeStr = t.Format("2006-01-02 15:04:05")
+		} else {
+			timeStr = mkdir.CreatedAt
+		}
+
+		fmt.Printf("  %s %s (%s) [%s, %s]\n",
+			ui.FormatSuccess("●"),
+			ui.FormatInfo(mkdir.Path),
+			ui.FormatDim(timeStr),
+			ui.FormatDim(mkdir.OS),
+			ui.FormatDim(mkdir.Blueprint),
+		)
+	}
+}

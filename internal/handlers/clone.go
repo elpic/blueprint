@@ -163,3 +163,34 @@ func expandPath(path string) string {
 	}
 	return path
 }
+
+// DisplayStatus displays cloned repository status information
+func (h *CloneHandler) DisplayStatus(clones []CloneStatus) {
+	if len(clones) == 0 {
+		return
+	}
+
+	fmt.Printf("\n%s\n", ui.FormatHighlight("Cloned Repositories:"))
+	for _, clone := range clones {
+		// Parse timestamp for display
+		t, err := time.Parse(time.RFC3339, clone.ClonedAt)
+		var timeStr string
+		if err == nil {
+			timeStr = t.Format("2006-01-02 15:04:05")
+		} else {
+			timeStr = clone.ClonedAt
+		}
+
+		fmt.Printf("  %s %s (%s) [%s, %s]\n",
+			ui.FormatSuccess("●"),
+			ui.FormatInfo(clone.Path),
+			ui.FormatDim(timeStr),
+			ui.FormatDim(clone.OS),
+			ui.FormatDim(clone.Blueprint),
+		)
+		fmt.Printf("     %s %s\n",
+			ui.FormatDim("URL:"),
+			ui.FormatInfo(clone.URL),
+		)
+	}
+}

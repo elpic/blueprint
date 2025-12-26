@@ -202,3 +202,30 @@ var executeCommandWithCache func(string) (string, error)
 func SetExecuteCommandFunc(fn func(string) (string, error)) {
 	executeCommandWithCache = fn
 }
+
+// DisplayStatus displays installed package status information
+func (h *InstallHandler) DisplayStatus(packages []PackageStatus) {
+	if len(packages) == 0 {
+		return
+	}
+
+	fmt.Printf("\n%s\n", ui.FormatHighlight("Installed Packages:"))
+	for _, pkg := range packages {
+		// Parse timestamp for display
+		t, err := time.Parse(time.RFC3339, pkg.InstalledAt)
+		var timeStr string
+		if err == nil {
+			timeStr = t.Format("2006-01-02 15:04:05")
+		} else {
+			timeStr = pkg.InstalledAt
+		}
+
+		fmt.Printf("  %s %s (%s) [%s, %s]\n",
+			ui.FormatSuccess("●"),
+			ui.FormatInfo(pkg.Name),
+			ui.FormatDim(timeStr),
+			ui.FormatDim(pkg.OS),
+			ui.FormatDim(pkg.Blueprint),
+		)
+	}
+}

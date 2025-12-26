@@ -159,3 +159,30 @@ func (h *GPGKeyHandler) DisplayInfo() {
 	fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("Repository: %s", h.Rule.GPGDebURL)))
 	fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("Key URL: %s", h.Rule.GPGKeyURL)))
 }
+
+// DisplayStatus displays GPG key status information
+func (h *GPGKeyHandler) DisplayStatus(keys []GPGKeyStatus) {
+	if len(keys) == 0 {
+		return
+	}
+
+	fmt.Printf("\n%s\n", ui.FormatHighlight("GPG Keys:"))
+	for _, key := range keys {
+		// Parse timestamp for display
+		t, err := time.Parse(time.RFC3339, key.AddedAt)
+		var timeStr string
+		if err == nil {
+			timeStr = t.Format("2006-01-02 15:04:05")
+		} else {
+			timeStr = key.AddedAt
+		}
+
+		fmt.Printf("  %s %s (%s) [%s, %s]\n",
+			ui.FormatSuccess("●"),
+			ui.FormatInfo(key.Keyring),
+			ui.FormatDim(timeStr),
+			ui.FormatDim(key.OS),
+			ui.FormatDim(key.Blueprint),
+		)
+	}
+}

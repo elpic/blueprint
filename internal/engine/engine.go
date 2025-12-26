@@ -31,69 +31,14 @@ type ExecutionRecord struct {
 	Error     string `json:"error,omitempty"`
 }
 
-// PackageStatus tracks an installed package
-type PackageStatus struct {
-	Name        string `json:"name"`
-	InstalledAt string `json:"installed_at"`
-	Blueprint   string `json:"blueprint"`
-	OS          string `json:"os"`
-}
-
-// CloneStatus tracks a cloned repository
-type CloneStatus struct {
-	URL       string `json:"url"`
-	Path      string `json:"path"`
-	SHA       string `json:"sha"`
-	ClonedAt  string `json:"cloned_at"`
-	Blueprint string `json:"blueprint"`
-	OS        string `json:"os"`
-}
-
-// DecryptStatus tracks a decrypted file
-type DecryptStatus struct {
-	SourceFile  string `json:"source_file"`
-	DestPath    string `json:"dest_path"`
-	DecryptedAt string `json:"decrypted_at"`
-	Blueprint   string `json:"blueprint"`
-	OS          string `json:"os"`
-}
-
-// MkdirStatus tracks a created directory
-type MkdirStatus struct {
-	Path      string `json:"path"`
-	CreatedAt string `json:"created_at"`
-	Blueprint string `json:"blueprint"`
-	OS        string `json:"os"`
-}
-
-// KnownHostsStatus tracks an SSH known host entry
-type KnownHostsStatus struct {
-	Host      string `json:"host"`
-	KeyType   string `json:"key_type"`
-	AddedAt   string `json:"added_at"`
-	Blueprint string `json:"blueprint"`
-	OS        string `json:"os"`
-}
-
-// GPGKeyStatus tracks a GPG key and repository addition
-type GPGKeyStatus struct {
-	Keyring   string `json:"keyring"`
-	URL       string `json:"url"`
-	DebURL    string `json:"deb_url"`
-	AddedAt   string `json:"added_at"`
-	Blueprint string `json:"blueprint"`
-	OS        string `json:"os"`
-}
-
-// Status represents the current state of installed packages, clones, decrypts, mkdirs, known_hosts, and gpg_keys
-type Status struct {
-	Packages   []PackageStatus    `json:"packages"`
-	Clones     []CloneStatus      `json:"clones"`
-	Decrypts   []DecryptStatus    `json:"decrypts"`
-	Mkdirs     []MkdirStatus      `json:"mkdirs"`
-	KnownHosts []KnownHostsStatus `json:"known_hosts"`
-	GPGKeys    []GPGKeyStatus     `json:"gpg_keys"`
-}
+// Type aliases to use handler definitions
+type PackageStatus = handlerskg.PackageStatus
+type CloneStatus = handlerskg.CloneStatus
+type DecryptStatus = handlerskg.DecryptStatus
+type MkdirStatus = handlerskg.MkdirStatus
+type KnownHostsStatus = handlerskg.KnownHostsStatus
+type GPGKeyStatus = handlerskg.GPGKeyStatus
+type Status = handlerskg.Status
 
 // passwordCache stores decryption passwords by password-id to avoid re-prompting
 var passwordCache = make(map[string]string)
@@ -1731,168 +1676,24 @@ func PrintStatus() {
 	// Display header
 	fmt.Printf("\n%s\n", ui.FormatHighlight("=== Blueprint Status ==="))
 
-	// Display packages
-	if len(status.Packages) > 0 {
-		fmt.Printf("\n%s\n", ui.FormatHighlight("Installed Packages:"))
-		for _, pkg := range status.Packages {
-			// Parse timestamp for display
-			t, err := time.Parse(time.RFC3339, pkg.InstalledAt)
-			var timeStr string
-			if err == nil {
-				timeStr = t.Format("2006-01-02 15:04:05")
-			} else {
-				timeStr = pkg.InstalledAt
-			}
+	// Use handlers to display their respective status
+	installHandler := &handlerskg.InstallHandler{}
+	installHandler.DisplayStatus(status.Packages)
 
-			fmt.Printf("  %s %s (%s) [%s, %s]\n",
-				ui.FormatSuccess("●"),
-				ui.FormatInfo(pkg.Name),
-				ui.FormatDim(timeStr),
-				ui.FormatDim(pkg.OS),
-				ui.FormatDim(pkg.Blueprint),
-			)
-		}
-	}
+	cloneHandler := &handlerskg.CloneHandler{}
+	cloneHandler.DisplayStatus(status.Clones)
 
-	// Display clones
-	if len(status.Clones) > 0 {
-		fmt.Printf("\n%s\n", ui.FormatHighlight("Cloned Repositories:"))
-		for _, clone := range status.Clones {
-			// Parse timestamp for display
-			t, err := time.Parse(time.RFC3339, clone.ClonedAt)
-			var timeStr string
-			if err == nil {
-				timeStr = t.Format("2006-01-02 15:04:05")
-			} else {
-				timeStr = clone.ClonedAt
-			}
+	decryptHandler := &handlerskg.DecryptHandler{}
+	decryptHandler.DisplayStatus(status.Decrypts)
 
-			shaStr := clone.SHA
-			if len(shaStr) > 8 {
-				shaStr = shaStr[:8]
-			}
+	mkdirHandler := &handlerskg.MkdirHandler{}
+	mkdirHandler.DisplayStatus(status.Mkdirs)
 
-			fmt.Printf("  %s %s (%s) [%s, %s]\n",
-				ui.FormatSuccess("●"),
-				ui.FormatInfo(clone.Path),
-				ui.FormatDim(timeStr),
-				ui.FormatDim(clone.OS),
-				ui.FormatDim(clone.Blueprint),
-			)
-			fmt.Printf("     %s %s\n",
-				ui.FormatDim("URL:"),
-				ui.FormatInfo(clone.URL),
-			)
-			if shaStr != "" {
-				fmt.Printf("     %s %s\n",
-					ui.FormatDim("SHA:"),
-					ui.FormatDim(shaStr),
-				)
-			}
-		}
-	}
+	knownHostsHandler := &handlerskg.KnownHostsHandler{}
+	knownHostsHandler.DisplayStatus(status.KnownHosts)
 
-	// Display decrypted files
-	if len(status.Decrypts) > 0 {
-		fmt.Printf("\n%s\n", ui.FormatHighlight("Decrypted Files:"))
-		for _, decrypt := range status.Decrypts {
-			// Parse timestamp for display
-			t, err := time.Parse(time.RFC3339, decrypt.DecryptedAt)
-			var timeStr string
-			if err == nil {
-				timeStr = t.Format("2006-01-02 15:04:05")
-			} else {
-				timeStr = decrypt.DecryptedAt
-			}
-
-			fmt.Printf("  %s %s (%s) [%s, %s]\n",
-				ui.FormatSuccess("●"),
-				ui.FormatInfo(decrypt.DestPath),
-				ui.FormatDim(timeStr),
-				ui.FormatDim(decrypt.OS),
-				ui.FormatDim(decrypt.Blueprint),
-			)
-			fmt.Printf("     %s %s\n",
-				ui.FormatDim("From:"),
-				ui.FormatInfo(decrypt.SourceFile),
-			)
-		}
-	}
-
-	// Display created directories
-	if len(status.Mkdirs) > 0 {
-		fmt.Printf("\n%s\n", ui.FormatHighlight("Created Directories:"))
-		for _, mkdir := range status.Mkdirs {
-			// Parse timestamp for display
-			t, err := time.Parse(time.RFC3339, mkdir.CreatedAt)
-			var timeStr string
-			if err == nil {
-				timeStr = t.Format("2006-01-02 15:04:05")
-			} else {
-				timeStr = mkdir.CreatedAt
-			}
-
-			fmt.Printf("  %s %s (%s) [%s, %s]\n",
-				ui.FormatSuccess("●"),
-				ui.FormatInfo(mkdir.Path),
-				ui.FormatDim(timeStr),
-				ui.FormatDim(mkdir.OS),
-				ui.FormatDim(mkdir.Blueprint),
-			)
-		}
-	}
-
-	// Display SSH known hosts
-	if len(status.KnownHosts) > 0 {
-		fmt.Printf("\n%s\n", ui.FormatHighlight("SSH Known Hosts:"))
-		for _, kh := range status.KnownHosts {
-			// Parse timestamp for display
-			t, err := time.Parse(time.RFC3339, kh.AddedAt)
-			var timeStr string
-			if err == nil {
-				timeStr = t.Format("2006-01-02 15:04:05")
-			} else {
-				timeStr = kh.AddedAt
-			}
-
-			keyTypeStr := kh.KeyType
-			if keyTypeStr == "" {
-				keyTypeStr = "unknown"
-			}
-
-			fmt.Printf("  %s %s (%s, %s) [%s, %s]\n",
-				ui.FormatSuccess("●"),
-				ui.FormatInfo(kh.Host),
-				ui.FormatDim(keyTypeStr),
-				ui.FormatDim(timeStr),
-				ui.FormatDim(kh.OS),
-				ui.FormatDim(kh.Blueprint),
-			)
-		}
-	}
-
-	// Display GPG keys
-	if len(status.GPGKeys) > 0 {
-		fmt.Printf("\n%s\n", ui.FormatHighlight("GPG Keys:"))
-		for _, gpgKey := range status.GPGKeys {
-			// Parse timestamp for display
-			t, err := time.Parse(time.RFC3339, gpgKey.AddedAt)
-			var timeStr string
-			if err == nil {
-				timeStr = t.Format("2006-01-02 15:04:05")
-			} else {
-				timeStr = gpgKey.AddedAt
-			}
-
-			fmt.Printf("  %s %s (%s) [%s, %s]\n",
-				ui.FormatSuccess("●"),
-				ui.FormatInfo(gpgKey.Keyring),
-				ui.FormatDim(timeStr),
-				ui.FormatDim(gpgKey.OS),
-				ui.FormatDim(gpgKey.Blueprint),
-			)
-		}
-	}
+	gpgKeyHandler := &handlerskg.GPGKeyHandler{}
+	gpgKeyHandler.DisplayStatus(status.GPGKeys)
 
 	if len(status.Packages) == 0 && len(status.Clones) == 0 && len(status.Decrypts) == 0 && len(status.Mkdirs) == 0 && len(status.KnownHosts) == 0 && len(status.GPGKeys) == 0 {
 		fmt.Printf("\n%s\n", ui.FormatInfo("No packages, repositories, decrypted files, directories, known hosts, or GPG keys created"))
