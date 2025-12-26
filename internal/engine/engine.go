@@ -1871,8 +1871,31 @@ func PrintStatus() {
 		}
 	}
 
-	if len(status.Packages) == 0 && len(status.Clones) == 0 && len(status.Decrypts) == 0 && len(status.Mkdirs) == 0 && len(status.KnownHosts) == 0 {
-		fmt.Printf("\n%s\n", ui.FormatInfo("No packages, repositories, decrypted files, directories, or known hosts created"))
+	// Display GPG keys
+	if len(status.GPGKeys) > 0 {
+		fmt.Printf("\n%s\n", ui.FormatHighlight("GPG Keys:"))
+		for _, gpgKey := range status.GPGKeys {
+			// Parse timestamp for display
+			t, err := time.Parse(time.RFC3339, gpgKey.AddedAt)
+			var timeStr string
+			if err == nil {
+				timeStr = t.Format("2006-01-02 15:04:05")
+			} else {
+				timeStr = gpgKey.AddedAt
+			}
+
+			fmt.Printf("  %s %s (%s) [%s, %s]\n",
+				ui.FormatSuccess("●"),
+				ui.FormatInfo(gpgKey.Keyring),
+				ui.FormatDim(timeStr),
+				ui.FormatDim(gpgKey.OS),
+				ui.FormatDim(gpgKey.Blueprint),
+			)
+		}
+	}
+
+	if len(status.Packages) == 0 && len(status.Clones) == 0 && len(status.Decrypts) == 0 && len(status.Mkdirs) == 0 && len(status.KnownHosts) == 0 && len(status.GPGKeys) == 0 {
+		fmt.Printf("\n%s\n", ui.FormatInfo("No packages, repositories, decrypted files, directories, known hosts, or GPG keys created"))
 	}
 
 	fmt.Printf("\n")
