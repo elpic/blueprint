@@ -181,3 +181,34 @@ func (h *DecryptHandler) resolveFilePath(file string) string {
 	// Return original (will fail at runtime with proper error message)
 	return file
 }
+
+// DisplayStatus displays decrypted file status information
+func (h *DecryptHandler) DisplayStatus(decrypts []DecryptStatus) {
+	if len(decrypts) == 0 {
+		return
+	}
+
+	fmt.Printf("\n%s\n", ui.FormatHighlight("Decrypted Files:"))
+	for _, decrypt := range decrypts {
+		// Parse timestamp for display
+		t, err := time.Parse(time.RFC3339, decrypt.DecryptedAt)
+		var timeStr string
+		if err == nil {
+			timeStr = t.Format("2006-01-02 15:04:05")
+		} else {
+			timeStr = decrypt.DecryptedAt
+		}
+
+		fmt.Printf("  %s %s (%s) [%s, %s]\n",
+			ui.FormatSuccess("●"),
+			ui.FormatInfo(decrypt.DestPath),
+			ui.FormatDim(timeStr),
+			ui.FormatDim(decrypt.OS),
+			ui.FormatDim(decrypt.Blueprint),
+		)
+		fmt.Printf("     %s %s\n",
+			ui.FormatDim("From:"),
+			ui.FormatInfo(decrypt.SourceFile),
+		)
+	}
+}

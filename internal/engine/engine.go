@@ -31,69 +31,16 @@ type ExecutionRecord struct {
 	Error     string `json:"error,omitempty"`
 }
 
-// PackageStatus tracks an installed package
-type PackageStatus struct {
-	Name        string `json:"name"`
-	InstalledAt string `json:"installed_at"`
-	Blueprint   string `json:"blueprint"`
-	OS          string `json:"os"`
-}
-
-// CloneStatus tracks a cloned repository
-type CloneStatus struct {
-	URL       string `json:"url"`
-	Path      string `json:"path"`
-	SHA       string `json:"sha"`
-	ClonedAt  string `json:"cloned_at"`
-	Blueprint string `json:"blueprint"`
-	OS        string `json:"os"`
-}
-
-// DecryptStatus tracks a decrypted file
-type DecryptStatus struct {
-	SourceFile  string `json:"source_file"`
-	DestPath    string `json:"dest_path"`
-	DecryptedAt string `json:"decrypted_at"`
-	Blueprint   string `json:"blueprint"`
-	OS          string `json:"os"`
-}
-
-// MkdirStatus tracks a created directory
-type MkdirStatus struct {
-	Path      string `json:"path"`
-	CreatedAt string `json:"created_at"`
-	Blueprint string `json:"blueprint"`
-	OS        string `json:"os"`
-}
-
-// KnownHostsStatus tracks an SSH known host entry
-type KnownHostsStatus struct {
-	Host      string `json:"host"`
-	KeyType   string `json:"key_type"`
-	AddedAt   string `json:"added_at"`
-	Blueprint string `json:"blueprint"`
-	OS        string `json:"os"`
-}
-
-// GPGKeyStatus tracks a GPG key and repository addition
-type GPGKeyStatus struct {
-	Keyring   string `json:"keyring"`
-	URL       string `json:"url"`
-	DebURL    string `json:"deb_url"`
-	AddedAt   string `json:"added_at"`
-	Blueprint string `json:"blueprint"`
-	OS        string `json:"os"`
-}
-
-// Status represents the current state of installed packages, clones, decrypts, mkdirs, known_hosts, and gpg_keys
-type Status struct {
-	Packages   []PackageStatus    `json:"packages"`
-	Clones     []CloneStatus      `json:"clones"`
-	Decrypts   []DecryptStatus    `json:"decrypts"`
-	Mkdirs     []MkdirStatus      `json:"mkdirs"`
-	KnownHosts []KnownHostsStatus `json:"known_hosts"`
-	GPGKeys    []GPGKeyStatus     `json:"gpg_keys"`
-}
+// Re-export handler types for backward compatibility
+type (
+	PackageStatus    = handlerskg.PackageStatus
+	CloneStatus      = handlerskg.CloneStatus
+	DecryptStatus    = handlerskg.DecryptStatus
+	MkdirStatus      = handlerskg.MkdirStatus
+	KnownHostsStatus = handlerskg.KnownHostsStatus
+	GPGKeyStatus     = handlerskg.GPGKeyStatus
+	Status           = handlerskg.Status
+)
 
 // passwordCache stores decryption passwords by password-id to avoid re-prompting
 var passwordCache = make(map[string]string)
@@ -863,16 +810,6 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 		}
 	}
 
-	// Convert engine Status to handler Status
-	handlerStatus := handlerskg.Status{
-		Packages:   convertPackages(status.Packages),
-		Clones:     convertClones(status.Clones),
-		Decrypts:   convertDecrypts(status.Decrypts),
-		Mkdirs:     convertMkdirs(status.Mkdirs),
-		KnownHosts: convertKnownHosts(status.KnownHosts),
-		GPGKeys:    convertGPGKeys(status.GPGKeys),
-	}
-
 	// Process each rule by creating appropriate handler and calling UpdateStatus
 	for _, rule := range rules {
 		// Create handler for the rule (handles both install and uninstall)
@@ -883,20 +820,10 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 		}
 
 		// Let the handler update status
-		if err := handler.UpdateStatus(&handlerStatus, handlerRecords, blueprint, osName); err != nil {
+		if err := handler.UpdateStatus(&status, handlerRecords, blueprint, osName); err != nil {
 			// Log but don't fail on status update errors
 			fmt.Fprintf(os.Stderr, "Warning: failed to update status for rule %v: %v\n", rule.Action, err)
 		}
-	}
-
-	// Convert handler Status back to engine Status
-	status = Status{
-		Packages:   convertHandlerPackages(handlerStatus.Packages),
-		Clones:     convertHandlerClones(handlerStatus.Clones),
-		Decrypts:   convertHandlerDecrypts(handlerStatus.Decrypts),
-		Mkdirs:     convertHandlerMkdirs(handlerStatus.Mkdirs),
-		KnownHosts: convertHandlerKnownHosts(handlerStatus.KnownHosts),
-		GPGKeys:    convertHandlerGPGKeys(handlerStatus.GPGKeys),
 	}
 
 	// Write status to file
@@ -912,174 +839,6 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 	return nil
 }
 
-// Helper functions to convert between engine and handler status types
-func convertPackages(packages []PackageStatus) []handlerskg.PackageStatus {
-	result := make([]handlerskg.PackageStatus, len(packages))
-	for i, pkg := range packages {
-		result[i] = handlerskg.PackageStatus{
-			Name:        pkg.Name,
-			InstalledAt: pkg.InstalledAt,
-			Blueprint:   pkg.Blueprint,
-			OS:          pkg.OS,
-		}
-	}
-	return result
-}
-
-func convertClones(clones []CloneStatus) []handlerskg.CloneStatus {
-	result := make([]handlerskg.CloneStatus, len(clones))
-	for i, clone := range clones {
-		result[i] = handlerskg.CloneStatus{
-			URL:       clone.URL,
-			Path:      clone.Path,
-			SHA:       clone.SHA,
-			ClonedAt:  clone.ClonedAt,
-			Blueprint: clone.Blueprint,
-			OS:        clone.OS,
-		}
-	}
-	return result
-}
-
-func convertDecrypts(decrypts []DecryptStatus) []handlerskg.DecryptStatus {
-	result := make([]handlerskg.DecryptStatus, len(decrypts))
-	for i, decrypt := range decrypts {
-		result[i] = handlerskg.DecryptStatus{
-			SourceFile:  decrypt.SourceFile,
-			DestPath:    decrypt.DestPath,
-			DecryptedAt: decrypt.DecryptedAt,
-			Blueprint:   decrypt.Blueprint,
-			OS:          decrypt.OS,
-		}
-	}
-	return result
-}
-
-func convertMkdirs(mkdirs []MkdirStatus) []handlerskg.MkdirStatus {
-	result := make([]handlerskg.MkdirStatus, len(mkdirs))
-	for i, mkdir := range mkdirs {
-		result[i] = handlerskg.MkdirStatus{
-			Path:      mkdir.Path,
-			CreatedAt: mkdir.CreatedAt,
-			Blueprint: mkdir.Blueprint,
-			OS:        mkdir.OS,
-		}
-	}
-	return result
-}
-
-func convertHandlerPackages(packages []handlerskg.PackageStatus) []PackageStatus {
-	result := make([]PackageStatus, len(packages))
-	for i, pkg := range packages {
-		result[i] = PackageStatus{
-			Name:        pkg.Name,
-			InstalledAt: pkg.InstalledAt,
-			Blueprint:   pkg.Blueprint,
-			OS:          pkg.OS,
-		}
-	}
-	return result
-}
-
-func convertHandlerClones(clones []handlerskg.CloneStatus) []CloneStatus {
-	result := make([]CloneStatus, len(clones))
-	for i, clone := range clones {
-		result[i] = CloneStatus{
-			URL:       clone.URL,
-			Path:      clone.Path,
-			SHA:       clone.SHA,
-			ClonedAt:  clone.ClonedAt,
-			Blueprint: clone.Blueprint,
-			OS:        clone.OS,
-		}
-	}
-	return result
-}
-
-func convertHandlerDecrypts(decrypts []handlerskg.DecryptStatus) []DecryptStatus {
-	result := make([]DecryptStatus, len(decrypts))
-	for i, decrypt := range decrypts {
-		result[i] = DecryptStatus{
-			SourceFile:  decrypt.SourceFile,
-			DestPath:    decrypt.DestPath,
-			DecryptedAt: decrypt.DecryptedAt,
-			Blueprint:   decrypt.Blueprint,
-			OS:          decrypt.OS,
-		}
-	}
-	return result
-}
-
-func convertHandlerMkdirs(mkdirs []handlerskg.MkdirStatus) []MkdirStatus {
-	result := make([]MkdirStatus, len(mkdirs))
-	for i, mkdir := range mkdirs {
-		result[i] = MkdirStatus{
-			Path:      mkdir.Path,
-			CreatedAt: mkdir.CreatedAt,
-			Blueprint: mkdir.Blueprint,
-			OS:        mkdir.OS,
-		}
-	}
-	return result
-}
-
-func convertKnownHosts(knownHosts []KnownHostsStatus) []handlerskg.KnownHostsStatus {
-	result := make([]handlerskg.KnownHostsStatus, len(knownHosts))
-	for i, kh := range knownHosts {
-		result[i] = handlerskg.KnownHostsStatus{
-			Host:      kh.Host,
-			KeyType:   kh.KeyType,
-			AddedAt:   kh.AddedAt,
-			Blueprint: kh.Blueprint,
-			OS:        kh.OS,
-		}
-	}
-	return result
-}
-
-func convertHandlerKnownHosts(knownHosts []handlerskg.KnownHostsStatus) []KnownHostsStatus {
-	result := make([]KnownHostsStatus, len(knownHosts))
-	for i, kh := range knownHosts {
-		result[i] = KnownHostsStatus{
-			Host:      kh.Host,
-			KeyType:   kh.KeyType,
-			AddedAt:   kh.AddedAt,
-			Blueprint: kh.Blueprint,
-			OS:        kh.OS,
-		}
-	}
-	return result
-}
-
-func convertGPGKeys(gpgKeys []GPGKeyStatus) []handlerskg.GPGKeyStatus {
-	result := make([]handlerskg.GPGKeyStatus, len(gpgKeys))
-	for i, gpg := range gpgKeys {
-		result[i] = handlerskg.GPGKeyStatus{
-			Keyring:   gpg.Keyring,
-			URL:       gpg.URL,
-			DebURL:    gpg.DebURL,
-			AddedAt:   gpg.AddedAt,
-			Blueprint: gpg.Blueprint,
-			OS:        gpg.OS,
-		}
-	}
-	return result
-}
-
-func convertHandlerGPGKeys(gpgKeys []handlerskg.GPGKeyStatus) []GPGKeyStatus {
-	result := make([]GPGKeyStatus, len(gpgKeys))
-	for i, gpg := range gpgKeys {
-		result[i] = GPGKeyStatus{
-			Keyring:   gpg.Keyring,
-			URL:       gpg.URL,
-			DebURL:    gpg.DebURL,
-			AddedAt:   gpg.AddedAt,
-			Blueprint: gpg.Blueprint,
-			OS:        gpg.OS,
-		}
-	}
-	return result
-}
 
 // getAutoUninstallRules compares status with current rules and generates uninstall rules for removed resources
 // Uses a generic approach: any resource in status but not in current rules gets flagged for removal
@@ -1731,148 +1490,27 @@ func PrintStatus() {
 	// Display header
 	fmt.Printf("\n%s\n", ui.FormatHighlight("=== Blueprint Status ==="))
 
-	// Display packages
-	if len(status.Packages) > 0 {
-		fmt.Printf("\n%s\n", ui.FormatHighlight("Installed Packages:"))
-		for _, pkg := range status.Packages {
-			// Parse timestamp for display
-			t, err := time.Parse(time.RFC3339, pkg.InstalledAt)
-			var timeStr string
-			if err == nil {
-				timeStr = t.Format("2006-01-02 15:04:05")
-			} else {
-				timeStr = pkg.InstalledAt
-			}
+	// Use handlers to display their respective status
+	installHandler := &handlerskg.InstallHandler{}
+	installHandler.DisplayStatus(status.Packages)
 
-			fmt.Printf("  %s %s (%s) [%s, %s]\n",
-				ui.FormatSuccess("●"),
-				ui.FormatInfo(pkg.Name),
-				ui.FormatDim(timeStr),
-				ui.FormatDim(pkg.OS),
-				ui.FormatDim(pkg.Blueprint),
-			)
-		}
-	}
+	cloneHandler := &handlerskg.CloneHandler{}
+	cloneHandler.DisplayStatus(status.Clones)
 
-	// Display clones
-	if len(status.Clones) > 0 {
-		fmt.Printf("\n%s\n", ui.FormatHighlight("Cloned Repositories:"))
-		for _, clone := range status.Clones {
-			// Parse timestamp for display
-			t, err := time.Parse(time.RFC3339, clone.ClonedAt)
-			var timeStr string
-			if err == nil {
-				timeStr = t.Format("2006-01-02 15:04:05")
-			} else {
-				timeStr = clone.ClonedAt
-			}
+	decryptHandler := &handlerskg.DecryptHandler{}
+	decryptHandler.DisplayStatus(status.Decrypts)
 
-			shaStr := clone.SHA
-			if len(shaStr) > 8 {
-				shaStr = shaStr[:8]
-			}
+	mkdirHandler := &handlerskg.MkdirHandler{}
+	mkdirHandler.DisplayStatus(status.Mkdirs)
 
-			fmt.Printf("  %s %s (%s) [%s, %s]\n",
-				ui.FormatSuccess("●"),
-				ui.FormatInfo(clone.Path),
-				ui.FormatDim(timeStr),
-				ui.FormatDim(clone.OS),
-				ui.FormatDim(clone.Blueprint),
-			)
-			fmt.Printf("     %s %s\n",
-				ui.FormatDim("URL:"),
-				ui.FormatInfo(clone.URL),
-			)
-			if shaStr != "" {
-				fmt.Printf("     %s %s\n",
-					ui.FormatDim("SHA:"),
-					ui.FormatDim(shaStr),
-				)
-			}
-		}
-	}
+	knownHostsHandler := &handlerskg.KnownHostsHandler{}
+	knownHostsHandler.DisplayStatus(status.KnownHosts)
 
-	// Display decrypted files
-	if len(status.Decrypts) > 0 {
-		fmt.Printf("\n%s\n", ui.FormatHighlight("Decrypted Files:"))
-		for _, decrypt := range status.Decrypts {
-			// Parse timestamp for display
-			t, err := time.Parse(time.RFC3339, decrypt.DecryptedAt)
-			var timeStr string
-			if err == nil {
-				timeStr = t.Format("2006-01-02 15:04:05")
-			} else {
-				timeStr = decrypt.DecryptedAt
-			}
+	gpgKeyHandler := &handlerskg.GPGKeyHandler{}
+	gpgKeyHandler.DisplayStatus(status.GPGKeys)
 
-			fmt.Printf("  %s %s (%s) [%s, %s]\n",
-				ui.FormatSuccess("●"),
-				ui.FormatInfo(decrypt.DestPath),
-				ui.FormatDim(timeStr),
-				ui.FormatDim(decrypt.OS),
-				ui.FormatDim(decrypt.Blueprint),
-			)
-			fmt.Printf("     %s %s\n",
-				ui.FormatDim("From:"),
-				ui.FormatInfo(decrypt.SourceFile),
-			)
-		}
-	}
-
-	// Display created directories
-	if len(status.Mkdirs) > 0 {
-		fmt.Printf("\n%s\n", ui.FormatHighlight("Created Directories:"))
-		for _, mkdir := range status.Mkdirs {
-			// Parse timestamp for display
-			t, err := time.Parse(time.RFC3339, mkdir.CreatedAt)
-			var timeStr string
-			if err == nil {
-				timeStr = t.Format("2006-01-02 15:04:05")
-			} else {
-				timeStr = mkdir.CreatedAt
-			}
-
-			fmt.Printf("  %s %s (%s) [%s, %s]\n",
-				ui.FormatSuccess("●"),
-				ui.FormatInfo(mkdir.Path),
-				ui.FormatDim(timeStr),
-				ui.FormatDim(mkdir.OS),
-				ui.FormatDim(mkdir.Blueprint),
-			)
-		}
-	}
-
-	// Display SSH known hosts
-	if len(status.KnownHosts) > 0 {
-		fmt.Printf("\n%s\n", ui.FormatHighlight("SSH Known Hosts:"))
-		for _, kh := range status.KnownHosts {
-			// Parse timestamp for display
-			t, err := time.Parse(time.RFC3339, kh.AddedAt)
-			var timeStr string
-			if err == nil {
-				timeStr = t.Format("2006-01-02 15:04:05")
-			} else {
-				timeStr = kh.AddedAt
-			}
-
-			keyTypeStr := kh.KeyType
-			if keyTypeStr == "" {
-				keyTypeStr = "unknown"
-			}
-
-			fmt.Printf("  %s %s (%s, %s) [%s, %s]\n",
-				ui.FormatSuccess("●"),
-				ui.FormatInfo(kh.Host),
-				ui.FormatDim(keyTypeStr),
-				ui.FormatDim(timeStr),
-				ui.FormatDim(kh.OS),
-				ui.FormatDim(kh.Blueprint),
-			)
-		}
-	}
-
-	if len(status.Packages) == 0 && len(status.Clones) == 0 && len(status.Decrypts) == 0 && len(status.Mkdirs) == 0 && len(status.KnownHosts) == 0 {
-		fmt.Printf("\n%s\n", ui.FormatInfo("No packages, repositories, decrypted files, directories, or known hosts created"))
+	if len(status.Packages) == 0 && len(status.Clones) == 0 && len(status.Decrypts) == 0 && len(status.Mkdirs) == 0 && len(status.KnownHosts) == 0 && len(status.GPGKeys) == 0 {
+		fmt.Printf("\n%s\n", ui.FormatInfo("No packages, repositories, decrypted files, directories, known hosts, or GPG keys created"))
 	}
 
 	fmt.Printf("\n")

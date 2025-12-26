@@ -239,3 +239,36 @@ func isValidHostname(hostname string) bool {
 	}
 	return matched
 }
+
+// DisplayStatus displays SSH known host status information
+func (h *KnownHostsHandler) DisplayStatus(hosts []KnownHostsStatus) {
+	if len(hosts) == 0 {
+		return
+	}
+
+	fmt.Printf("\n%s\n", ui.FormatHighlight("SSH Known Hosts:"))
+	for _, kh := range hosts {
+		// Parse timestamp for display
+		t, err := time.Parse(time.RFC3339, kh.AddedAt)
+		var timeStr string
+		if err == nil {
+			timeStr = t.Format("2006-01-02 15:04:05")
+		} else {
+			timeStr = kh.AddedAt
+		}
+
+		keyTypeStr := kh.KeyType
+		if keyTypeStr == "" {
+			keyTypeStr = "unknown"
+		}
+
+		fmt.Printf("  %s %s (%s, %s) [%s, %s]\n",
+			ui.FormatSuccess("●"),
+			ui.FormatInfo(kh.Host),
+			ui.FormatDim(keyTypeStr),
+			ui.FormatDim(timeStr),
+			ui.FormatDim(kh.OS),
+			ui.FormatDim(kh.Blueprint),
+		)
+	}
+}

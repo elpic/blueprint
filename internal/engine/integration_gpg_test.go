@@ -3,6 +3,7 @@ package engine
 import (
 	"testing"
 
+	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
 )
 
@@ -142,63 +143,28 @@ func TestGPGKeyAutoUninstallDetection(t *testing.T) {
 	}
 }
 
-// TestGPGKeyStatusConversionBidirectional tests that status converts correctly both ways
-func TestGPGKeyStatusConversionBidirectional(t *testing.T) {
-	original := Status{
-		GPGKeys: []GPGKeyStatus{
-			{
-				Keyring:   "test-repo",
-				URL:       "https://example.com/gpg.key",
-				DebURL:    "https://example.com/apt",
-				AddedAt:   "2025-12-16T10:00:00Z",
-				Blueprint: "/test/blueprint.bp",
-				OS:        "linux",
-			},
-		},
+// TestGPGKeyStatusEquivalence tests that engine and handler GPGKeyStatus types are equivalent
+func TestGPGKeyStatusEquivalence(t *testing.T) {
+	// Create a GPGKeyStatus
+	gpgKey := GPGKeyStatus{
+		Keyring:   "test-repo",
+		URL:       "https://example.com/gpg.key",
+		DebURL:    "https://example.com/apt",
+		AddedAt:   "2025-12-16T10:00:00Z",
+		Blueprint: "/test/blueprint.bp",
+		OS:        "linux",
 	}
 
-	// Convert to handler status
-	handlerGPGKeys := convertGPGKeys(original.GPGKeys)
-
-	// Verify conversion
-	if len(handlerGPGKeys) != 1 {
-		t.Fatalf("Expected 1 GPG key, got %d", len(handlerGPGKeys))
+	// Verify it's the same as handler type
+	handlerKey := handlerskg.GPGKeyStatus(gpgKey)
+	if handlerKey.Keyring != gpgKey.Keyring {
+		t.Errorf("Keyring mismatch: got %q, want %q", handlerKey.Keyring, gpgKey.Keyring)
 	}
 
-	if handlerGPGKeys[0].Keyring != "test-repo" {
-		t.Errorf("Keyring mismatch: got %q, want 'test-repo'", handlerGPGKeys[0].Keyring)
-	}
-
-	// Convert back to engine status
-	engineGPGKeys := convertHandlerGPGKeys(handlerGPGKeys)
-
-	// Verify round-trip conversion
-	if len(engineGPGKeys) != 1 {
-		t.Fatalf("Expected 1 GPG key after round-trip, got %d", len(engineGPGKeys))
-	}
-
-	if engineGPGKeys[0].Keyring != original.GPGKeys[0].Keyring {
-		t.Errorf("Keyring mismatch after round-trip: got %q, want %q",
-			engineGPGKeys[0].Keyring, original.GPGKeys[0].Keyring)
-	}
-
-	if engineGPGKeys[0].URL != original.GPGKeys[0].URL {
-		t.Errorf("URL mismatch after round-trip: got %q, want %q",
-			engineGPGKeys[0].URL, original.GPGKeys[0].URL)
-	}
-
-	if engineGPGKeys[0].DebURL != original.GPGKeys[0].DebURL {
-		t.Errorf("DebURL mismatch after round-trip: got %q, want %q",
-			engineGPGKeys[0].DebURL, original.GPGKeys[0].DebURL)
-	}
-
-	if engineGPGKeys[0].Blueprint != original.GPGKeys[0].Blueprint {
-		t.Errorf("Blueprint mismatch after round-trip: got %q, want %q",
-			engineGPGKeys[0].Blueprint, original.GPGKeys[0].Blueprint)
-	}
-
-	if engineGPGKeys[0].OS != original.GPGKeys[0].OS {
-		t.Errorf("OS mismatch after round-trip: got %q, want %q",
-			engineGPGKeys[0].OS, original.GPGKeys[0].OS)
+	// Verify all fields match
+	if handlerKey.URL != gpgKey.URL || handlerKey.DebURL != gpgKey.DebURL ||
+		handlerKey.AddedAt != gpgKey.AddedAt || handlerKey.Blueprint != gpgKey.Blueprint ||
+		handlerKey.OS != gpgKey.OS {
+		t.Error("GPGKeyStatus fields don't match between engine and handler types")
 	}
 }
