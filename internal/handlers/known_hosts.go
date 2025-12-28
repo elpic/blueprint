@@ -282,3 +282,40 @@ func (h *KnownHostsHandler) GetDependencyKey() string {
 func (h *KnownHostsHandler) GetDisplayDetails(isUninstall bool) string {
 	return h.Rule.KnownHosts
 }
+
+// GetCurrentResourceKey returns the known host as the identifying key
+func (h *KnownHostsHandler) GetCurrentResourceKey() string {
+	return h.Rule.KnownHosts
+}
+
+// GetStatusRecords returns all known hosts status records from the status
+func (h *KnownHostsHandler) GetStatusRecords(status *Status) []interface{} {
+	if status.KnownHosts == nil {
+		return []interface{}{}
+	}
+	result := make([]interface{}, len(status.KnownHosts))
+	for i, host := range status.KnownHosts {
+		result[i] = host
+	}
+	return result
+}
+
+// GetStatusRecordKey extracts the host from a known hosts status record
+func (h *KnownHostsHandler) GetStatusRecordKey(record interface{}) string {
+	if host, ok := record.(KnownHostsStatus); ok {
+		return host.Host
+	}
+	return ""
+}
+
+// BuildUninstallRule creates an uninstall rule from a known hosts status record
+func (h *KnownHostsHandler) BuildUninstallRule(record interface{}, osName string) parser.Rule {
+	if host, ok := record.(KnownHostsStatus); ok {
+		return parser.Rule{
+			Action:     "uninstall",
+			KnownHosts: host.Host,
+			OSList:     []string{osName},
+		}
+	}
+	return parser.Rule{}
+}

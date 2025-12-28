@@ -375,6 +375,48 @@ func (h *AsdfHandler) GetDisplayDetails(isUninstall bool) string {
 	return "asdf"
 }
 
+// GetCurrentResourceKey returns "asdf" as the identifying key
+func (h *AsdfHandler) GetCurrentResourceKey() string {
+	return "asdf"
+}
+
+// GetStatusRecords returns asdf status records from the clones (using ~/.asdf path)
+// Since asdf is tracked as a clone with path ~/.asdf, we filter for that specific path
+func (h *AsdfHandler) GetStatusRecords(status *Status) []interface{} {
+	if status.Clones == nil {
+		return []interface{}{}
+	}
+	var result []interface{}
+	// Only return the ~/asdf clone status
+	for _, clone := range status.Clones {
+		if clone.Path == "~/.asdf" {
+			result = append(result, clone)
+		}
+	}
+	return result
+}
+
+// GetStatusRecordKey returns the path from a clone status record
+func (h *AsdfHandler) GetStatusRecordKey(record interface{}) string {
+	if clone, ok := record.(CloneStatus); ok {
+		return clone.Path
+	}
+	return ""
+}
+
+// BuildUninstallRule creates an uninstall rule from asdf's clone status record
+func (h *AsdfHandler) BuildUninstallRule(record interface{}, osName string) parser.Rule {
+	if clone, ok := record.(CloneStatus); ok && clone.Path == "~/.asdf" {
+		return parser.Rule{
+			Action:    "uninstall",
+			ClonePath: clone.Path,
+			CloneURL:  clone.URL,
+			OSList:    []string{osName},
+		}
+	}
+	return parser.Rule{}
+}
+
 // succeededAsdfUninstall checks if asdf uninstall was successful
 func succeededAsdfUninstall(records []ExecutionRecord) bool {
 	for _, record := range records {

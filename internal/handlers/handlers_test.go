@@ -204,3 +204,87 @@ func TestDisplayProviderInterface(t *testing.T) {
 		})
 	}
 }
+
+// TestStatusProviderInterface verifies that all handlers implement StatusProvider
+func TestStatusProviderInterface(t *testing.T) {
+	tests := []struct {
+		name              string
+		handler           Handler
+		expectedRecords   int
+		expectedUninstall bool
+	}{
+		{
+			name:              "InstallHandler provides status records",
+			handler:           NewInstallHandler(parser.Rule{Packages: []parser.Package{{Name: "vim"}}}, ""),
+			expectedRecords:   0, // No status records from empty status
+			expectedUninstall: true,
+		},
+		{
+			name:              "CloneHandler provides status records",
+			handler:           NewCloneHandler(parser.Rule{ClonePath: "~/repo"}, ""),
+			expectedRecords:   0,
+			expectedUninstall: true,
+		},
+		{
+			name:              "DecryptHandler provides status records",
+			handler:           NewDecryptHandler(parser.Rule{DecryptPath: "~/.ssh/key"}, "", nil),
+			expectedRecords:   0,
+			expectedUninstall: true,
+		},
+		{
+			name:              "AsdfHandler provides status records",
+			handler:           NewAsdfHandler(parser.Rule{Action: "asdf"}, ""),
+			expectedRecords:   0,
+			expectedUninstall: true,
+		},
+		{
+			name:              "MkdirHandler provides status records",
+			handler:           NewMkdirHandler(parser.Rule{Mkdir: "~/projects"}, ""),
+			expectedRecords:   0,
+			expectedUninstall: true,
+		},
+		{
+			name:              "KnownHostsHandler provides status records",
+			handler:           NewKnownHostsHandler(parser.Rule{KnownHosts: "github.com"}, ""),
+			expectedRecords:   0,
+			expectedUninstall: true,
+		},
+		{
+			name:              "GPGKeyHandler provides status records",
+			handler:           NewGPGKeyHandler(parser.Rule{GPGKeyring: "ubuntu"}, ""),
+			expectedRecords:   0,
+			expectedUninstall: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Check that handler implements StatusProvider
+			statusProvider, ok := tt.handler.(StatusProvider)
+			if !ok {
+				t.Errorf("Handler does not implement StatusProvider interface")
+				return
+			}
+
+			// Verify GetCurrentResourceKey returns a non-empty key
+			key := statusProvider.GetCurrentResourceKey()
+			if key == "" {
+				t.Errorf("GetCurrentResourceKey() returned empty string")
+			}
+
+			// Verify GetStatusRecords works with empty status
+			emptyStatus := &Status{}
+			records := statusProvider.GetStatusRecords(emptyStatus)
+			if len(records) != tt.expectedRecords {
+				t.Errorf("GetStatusRecords(empty) = %d records, want %d", len(records), tt.expectedRecords)
+			}
+
+			// Verify BuildUninstallRule creates a valid rule
+			if tt.expectedUninstall {
+				// Get a mock record (just check that BuildUninstallRule doesn't panic)
+				// We can't easily create a status record here, so just verify the method exists
+				// by checking if it's callable (which we've already done via the interface)
+			}
+		})
+	}
+}

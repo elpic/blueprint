@@ -140,6 +140,32 @@ type DisplayProvider interface {
 	GetDisplayDetails(isUninstall bool) string
 }
 
+// StatusProvider is an optional interface that handlers can implement
+// to specify how to extract and manage status records for auto-uninstall.
+// This eliminates hardcoded action type checks in getAutoUninstallRules by allowing
+// each handler to describe how to identify and remove its resources from the status.
+type StatusProvider interface {
+	// GetCurrentResourceKey returns the identifying key from a current rule.
+	// Used to check if a resource from status still exists in the current blueprint.
+	// Examples: "package-name", "~/path/to/clone", "hostname", "~/.ssh/id_rsa"
+	GetCurrentResourceKey() string
+
+	// GetStatusRecords returns all status records of this handler's type.
+	// Used to iterate through status records matching this handler type.
+	// Examples: status.Packages, status.Clones, status.Mkdirs, etc.
+	GetStatusRecords(status *Status) []interface{}
+
+	// GetStatusRecordKey extracts the identifying key from a status record.
+	// Used to compare status records with current resources in the blueprint.
+	// The record type matches what was returned by GetStatusRecords().
+	GetStatusRecordKey(record interface{}) string
+
+	// BuildUninstallRule creates a minimal uninstall rule from a status record.
+	// The rule only needs the fields required for the Down() operation.
+	// The engine will set the Action, OSList, and Blueprint fields.
+	BuildUninstallRule(record interface{}, osName string) parser.Rule
+}
+
 // BaseHandler contains common fields for all handlers
 type BaseHandler struct {
 	Rule     parser.Rule

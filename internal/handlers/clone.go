@@ -204,3 +204,41 @@ func (h *CloneHandler) GetDependencyKey() string {
 func (h *CloneHandler) GetDisplayDetails(isUninstall bool) string {
 	return h.Rule.ClonePath
 }
+
+// GetCurrentResourceKey returns the clone path as the identifying key
+func (h *CloneHandler) GetCurrentResourceKey() string {
+	return h.Rule.ClonePath
+}
+
+// GetStatusRecords returns all clone status records from the status
+func (h *CloneHandler) GetStatusRecords(status *Status) []interface{} {
+	if status.Clones == nil {
+		return []interface{}{}
+	}
+	result := make([]interface{}, len(status.Clones))
+	for i, clone := range status.Clones {
+		result[i] = clone
+	}
+	return result
+}
+
+// GetStatusRecordKey extracts the path from a clone status record
+func (h *CloneHandler) GetStatusRecordKey(record interface{}) string {
+	if clone, ok := record.(CloneStatus); ok {
+		return clone.Path
+	}
+	return ""
+}
+
+// BuildUninstallRule creates an uninstall rule from a clone status record
+func (h *CloneHandler) BuildUninstallRule(record interface{}, osName string) parser.Rule {
+	if clone, ok := record.(CloneStatus); ok {
+		return parser.Rule{
+			Action:    "uninstall",
+			ClonePath: clone.Path,
+			CloneURL:  clone.URL,
+			OSList:    []string{osName},
+		}
+	}
+	return parser.Rule{}
+}

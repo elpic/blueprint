@@ -196,3 +196,40 @@ func (h *GPGKeyHandler) GetDependencyKey() string {
 func (h *GPGKeyHandler) GetDisplayDetails(isUninstall bool) string {
 	return h.Rule.GPGKeyring
 }
+
+// GetCurrentResourceKey returns the GPG keyring as the identifying key
+func (h *GPGKeyHandler) GetCurrentResourceKey() string {
+	return h.Rule.GPGKeyring
+}
+
+// GetStatusRecords returns all GPG key status records from the status
+func (h *GPGKeyHandler) GetStatusRecords(status *Status) []interface{} {
+	if status.GPGKeys == nil {
+		return []interface{}{}
+	}
+	result := make([]interface{}, len(status.GPGKeys))
+	for i, gpg := range status.GPGKeys {
+		result[i] = gpg
+	}
+	return result
+}
+
+// GetStatusRecordKey extracts the keyring from a GPG key status record
+func (h *GPGKeyHandler) GetStatusRecordKey(record interface{}) string {
+	if gpg, ok := record.(GPGKeyStatus); ok {
+		return gpg.Keyring
+	}
+	return ""
+}
+
+// BuildUninstallRule creates an uninstall rule from a GPG key status record
+func (h *GPGKeyHandler) BuildUninstallRule(record interface{}, osName string) parser.Rule {
+	if gpg, ok := record.(GPGKeyStatus); ok {
+		return parser.Rule{
+			Action:     "uninstall",
+			GPGKeyring: gpg.Keyring,
+			OSList:     []string{osName},
+		}
+	}
+	return parser.Rule{}
+}

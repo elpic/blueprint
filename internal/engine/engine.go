@@ -746,7 +746,7 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 
 
 // getAutoUninstallRules compares status with current rules and generates uninstall rules for removed resources
-// Uses a generic approach: any resource in status but not in current rules gets flagged for removal
+// Uses handler StatusProvider interface: any resource in status but not in current rules gets flagged for removal
 func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osName string) []parser.Rule {
 	var autoUninstallRules []parser.Rule
 
@@ -765,143 +765,152 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 		return autoUninstallRules
 	}
 
-	var status Status
+	var status handlerskg.Status
 	if err := json.Unmarshal(statusData, &status); err != nil {
 		// Invalid status file, can't process
 		return autoUninstallRules
 	}
 
-	// Build map of current resources in blueprint rules for quick lookup
-	currentPackages := make(map[string]bool)
-	currentClones := make(map[string]bool)
-	currentDecrypts := make(map[string]bool)
-	currentMkdirs := make(map[string]bool)
-	currentKnownHosts := make(map[string]bool)
-	currentGPGKeys := make(map[string]bool)
-	asdfInCurrentRules := false
+	// Build current resource keys from rules for each handler type
+	currentPackages := extractCurrentKeys(currentRules, "install")
+	currentClones := extractCurrentKeys(currentRules, "clone")
+	currentDecrypts := extractCurrentKeys(currentRules, "decrypt")
+	currentMkdirs := extractCurrentKeys(currentRules, "mkdir")
+	currentKnownHosts := extractCurrentKeys(currentRules, "known_hosts")
+	currentGPGKeys := extractCurrentKeys(currentRules, "gpg-key")
 
-	for _, rule := range currentRules {
-		switch rule.Action {
-		case "install":
-			for _, pkg := range rule.Packages {
-				currentPackages[pkg.Name] = true
-			}
-		case "clone":
-			currentClones[rule.ClonePath] = true
-		case "decrypt":
-			currentDecrypts[rule.DecryptPath] = true
-		case "mkdir":
-			currentMkdirs[rule.Mkdir] = true
-		case "known_hosts":
-			currentKnownHosts[rule.KnownHosts] = true
-		case "gpg-key":
-			currentGPGKeys[rule.GPGKeyring] = true
-		case "asdf":
-			asdfInCurrentRules = true
+	// Helper function to build uninstall rules from removed resources
+	buildUninstallRulesForHandler := func(handler handlerskg.Handler, actionType string) []parser.Rule {
+		statusProvider, ok := handler.(handlerskg.StatusProvider)
+		if !ok {
+			return nil
 		}
-	}
 
-	// Check packages in status - if not in current rules, flag for uninstall
-	var packagesToUninstall []parser.Package
-	if status.Packages != nil {
-		for _, pkg := range status.Packages {
-			if pkg.Blueprint == normalizedBlueprintFile && pkg.OS == osName && !currentPackages[pkg.Name] {
-				packagesToUninstall = append(packagesToUninstall, parser.Package{
-					Name:    pkg.Name,
-					Version: "latest",
-				})
+		var rules []parser.Rule
+		statusRecords := statusProvider.GetStatusRecords(&status)
+
+		for _, record := range statusRecords {
+			var shouldProcess bool
+			var recordKey string
+
+			// Extract blueprint and OS from status record, and get the key
+			switch r := record.(type) {
+			case handlerskg.PackageStatus:
+				shouldProcess = r.Blueprint == normalizedBlueprintFile && r.OS == osName
+				recordKey = r.Name
+			case handlerskg.CloneStatus:
+				shouldProcess = r.Blueprint == normalizedBlueprintFile && r.OS == osName
+				recordKey = r.Path
+			case handlerskg.DecryptStatus:
+				shouldProcess = r.Blueprint == normalizedBlueprintFile && r.OS == osName
+				recordKey = r.DestPath
+			case handlerskg.MkdirStatus:
+				shouldProcess = r.Blueprint == normalizedBlueprintFile && r.OS == osName
+				recordKey = r.Path
+			case handlerskg.KnownHostsStatus:
+				shouldProcess = r.Blueprint == normalizedBlueprintFile && r.OS == osName
+				recordKey = r.Host
+			case handlerskg.GPGKeyStatus:
+				shouldProcess = r.Blueprint == normalizedBlueprintFile && r.OS == osName
+				recordKey = r.Keyring
+			default:
+				continue
 			}
-		}
-	}
 
-	if len(packagesToUninstall) > 0 {
-		autoUninstallRules = append(autoUninstallRules, parser.Rule{
-			Action:   "uninstall",
-			Packages: packagesToUninstall,
-			OSList:   []string{osName},
-		})
-	}
+			// Get the current keys map for this handler type
+			var currentKeys map[string]bool
+			switch actionType {
+			case "install":
+				currentKeys = currentPackages
+			case "clone":
+				currentKeys = currentClones
+			case "decrypt":
+				currentKeys = currentDecrypts
+			case "mkdir":
+				currentKeys = currentMkdirs
+			case "known_hosts":
+				currentKeys = currentKnownHosts
+			case "gpg-key":
+				currentKeys = currentGPGKeys
+			}
 
-	// Check clones in status - if not in current rules, flag for uninstall
-	if status.Clones != nil {
-		for _, clone := range status.Clones {
-			if clone.Blueprint == normalizedBlueprintFile && clone.OS == osName {
-				// Special handling for asdf which is tracked as ~/.asdf in clones
-				if clone.Path == "~/.asdf" && !asdfInCurrentRules {
-					autoUninstallRules = append(autoUninstallRules, parser.Rule{
-						Action:    "uninstall",
-						OSList:    []string{osName},
-						ClonePath: clone.Path,
-					})
-				} else if clone.Path != "~/.asdf" && !currentClones[clone.Path] {
-					// Regular clones that were removed from rules
-					autoUninstallRules = append(autoUninstallRules, parser.Rule{
-						Action:    "uninstall",
-						ClonePath: clone.Path,
-						CloneURL:  clone.URL,
-						OSList:    []string{osName},
-					})
+			// If this resource is not in current rules, flag for uninstall
+			if shouldProcess && !currentKeys[recordKey] {
+				uninstallRule := statusProvider.BuildUninstallRule(record, osName)
+				if uninstallRule.Action != "" {
+					rules = append(rules, uninstallRule)
 				}
 			}
 		}
+
+		return rules
 	}
 
-	// Check decrypts in status - if not in current rules, flag for uninstall
-	if status.Decrypts != nil {
-		for _, decrypt := range status.Decrypts {
-			if decrypt.Blueprint == normalizedBlueprintFile && decrypt.OS == osName && !currentDecrypts[decrypt.DestPath] {
-				autoUninstallRules = append(autoUninstallRules, parser.Rule{
-					Action:      "uninstall",
-					DecryptPath: decrypt.DestPath,
-					OSList:      []string{osName},
-				})
-			}
-		}
+	// Process each handler type using StatusProvider
+	handlers := []struct {
+		handler handlerskg.Handler
+		action  string
+	}{
+		{handler: handlerskg.NewInstallHandler(parser.Rule{}, ""), action: "install"},
+		{handler: handlerskg.NewCloneHandler(parser.Rule{}, ""), action: "clone"},
+		{handler: handlerskg.NewDecryptHandler(parser.Rule{}, "", nil), action: "decrypt"},
+		{handler: handlerskg.NewAsdfHandler(parser.Rule{}, ""), action: "asdf"},
+		{handler: handlerskg.NewMkdirHandler(parser.Rule{}, ""), action: "mkdir"},
+		{handler: handlerskg.NewKnownHostsHandler(parser.Rule{}, ""), action: "known_hosts"},
+		{handler: handlerskg.NewGPGKeyHandler(parser.Rule{}, ""), action: "gpg-key"},
 	}
 
-	// Check mkdirs in status - if not in current rules, flag for uninstall
-	if status.Mkdirs != nil {
-		for _, mkdir := range status.Mkdirs {
-			if mkdir.Blueprint == normalizedBlueprintFile && mkdir.OS == osName && !currentMkdirs[mkdir.Path] {
-				autoUninstallRules = append(autoUninstallRules, parser.Rule{
-					Action: "uninstall",
-					Mkdir:  mkdir.Path,
-					OSList: []string{osName},
-				})
-			}
-		}
-	}
-
-	// Check known_hosts in status - if not in current rules, flag for uninstall
-	if status.KnownHosts != nil {
-		for _, kh := range status.KnownHosts {
-			if kh.Blueprint == normalizedBlueprintFile && kh.OS == osName && !currentKnownHosts[kh.Host] {
-				autoUninstallRules = append(autoUninstallRules, parser.Rule{
-					Action:     "uninstall",
-					KnownHosts: kh.Host,
-					OSList:     []string{osName},
-				})
-			}
-		}
-	}
-
-	// Check GPG keys in status - if not in current rules, flag for uninstall
-	if status.GPGKeys != nil {
-		for _, gpg := range status.GPGKeys {
-			if gpg.Blueprint == normalizedBlueprintFile && gpg.OS == osName && !currentGPGKeys[gpg.Keyring] {
-				autoUninstallRules = append(autoUninstallRules, parser.Rule{
-					Action:     "uninstall",
-					GPGKeyring: gpg.Keyring,
-					OSList:     []string{osName},
-				})
-			}
-		}
+	for _, h := range handlers {
+		uninstallRules := buildUninstallRulesForHandler(h.handler, h.action)
+		autoUninstallRules = append(autoUninstallRules, uninstallRules...)
 	}
 
 	return autoUninstallRules
 }
 
+// extractCurrentKeys builds a map of keys from current rules for a specific action type
+func extractCurrentKeys(rules []parser.Rule, actionType string) map[string]bool {
+	keys := make(map[string]bool)
+	for _, rule := range rules {
+		if rule.Action != actionType {
+			continue
+		}
+
+		switch actionType {
+		case "install":
+			for _, pkg := range rule.Packages {
+				keys[pkg.Name] = true
+			}
+		case "clone":
+			if rule.ClonePath != "" {
+				keys[rule.ClonePath] = true
+			}
+		case "decrypt":
+			if rule.DecryptPath != "" {
+				keys[rule.DecryptPath] = true
+			}
+		case "mkdir":
+			if rule.Mkdir != "" {
+				keys[rule.Mkdir] = true
+			}
+		case "known_hosts":
+			if rule.KnownHosts != "" {
+				keys[rule.KnownHosts] = true
+			}
+		case "gpg-key":
+			if rule.GPGKeyring != "" {
+				keys[rule.GPGKeyring] = true
+			}
+		case "asdf":
+			// asdf is tracked as ~/.asdf in clones status
+			keys["~/.asdf"] = true
+		}
+	}
+	return keys
+}
+
 // deleteRemovedClones checks status for cloned repos that are no longer in the blueprint and deletes them
+// Uses CloneHandler's StatusProvider interface to get clone status records
 // Returns the count of deleted directories
 func deleteRemovedClones(currentRules []parser.Rule, blueprintFile string, osName string) int {
 	// Load status
@@ -918,7 +927,7 @@ func deleteRemovedClones(currentRules []parser.Rule, blueprintFile string, osNam
 	}
 
 	// Parse status
-	var status Status
+	var status handlerskg.Status
 	if err := json.Unmarshal(data, &status); err != nil {
 		return 0
 	}
@@ -926,28 +935,34 @@ func deleteRemovedClones(currentRules []parser.Rule, blueprintFile string, osNam
 	// Normalize the blueprint file path for comparison
 	normalizedBlueprintFile := normalizePath(blueprintFile)
 
-	// Get current clone paths from blueprint rules (including asdf)
-	currentClonePaths := make(map[string]bool)
-	for _, rule := range currentRules {
-		switch rule.Action {
-		case "clone":
-			currentClonePaths[rule.ClonePath] = true
-		case "asdf":
-			// asdf uses ~/.asdf as the path
-			currentClonePaths["~/.asdf"] = true
-		}
+	// Get current clone paths from blueprint rules (including asdf which uses ~/.asdf)
+	currentClonePaths := extractCurrentKeys(currentRules, "clone")
+	// Add asdf clones to the current paths
+	asdfPaths := extractCurrentKeys(currentRules, "asdf")
+	for path := range asdfPaths {
+		currentClonePaths[path] = true
 	}
 
-	// Find cloned directories to delete (in status but not in current rules)
-	var directoriesToDelete []CloneStatus
-	var clonesToKeep []CloneStatus
-
-	// Handle nil clones slice
-	if status.Clones == nil {
+	// Use CloneHandler's StatusProvider to get clone status records
+	cloneHandler := handlerskg.NewCloneHandler(parser.Rule{}, "")
+	statusProvider := handlerskg.Handler(cloneHandler)
+	statusProviderInterface, ok := statusProvider.(handlerskg.StatusProvider)
+	if !ok {
 		return 0
 	}
 
-	for _, clone := range status.Clones {
+	// Find cloned directories to delete (in status but not in current rules)
+	var directoriesToDelete []handlerskg.CloneStatus
+	var clonesToKeep []handlerskg.CloneStatus
+
+	// Get clone status records using the StatusProvider
+	statusRecords := statusProviderInterface.GetStatusRecords(&status)
+	for _, record := range statusRecords {
+		clone, ok := record.(handlerskg.CloneStatus)
+		if !ok {
+			continue
+		}
+
 		normalizedStatusBlueprint := normalizePath(clone.Blueprint)
 		// Only consider clones from this blueprint on this OS
 		if normalizedStatusBlueprint == normalizedBlueprintFile && clone.OS == osName {

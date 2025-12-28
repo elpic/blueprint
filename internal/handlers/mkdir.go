@@ -254,3 +254,40 @@ func (h *MkdirHandler) GetDependencyKey() string {
 func (h *MkdirHandler) GetDisplayDetails(isUninstall bool) string {
 	return h.Rule.Mkdir
 }
+
+// GetCurrentResourceKey returns the mkdir path as the identifying key
+func (h *MkdirHandler) GetCurrentResourceKey() string {
+	return h.Rule.Mkdir
+}
+
+// GetStatusRecords returns all mkdir status records from the status
+func (h *MkdirHandler) GetStatusRecords(status *Status) []interface{} {
+	if status.Mkdirs == nil {
+		return []interface{}{}
+	}
+	result := make([]interface{}, len(status.Mkdirs))
+	for i, mkdir := range status.Mkdirs {
+		result[i] = mkdir
+	}
+	return result
+}
+
+// GetStatusRecordKey extracts the path from a mkdir status record
+func (h *MkdirHandler) GetStatusRecordKey(record interface{}) string {
+	if mkdir, ok := record.(MkdirStatus); ok {
+		return mkdir.Path
+	}
+	return ""
+}
+
+// BuildUninstallRule creates an uninstall rule from a mkdir status record
+func (h *MkdirHandler) BuildUninstallRule(record interface{}, osName string) parser.Rule {
+	if mkdir, ok := record.(MkdirStatus); ok {
+		return parser.Rule{
+			Action: "uninstall",
+			Mkdir:  mkdir.Path,
+			OSList: []string{osName},
+		}
+	}
+	return parser.Rule{}
+}

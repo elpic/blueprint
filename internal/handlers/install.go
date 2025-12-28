@@ -251,3 +251,45 @@ func (h *InstallHandler) GetDisplayDetails(isUninstall bool) string {
 	}
 	return packages
 }
+
+// GetCurrentResourceKey returns the first package name as the identifying key
+func (h *InstallHandler) GetCurrentResourceKey() string {
+	if len(h.Rule.Packages) > 0 {
+		return h.Rule.Packages[0].Name
+	}
+	return ""
+}
+
+// GetStatusRecords returns all package status records from the status
+func (h *InstallHandler) GetStatusRecords(status *Status) []interface{} {
+	if status.Packages == nil {
+		return []interface{}{}
+	}
+	result := make([]interface{}, len(status.Packages))
+	for i, pkg := range status.Packages {
+		result[i] = pkg
+	}
+	return result
+}
+
+// GetStatusRecordKey extracts the package name from a package status record
+func (h *InstallHandler) GetStatusRecordKey(record interface{}) string {
+	if pkg, ok := record.(PackageStatus); ok {
+		return pkg.Name
+	}
+	return ""
+}
+
+// BuildUninstallRule creates an uninstall rule from a package status record
+func (h *InstallHandler) BuildUninstallRule(record interface{}, osName string) parser.Rule {
+	if pkg, ok := record.(PackageStatus); ok {
+		return parser.Rule{
+			Action: "uninstall",
+			Packages: []parser.Package{
+				{Name: pkg.Name, Version: "latest"},
+			},
+			OSList: []string{osName},
+		}
+	}
+	return parser.Rule{}
+}

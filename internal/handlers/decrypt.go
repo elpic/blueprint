@@ -222,3 +222,40 @@ func (h *DecryptHandler) GetDependencyKey() string {
 func (h *DecryptHandler) GetDisplayDetails(isUninstall bool) string {
 	return h.Rule.DecryptPath
 }
+
+// GetCurrentResourceKey returns the decrypt path as the identifying key
+func (h *DecryptHandler) GetCurrentResourceKey() string {
+	return h.Rule.DecryptPath
+}
+
+// GetStatusRecords returns all decrypt status records from the status
+func (h *DecryptHandler) GetStatusRecords(status *Status) []interface{} {
+	if status.Decrypts == nil {
+		return []interface{}{}
+	}
+	result := make([]interface{}, len(status.Decrypts))
+	for i, decrypt := range status.Decrypts {
+		result[i] = decrypt
+	}
+	return result
+}
+
+// GetStatusRecordKey extracts the destination path from a decrypt status record
+func (h *DecryptHandler) GetStatusRecordKey(record interface{}) string {
+	if decrypt, ok := record.(DecryptStatus); ok {
+		return decrypt.DestPath
+	}
+	return ""
+}
+
+// BuildUninstallRule creates an uninstall rule from a decrypt status record
+func (h *DecryptHandler) BuildUninstallRule(record interface{}, osName string) parser.Rule {
+	if decrypt, ok := record.(DecryptStatus); ok {
+		return parser.Rule{
+			Action:      "uninstall",
+			DecryptPath: decrypt.DestPath,
+			OSList:      []string{osName},
+		}
+	}
+	return parser.Rule{}
+}
