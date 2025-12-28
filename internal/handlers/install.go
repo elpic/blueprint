@@ -229,3 +229,12 @@ func (h *InstallHandler) DisplayStatus(packages []PackageStatus) {
 		)
 	}
 }
+
+// GetDependencyKey returns the unique key for this rule in dependency resolution
+func (h *InstallHandler) GetDependencyKey() string {
+	fallback := "install"
+	if len(h.Rule.Packages) > 0 {
+		fallback = h.Rule.Packages[0].Name
+	}
+	return getDependencyKey(h.Rule, fallback)
+}

@@ -281,3 +281,38 @@ func TestAsdfHandlerDisplayInfo(t *testing.T) {
 		})
 	}
 }
+
+
+func TestAsdfHandlerGetDependencyKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		rule     parser.Rule
+		expected string
+	}{
+		{
+			name: "returns ID when present",
+			rule: parser.Rule{
+				ID:     "my-asdf",
+				Action: "asdf",
+			},
+			expected: "my-asdf",
+		},
+		{
+			name: "returns asdf when ID is empty",
+			rule: parser.Rule{
+				Action: "asdf",
+			},
+			expected: "asdf",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := NewAsdfHandler(tt.rule, "")
+			got := handler.GetDependencyKey()
+			if got != tt.expected {
+				t.Errorf("GetDependencyKey() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}

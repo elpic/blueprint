@@ -272,3 +272,8 @@ func (h *KnownHostsHandler) DisplayStatus(hosts []KnownHostsStatus) {
 		)
 	}
 }
+
+// GetDependencyKey returns the unique key for this rule in dependency resolution
+func (h *KnownHostsHandler) GetDependencyKey() string {
+	return getDependencyKey(h.Rule, h.Rule.KnownHosts)
+}

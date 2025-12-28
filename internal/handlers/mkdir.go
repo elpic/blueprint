@@ -244,3 +244,8 @@ func (h *MkdirHandler) DisplayStatus(mkdirs []MkdirStatus) {
 		)
 	}
 }
+
+// GetDependencyKey returns the unique key for this rule in dependency resolution
+func (h *MkdirHandler) GetDependencyKey() string {
+	return getDependencyKey(h.Rule, h.Rule.Mkdir)
+}

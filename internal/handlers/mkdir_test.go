@@ -335,3 +335,38 @@ func TestMkdirHandlerDisplayInfo(t *testing.T) {
 		})
 	}
 }
+
+
+func TestMkdirHandlerGetDependencyKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		rule     parser.Rule
+		expected string
+	}{
+		{
+			name: "returns ID when present",
+			rule: parser.Rule{
+				ID:    "my-mkdir",
+				Mkdir: "~/projects",
+			},
+			expected: "my-mkdir",
+		},
+		{
+			name: "returns mkdir path when ID is empty",
+			rule: parser.Rule{
+				Mkdir: "~/projects",
+			},
+			expected: "~/projects",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := NewMkdirHandler(tt.rule, "")
+			got := handler.GetDependencyKey()
+			if got != tt.expected {
+				t.Errorf("GetDependencyKey() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}

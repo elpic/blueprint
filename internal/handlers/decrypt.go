@@ -212,3 +212,8 @@ func (h *DecryptHandler) DisplayStatus(decrypts []DecryptStatus) {
 		)
 	}
 }
+
+// GetDependencyKey returns the unique key for this rule in dependency resolution
+func (h *DecryptHandler) GetDependencyKey() string {
+	return getDependencyKey(h.Rule, h.Rule.DecryptPath)
+}

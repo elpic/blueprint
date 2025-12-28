@@ -194,3 +194,8 @@ func (h *CloneHandler) DisplayStatus(clones []CloneStatus) {
 		)
 	}
 }
+
+// GetDependencyKey returns the unique key for this rule in dependency resolution
+func (h *CloneHandler) GetDependencyKey() string {
+	return getDependencyKey(h.Rule, h.Rule.ClonePath)
+}

@@ -277,3 +277,38 @@ func TestDecryptHandlerDisplayInfo(t *testing.T) {
 		})
 	}
 }
+
+
+func TestDecryptHandlerGetDependencyKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		rule     parser.Rule
+		expected string
+	}{
+		{
+			name: "returns ID when present",
+			rule: parser.Rule{
+				ID:          "my-decrypt",
+				DecryptPath: "~/.ssh/config",
+			},
+			expected: "my-decrypt",
+		},
+		{
+			name: "returns decrypt path when ID is empty",
+			rule: parser.Rule{
+				DecryptPath: "~/.ssh/config",
+			},
+			expected: "~/.ssh/config",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := NewDecryptHandler(tt.rule, "", nil)
+			got := handler.GetDependencyKey()
+			if got != tt.expected {
+				t.Errorf("GetDependencyKey() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}

@@ -735,3 +735,38 @@ func TestGPGKeyHandlerNeedsSudo(t *testing.T) {
 		})
 	}
 }
+
+
+func TestGPGKeyHandlerGetDependencyKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		rule     parser.Rule
+		expected string
+	}{
+		{
+			name: "returns ID when present",
+			rule: parser.Rule{
+				ID:         "my-gpg-key",
+				GPGKeyring: "ubuntu-archive-keyring",
+			},
+			expected: "my-gpg-key",
+		},
+		{
+			name: "returns GPG keyring when ID is empty",
+			rule: parser.Rule{
+				GPGKeyring: "ubuntu-archive-keyring",
+			},
+			expected: "ubuntu-archive-keyring",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := NewGPGKeyHandler(tt.rule, "")
+			got := handler.GetDependencyKey()
+			if got != tt.expected {
+				t.Errorf("GetDependencyKey() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}

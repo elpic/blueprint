@@ -186,3 +186,8 @@ func (h *GPGKeyHandler) DisplayStatus(keys []GPGKeyStatus) {
 		)
 	}
 }
+
+// GetDependencyKey returns the unique key for this rule in dependency resolution
+func (h *GPGKeyHandler) GetDependencyKey() string {
+	return getDependencyKey(h.Rule, h.Rule.GPGKeyring)
+}

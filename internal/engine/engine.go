@@ -1231,32 +1231,17 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 	visit = func(rule *parser.Rule) error {
 		ruleKey := rule.ID
 		if ruleKey == "" {
-			// Use first package name as key if no ID
-			if len(rule.Packages) > 0 {
-				ruleKey = rule.Packages[0].Name
-			} else if rule.Action == "clone" {
-				// For clone rules without ID, use the clone path as key
-				ruleKey = rule.ClonePath
-			} else if rule.Action == "uninstall" && handlerskg.DetectRuleType(*rule) == "asdf" {
-				// For asdf uninstall rules, use action as key
-				ruleKey = "uninstall-asdf"
-			} else if rule.Action == "asdf" {
-				// For asdf rules without ID, use action as key
-				ruleKey = "asdf"
-			} else if rule.Action == "decrypt" {
-				// For decrypt rules without ID, use the destination path as key
-				ruleKey = rule.DecryptPath
-			} else if rule.Action == "known_hosts" {
-				// For known_hosts rules without ID, use the host as key
-				ruleKey = rule.KnownHosts
-			} else if rule.Action == "mkdir" {
-				// For mkdir rules without ID, use the path as key
-				ruleKey = rule.Mkdir
-			} else if rule.Action == "uninstall" && handlerskg.DetectRuleType(*rule) == "mkdir" {
-				// For mkdir uninstall rules without ID, use the path as key
-				ruleKey = rule.Mkdir
+			// Use handler's KeyProvider interface to get the key
+			handler := handlerskg.NewHandler(*rule, "", nil)
+			if handler != nil {
+				if keyProvider, ok := handler.(handlerskg.KeyProvider); ok {
+					ruleKey = keyProvider.GetDependencyKey()
+				} else {
+					// Fallback: use action as key if no KeyProvider implemented
+					ruleKey = rule.Action
+				}
 			} else {
-				// For other actions without ID, use action as key
+				// Fallback: use action as key if no handler found
 				ruleKey = rule.Action
 			}
 		}

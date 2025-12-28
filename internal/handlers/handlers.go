@@ -116,10 +116,39 @@ type SudoAwareHandler interface {
 	NeedsSudo() bool
 }
 
+// KeyProvider is an optional interface that handlers can implement
+// to specify how they should be identified in dependency resolution.
+// If a handler implements this, the engine will use GetDependencyKey()
+// instead of hardcoded action type checks. This makes dependency
+// resolution fully extensible without modifying the engine.
+type KeyProvider interface {
+	// GetDependencyKey returns the unique key for this rule when no ID is present.
+	// This is used for resolving dependencies in topological sort.
+	// Examples: clone path, decrypt destination, mkdir path, etc.
+	GetDependencyKey() string
+}
+
 // BaseHandler contains common fields for all handlers
 type BaseHandler struct {
 	Rule     parser.Rule
 	BasePath string // For resolving relative paths
+}
+
+// getDependencyKey is a helper function that centralizes the ID check logic.
+// Handlers should call this instead of duplicating the ID check.
+// If rule.ID is present, it's returned; otherwise fallbackKey is returned.
+func getDependencyKey(rule parser.Rule, fallbackKey string) string {
+	if rule.ID != "" {
+		return rule.ID
+	}
+	return fallbackKey
+}
+
+// GetFallbackDependencyKey returns the handler-specific fallback key when rule.ID is not present.
+// Handlers can override this method to provide their own key logic.
+// Default implementation returns the action name as fallback.
+func (h *BaseHandler) GetFallbackDependencyKey() string {
+	return h.Rule.Action
 }
 
 // HandlerFactory creates a handler for a given rule

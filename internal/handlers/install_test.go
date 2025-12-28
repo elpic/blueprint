@@ -248,6 +248,41 @@ func TestInstallHandlerUpdateStatus(t *testing.T) {
 	}
 }
 
+
+func TestInstallHandlerGetDependencyKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		rule     parser.Rule
+		expected string
+	}{
+		{
+			name: "returns ID when present",
+			rule: parser.Rule{
+				ID:       "my-install",
+				Packages: []parser.Package{{Name: "curl"}},
+			},
+			expected: "my-install",
+		},
+		{
+			name: "returns package name when ID is empty",
+			rule: parser.Rule{
+				Packages: []parser.Package{{Name: "vim"}},
+			},
+			expected: "vim",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := NewInstallHandler(tt.rule, "")
+			got := handler.GetDependencyKey()
+			if got != tt.expected {
+				t.Errorf("GetDependencyKey() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestInstallHandlerDisplayInfo(t *testing.T) {
 	tests := []struct {
 		name             string

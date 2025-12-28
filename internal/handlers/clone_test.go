@@ -444,3 +444,38 @@ func TestCloneHandlerDisplayStatusURLPreservation(t *testing.T) {
 		})
 	}
 }
+
+
+func TestCloneHandlerGetDependencyKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		rule     parser.Rule
+		expected string
+	}{
+		{
+			name: "returns ID when present",
+			rule: parser.Rule{
+				ID:        "my-clone",
+				ClonePath: "~/projects/repo",
+			},
+			expected: "my-clone",
+		},
+		{
+			name: "returns clone path when ID is empty",
+			rule: parser.Rule{
+				ClonePath: "~/projects/repo",
+			},
+			expected: "~/projects/repo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := NewCloneHandler(tt.rule, "")
+			got := handler.GetDependencyKey()
+			if got != tt.expected {
+				t.Errorf("GetDependencyKey() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}

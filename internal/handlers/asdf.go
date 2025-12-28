@@ -359,6 +359,17 @@ func (h *AsdfHandler) DisplayInfo() {
 	}
 }
 
+// GetDependencyKey returns the unique key for this rule in dependency resolution
+func (h *AsdfHandler) GetDependencyKey() string {
+	fallback := "asdf"
+	if h.Rule.Action == "uninstall" {
+		if DetectRuleType(h.Rule) == "asdf" {
+			fallback = "uninstall-asdf"
+		}
+	}
+	return getDependencyKey(h.Rule, fallback)
+}
+
 // succeededAsdfUninstall checks if asdf uninstall was successful
 func succeededAsdfUninstall(records []ExecutionRecord) bool {
 	for _, record := range records {

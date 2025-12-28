@@ -1,0 +1,137 @@
+package handlers
+
+import (
+	"testing"
+
+	"github.com/elpic/blueprint/internal/parser"
+)
+
+// TestGetDependencyKeyHelper tests the helper function that centralizes ID checking
+func TestGetDependencyKeyHelper(t *testing.T) {
+	tests := []struct {
+		name       string
+		rule       parser.Rule
+		fallback   string
+		expected   string
+	}{
+		{
+			name: "returns ID when present",
+			rule: parser.Rule{
+				ID: "unique-id-123",
+			},
+			fallback: "fallback-key",
+			expected: "unique-id-123",
+		},
+		{
+			name: "returns fallback when ID is empty",
+			rule: parser.Rule{
+				ID: "",
+			},
+			fallback: "fallback-key",
+			expected: "fallback-key",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getDependencyKey(tt.rule, tt.fallback)
+			if got != tt.expected {
+				t.Errorf("getDependencyKey() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestBaseHandlerGetFallbackDependencyKey tests the default fallback implementation
+func TestBaseHandlerGetFallbackDependencyKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		rule     parser.Rule
+		expected string
+	}{
+		{
+			name: "defaults to action name for install",
+			rule: parser.Rule{
+				Action: "install",
+			},
+			expected: "install",
+		},
+		{
+			name: "defaults to action name for clone",
+			rule: parser.Rule{
+				Action: "clone",
+			},
+			expected: "clone",
+		},
+		{
+			name: "defaults to action name for decrypt",
+			rule: parser.Rule{
+				Action: "decrypt",
+			},
+			expected: "decrypt",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := &BaseHandler{Rule: tt.rule}
+			got := handler.GetFallbackDependencyKey()
+			if got != tt.expected {
+				t.Errorf("GetFallbackDependencyKey() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestKeyProviderInterface verifies that all handlers implement KeyProvider
+func TestKeyProviderInterface(t *testing.T) {
+	tests := []struct {
+		name    string
+		handler Handler
+	}{
+		{
+			name:    "InstallHandler implements KeyProvider",
+			handler: NewInstallHandler(parser.Rule{Packages: []parser.Package{{Name: "pkg"}}}, ""),
+		},
+		{
+			name:    "CloneHandler implements KeyProvider",
+			handler: NewCloneHandler(parser.Rule{ClonePath: "path"}, ""),
+		},
+		{
+			name:    "DecryptHandler implements KeyProvider",
+			handler: NewDecryptHandler(parser.Rule{DecryptPath: "path"}, "", nil),
+		},
+		{
+			name:    "AsdfHandler implements KeyProvider",
+			handler: NewAsdfHandler(parser.Rule{Action: "asdf"}, ""),
+		},
+		{
+			name:    "MkdirHandler implements KeyProvider",
+			handler: NewMkdirHandler(parser.Rule{Mkdir: "path"}, ""),
+		},
+		{
+			name:    "KnownHostsHandler implements KeyProvider",
+			handler: NewKnownHostsHandler(parser.Rule{KnownHosts: "host"}, ""),
+		},
+		{
+			name:    "GPGKeyHandler implements KeyProvider",
+			handler: NewGPGKeyHandler(parser.Rule{GPGKeyring: "key"}, ""),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Check that handler implements KeyProvider
+			keyProvider, ok := tt.handler.(KeyProvider)
+			if !ok {
+				t.Errorf("Handler does not implement KeyProvider interface")
+			}
+
+			// Verify GetDependencyKey can be called without error
+			key := keyProvider.GetDependencyKey()
+			if key == "" {
+				t.Errorf("GetDependencyKey() returned empty string")
+			}
+		})
+	}
+}
