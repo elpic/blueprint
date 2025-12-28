@@ -7,27 +7,37 @@ Blueprint is a DSL (Domain Specific Language) based rule engine written in Go. I
 ```
 .
 ├── cmd/
-│   └── blueprint/          # Main CLI
+│   └── blueprint/          # Main CLI application
 │       └── main.go
 ├── internal/
 │   ├── parser/             # DSL parser
 │   │   └── parser.go
-│   ├── engine/             # Rule executor / history
+│   ├── engine/             # Rule executor, dependency resolution, history
 │   │   └── engine.go
+│   ├── handlers/           # Rule handlers (install, clone, decrypt, etc.)
+│   │   ├── handlers.go     # Handler interfaces & helper functions
+│   │   ├── install.go      # Install/uninstall packages
+│   │   ├── clone.go        # Clone/pull git repositories
+│   │   ├── decrypt.go      # Decrypt encrypted files
+│   │   ├── asdf.go         # Version manager setup
+│   │   ├── mkdir.go        # Directory creation
+│   │   ├── known_hosts.go  # SSH known_hosts management
+│   │   ├── gpg_key.go      # GPG key & repository setup
+│   │   └── handlers_test.go# Handler tests
 │   ├── git/                # Git operations (clone, auth)
 │   │   └── git.go
-│   └── models/             # Shared structs
+│   ├── crypto/             # File encryption/decryption
+│   │   └── crypto.go
+│   ├── ui/                 # Terminal UI formatting
+│   │   └── ui.go
+│   ├── logging/            # Logging utilities
+│   │   └── logging.go
+│   └── models/             # Shared data structures
 │       └── types.go
-├── config/                 # Example includes
-│   ├── base.bp
-│   ├── dev-tools.bp
-│   └── runtimes.bp
 ├── .gitignore              # Git ignore rules
 ├── justfile                # Build recipes
-├── history.json            # Generated at runtime
-├── setup.bp                # Example configuration
-├── setup-modular.bp        # Modular example with includes
-└── README.md
+├── history.json            # Execution history (generated at runtime)
+└── README.md               # This file
 ```
 
 ## Usage
@@ -1059,6 +1069,45 @@ setup.bp:
 - Automatically filters rules by operating system
 - Handles asdf installation and shell integration
 - Manages asdf auto-uninstall when removed from blueprint
+- Uses handler interfaces for dynamic rule execution (no hardcoded action types)
+
+### Handlers (`internal/handlers/`)
+The handler system uses Go interfaces to support extensible, type-safe rule execution:
+
+**Core Handler Interfaces:**
+- `Handler` - Base interface for all handlers
+  - `Up()` - Execute the rule (install/add)
+  - `Down()` - Undo the rule (uninstall/remove)
+  - `GetCommand()` - Return the command that will be executed
+
+**Optional Handler Interfaces:**
+- `KeyProvider` - Provides dependency resolution keys
+  - `GetDependencyKey()` - Returns a unique key for dependency ordering
+  - Uses `getDependencyKey()` helper function to centralize ID check logic
+
+- `DisplayProvider` - Provides display details during execution
+  - `GetDisplayDetails(isUninstall bool)` - Returns what to display (e.g., package name, path)
+  - Each handler specifies its own display format without engine hardcoding
+
+- `SudoAwareHandler` - Indicates sudo requirements
+  - `NeedsSudo()` - Returns true if rule requires elevated privileges
+
+**Handler Implementation Pattern:**
+Each handler (InstallHandler, CloneHandler, DecryptHandler, etc.) implements these interfaces to:
+1. Define its execution behavior (Up/Down methods)
+2. Provide dependency ordering information (KeyProvider)
+3. Specify what details should be displayed (DisplayProvider)
+4. Indicate sudo requirements (SudoAwareHandler)
+
+**Benefits of this architecture:**
+- No hardcoded action type checks in the engine
+- Each handler is self-contained and fully responsible for its behavior
+- Adding new handlers requires no changes to the engine
+- Better separation of concerns: handlers define behavior, not the engine
+
+**Helper Functions:**
+- `getDependencyKey(rule, fallback)` - Centralizes rule.ID checking for all handlers
+- `DetectRuleType(rule)` - Determines handler type from rule fields
 
 ### Git Module (`internal/git/git.go`)
 - Clones repositories using pure Go (no git CLI required)
