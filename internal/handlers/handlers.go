@@ -128,6 +128,18 @@ type KeyProvider interface {
 	GetDependencyKey() string
 }
 
+// DisplayProvider is an optional interface that handlers can implement
+// to specify what details should be displayed during execution.
+// This eliminates hardcoded action type checks in the engine by allowing
+// each handler to provide its own display information (path, packages, hostname, etc.)
+type DisplayProvider interface {
+	// GetDisplayDetails returns the detail to display for this rule during execution
+	// and whether it should be formatted as an error/uninstall action.
+	// Examples: "~/path/to/repo", "package1, package2", "github.com", "~/.ssh/config"
+	// isError should be true for uninstall actions or errors
+	GetDisplayDetails(isUninstall bool) string
+}
+
 // BaseHandler contains common fields for all handlers
 type BaseHandler struct {
 	Rule     parser.Rule

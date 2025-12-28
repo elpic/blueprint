@@ -191,3 +191,8 @@ func (h *GPGKeyHandler) DisplayStatus(keys []GPGKeyStatus) {
 func (h *GPGKeyHandler) GetDependencyKey() string {
 	return getDependencyKey(h.Rule, h.Rule.GPGKeyring)
 }
+
+// GetDisplayDetails returns the GPG keyring to display during execution
+func (h *GPGKeyHandler) GetDisplayDetails(isUninstall bool) string {
+	return h.Rule.GPGKeyring
+}

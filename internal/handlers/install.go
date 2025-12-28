@@ -238,3 +238,16 @@ func (h *InstallHandler) GetDependencyKey() string {
 	}
 	return getDependencyKey(h.Rule, fallback)
 }
+
+// GetDisplayDetails returns the packages to display during execution
+func (h *InstallHandler) GetDisplayDetails(isUninstall bool) string {
+	// Build package list string
+	packages := ""
+	for j, pkg := range h.Rule.Packages {
+		if j > 0 {
+			packages += ", "
+		}
+		packages += pkg.Name
+	}
+	return packages
+}

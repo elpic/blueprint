@@ -498,6 +498,7 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 	}
 
 	for i, rule := range sortedRules {
+		isUninstall := rule.Action == "uninstall"
 		fmt.Printf("[%d/%d] %s", i+1, len(sortedRules), ui.FormatHighlight(rule.Action))
 
 		var handler handlerskg.Handler
@@ -505,133 +506,37 @@ func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName stri
 		var err error
 		var actualCmd string
 
-		// Create appropriate handler based on rule action
-		if rule.Action == "uninstall" {
-			// For uninstall, detect the resource type and display accordingly
-			ruleType := handlerskg.DetectRuleType(rule)
-			switch ruleType {
-			case "asdf":
-				fmt.Printf(" %s", ui.FormatError("asdf"))
-				actualCmd = "asdf-uninstall"
-			case "mkdir":
-				fmt.Printf(" %s", ui.FormatError(rule.Mkdir))
-				actualCmd = fmt.Sprintf("rm -rf %s", rule.Mkdir)
-			case "clone":
-				fmt.Printf(" %s", ui.FormatError(rule.ClonePath))
-				actualCmd = "uninstall-clone"
-			case "decrypt":
-				fmt.Printf(" %s", ui.FormatError(rule.DecryptPath))
-				actualCmd = "uninstall-decrypt"
-			case "known_hosts":
-				fmt.Printf(" %s", ui.FormatError(rule.KnownHosts))
-				actualCmd = "uninstall-known_hosts"
-			case "gpg-key":
-				fmt.Printf(" %s", ui.FormatError(rule.GPGKeyring))
-				actualCmd = "uninstall-gpg-key"
-			case "install":
-				// For package uninstall
-				cmd := buildCommand(rule)
-				actualCmd = cmd
-				if needsSudo(cmd) {
-					actualCmd = "sudo " + cmd
-				}
-
-				// Build package list string
-				packages := ""
-				for j, pkg := range rule.Packages {
-					if j > 0 {
-						packages += ", "
-					}
-					packages += pkg.Name
-				}
-
-				if packages != "" {
-					fmt.Printf(" %s", ui.FormatError(packages))
-				}
-			default:
-				fmt.Printf(" %s", ui.FormatError("unknown rule type"))
-				handler = nil
-			}
-
-			handler = handlerskg.NewHandler(rule, basePath, passwordCache)
-		} else {
-			// For other actions, create handler directly
-			handler = handlerskg.NewHandler(rule, basePath, passwordCache)
-		}
+		// Create handler for this rule
+		handler = handlerskg.NewHandler(rule, basePath, passwordCache)
 
 		if handler != nil {
-			// Set action-specific UI formatting and command
-			switch rule.Action {
-			case "clone":
-				fmt.Printf(" %s", ui.FormatInfo(rule.ClonePath))
-				actualCmd = fmt.Sprintf("git clone %s %s", rule.CloneURL, rule.ClonePath)
-				if rule.Branch != "" {
-					actualCmd = fmt.Sprintf("git clone -b %s %s %s", rule.Branch, rule.CloneURL, rule.ClonePath)
-				}
-
-			case "asdf":
-				actualCmd = "asdf-init"
-
-			case "decrypt":
-				fmt.Printf(" %s", ui.FormatInfo(rule.DecryptPath))
-				actualCmd = fmt.Sprintf("decrypt %s to %s", rule.DecryptFile, rule.DecryptPath)
-
-			case "known_hosts":
-				fmt.Printf(" %s", ui.FormatInfo(rule.KnownHosts))
-				actualCmd = fmt.Sprintf("known_hosts %s", rule.KnownHosts)
-
-			case "gpg-key":
-				fmt.Printf(" %s", ui.FormatInfo(rule.GPGKeyring))
-				actualCmd = fmt.Sprintf("gpg-key %s", rule.GPGKeyring)
-
-			case "mkdir":
-				fmt.Printf(" %s", ui.FormatInfo(rule.Mkdir))
-				actualCmd = fmt.Sprintf("mkdir -p %s", rule.Mkdir)
-				if rule.MkdirPerms != "" {
-					actualCmd += fmt.Sprintf(" (chmod %s)", rule.MkdirPerms)
-				}
-
-			case "install":
-				cmd := buildCommand(rule)
-				actualCmd = cmd
-				if needsSudo(cmd) {
-					actualCmd = "sudo " + cmd
-				}
-
-				// Build package list string
-				packages := ""
-				for j, pkg := range rule.Packages {
-					if j > 0 {
-						packages += ", "
+			// Get display details from handler if it implements DisplayProvider
+			if displayProvider, ok := handler.(handlerskg.DisplayProvider); ok {
+				details := displayProvider.GetDisplayDetails(isUninstall)
+				if details != "" {
+					// Use error color for uninstall, info color for regular actions
+					if isUninstall {
+						fmt.Printf(" %s", ui.FormatError(details))
+					} else {
+						fmt.Printf(" %s", ui.FormatInfo(details))
 					}
-					packages += pkg.Name
 				}
-
-				if packages != "" {
-					fmt.Printf(" %s", ui.FormatInfo(packages))
-				}
-
-			default:
-				// Unknown action - this shouldn't happen if parsing is correct
-				fmt.Printf(" %s", ui.FormatError("unknown action"))
-				output = fmt.Sprintf("unknown action: %s", rule.Action)
-				err = fmt.Errorf("unknown action type")
 			}
-		}
 
-		// Get the actual command from the handler if not already set
-		if handler != nil && actualCmd == "" {
+			// Get the actual command from the handler
 			actualCmd = handler.GetCommand()
-		}
 
-		// Execute handler
-		if handler != nil {
-			// Call Down() for all uninstall actions
-			if rule.Action == "uninstall" {
+			// Execute handler
+			if isUninstall {
 				output, err = handler.Down()
 			} else {
 				output, err = handler.Up()
 			}
+		} else {
+			// Unknown action - this shouldn't happen if parsing is correct
+			fmt.Printf(" %s", ui.FormatError("unknown action"))
+			output = fmt.Sprintf("unknown action: %s", rule.Action)
+			err = fmt.Errorf("unknown action type")
 		}
 
 		// Create execution record

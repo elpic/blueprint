@@ -135,3 +135,72 @@ func TestKeyProviderInterface(t *testing.T) {
 		})
 	}
 }
+
+// TestDisplayProviderInterface verifies that all handlers implement DisplayProvider
+func TestDisplayProviderInterface(t *testing.T) {
+	tests := []struct {
+		name              string
+		handler           Handler
+		expectedFormatted string
+		isUninstall       bool
+	}{
+		{
+			name:              "InstallHandler provides package display",
+			handler:           NewInstallHandler(parser.Rule{Packages: []parser.Package{{Name: "vim"}, {Name: "curl"}}}, ""),
+			expectedFormatted: "vim, curl",
+			isUninstall:       false,
+		},
+		{
+			name:              "CloneHandler provides path display",
+			handler:           NewCloneHandler(parser.Rule{ClonePath: "~/my-repo"}, ""),
+			expectedFormatted: "~/my-repo",
+			isUninstall:       false,
+		},
+		{
+			name:              "DecryptHandler provides path display",
+			handler:           NewDecryptHandler(parser.Rule{DecryptPath: "~/.ssh/config"}, "", nil),
+			expectedFormatted: "~/.ssh/config",
+			isUninstall:       true,
+		},
+		{
+			name:              "AsdfHandler provides asdf display",
+			handler:           NewAsdfHandler(parser.Rule{Action: "asdf"}, ""),
+			expectedFormatted: "asdf",
+			isUninstall:       false,
+		},
+		{
+			name:              "MkdirHandler provides path display",
+			handler:           NewMkdirHandler(parser.Rule{Mkdir: "~/projects"}, ""),
+			expectedFormatted: "~/projects",
+			isUninstall:       false,
+		},
+		{
+			name:              "KnownHostsHandler provides hostname display",
+			handler:           NewKnownHostsHandler(parser.Rule{KnownHosts: "github.com"}, ""),
+			expectedFormatted: "github.com",
+			isUninstall:       false,
+		},
+		{
+			name:              "GPGKeyHandler provides keyring display",
+			handler:           NewGPGKeyHandler(parser.Rule{GPGKeyring: "ubuntu-keyring"}, ""),
+			expectedFormatted: "ubuntu-keyring",
+			isUninstall:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Check that handler implements DisplayProvider
+			displayProvider, ok := tt.handler.(DisplayProvider)
+			if !ok {
+				t.Errorf("Handler does not implement DisplayProvider interface")
+			}
+
+			// Verify GetDisplayDetails returns expected value
+			details := displayProvider.GetDisplayDetails(tt.isUninstall)
+			if details != tt.expectedFormatted {
+				t.Errorf("GetDisplayDetails(%v) = %q, want %q", tt.isUninstall, details, tt.expectedFormatted)
+			}
+		})
+	}
+}

@@ -249,3 +249,8 @@ func (h *MkdirHandler) DisplayStatus(mkdirs []MkdirStatus) {
 func (h *MkdirHandler) GetDependencyKey() string {
 	return getDependencyKey(h.Rule, h.Rule.Mkdir)
 }
+
+// GetDisplayDetails returns the mkdir path to display during execution
+func (h *MkdirHandler) GetDisplayDetails(isUninstall bool) string {
+	return h.Rule.Mkdir
+}

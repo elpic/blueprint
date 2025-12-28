@@ -277,3 +277,8 @@ func (h *KnownHostsHandler) DisplayStatus(hosts []KnownHostsStatus) {
 func (h *KnownHostsHandler) GetDependencyKey() string {
 	return getDependencyKey(h.Rule, h.Rule.KnownHosts)
 }
+
+// GetDisplayDetails returns the known host to display during execution
+func (h *KnownHostsHandler) GetDisplayDetails(isUninstall bool) string {
+	return h.Rule.KnownHosts
+}

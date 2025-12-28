@@ -370,6 +370,11 @@ func (h *AsdfHandler) GetDependencyKey() string {
 	return getDependencyKey(h.Rule, fallback)
 }
 
+// GetDisplayDetails returns "asdf" to display during execution
+func (h *AsdfHandler) GetDisplayDetails(isUninstall bool) string {
+	return "asdf"
+}
+
 // succeededAsdfUninstall checks if asdf uninstall was successful
 func succeededAsdfUninstall(records []ExecutionRecord) bool {
 	for _, record := range records {

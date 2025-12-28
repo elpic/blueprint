@@ -199,3 +199,8 @@ func (h *CloneHandler) DisplayStatus(clones []CloneStatus) {
 func (h *CloneHandler) GetDependencyKey() string {
 	return getDependencyKey(h.Rule, h.Rule.ClonePath)
 }
+
+// GetDisplayDetails returns the clone path to display during execution
+func (h *CloneHandler) GetDisplayDetails(isUninstall bool) string {
+	return h.Rule.ClonePath
+}

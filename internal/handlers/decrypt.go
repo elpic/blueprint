@@ -217,3 +217,8 @@ func (h *DecryptHandler) DisplayStatus(decrypts []DecryptStatus) {
 func (h *DecryptHandler) GetDependencyKey() string {
 	return getDependencyKey(h.Rule, h.Rule.DecryptPath)
 }
+
+// GetDisplayDetails returns the decrypt path to display during execution
+func (h *DecryptHandler) GetDisplayDetails(isUninstall bool) string {
+	return h.Rule.DecryptPath
+}
