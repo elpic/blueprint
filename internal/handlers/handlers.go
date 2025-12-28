@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/elpic/blueprint/internal/parser"
 )
@@ -316,4 +318,20 @@ func removeGPGKeyStatus(gpgKeys []GPGKeyStatus, keyring string, blueprint string
 		}
 	}
 	return result
+}
+
+// abbreviateBlueprintPath shortens blueprint paths for display
+// Shows relative paths for blueprints in the repo, full paths for external ones
+func abbreviateBlueprintPath(path string) string {
+	// Try to get the current working directory
+	cwd, err := os.Getwd()
+	if err == nil && strings.HasPrefix(path, cwd) {
+		// Path is within the repo, show relative path
+		relPath, err := filepath.Rel(cwd, path)
+		if err == nil {
+			return relPath
+		}
+	}
+	// Path is outside the repo or error getting cwd, show full path
+	return path
 }

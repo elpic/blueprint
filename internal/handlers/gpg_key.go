@@ -182,7 +182,7 @@ func (h *GPGKeyHandler) DisplayStatus(keys []GPGKeyStatus) {
 			ui.FormatInfo(key.Keyring),
 			ui.FormatDim(timeStr),
 			ui.FormatDim(key.OS),
-			ui.FormatDim(key.Blueprint),
+			ui.FormatDim(abbreviateBlueprintPath(key.Blueprint)),
 		)
 	}
 }

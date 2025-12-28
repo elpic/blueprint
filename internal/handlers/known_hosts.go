@@ -268,7 +268,7 @@ func (h *KnownHostsHandler) DisplayStatus(hosts []KnownHostsStatus) {
 			ui.FormatDim(keyTypeStr),
 			ui.FormatDim(timeStr),
 			ui.FormatDim(kh.OS),
-			ui.FormatDim(kh.Blueprint),
+			ui.FormatDim(abbreviateBlueprintPath(kh.Blueprint)),
 		)
 	}
 }

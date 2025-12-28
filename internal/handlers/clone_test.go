@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -270,6 +271,175 @@ func TestCloneHandlerDisplayInfo(t *testing.T) {
 				if !strings.Contains(output, expected) {
 					t.Errorf("DisplayInfo() output missing expected content %q\nGot: %s", expected, output)
 				}
+			}
+		})
+	}
+}
+
+func TestCloneHandlerDisplayStatus(t *testing.T) {
+	tests := []struct {
+		name         string
+		clones       []CloneStatus
+		expectOutput []string
+		notExpect    []string
+	}{
+		{
+			name:         "empty clones list",
+			clones:       []CloneStatus{},
+			expectOutput: []string{},
+			notExpect:    []string{"Cloned Repositories"},
+		},
+		{
+			name: "single clone with https URL",
+			clones: []CloneStatus{
+				{
+					URL:       "https://github.com/golang/go.git",
+					Path:      "/tmp/test-go-repo",
+					SHA:       "abc123def456",
+					ClonedAt:  "2025-12-26T17:00:00Z",
+					Blueprint: "/tmp/test.bp",
+					OS:        "mac",
+				},
+			},
+			expectOutput: []string{
+				"Cloned Repositories",
+				"/tmp/test-go-repo",
+				"https://github.com/golang/go.git",
+				"URL:",
+			},
+			notExpect: []string{"https:/github.com"}, // Ensure not truncated to single slash
+		},
+		{
+			name: "multiple clones with different https URLs",
+			clones: []CloneStatus{
+				{
+					URL:       "https://github.com/golang/go.git",
+					Path:      "/tmp/go-repo",
+					ClonedAt:  "2025-12-26T17:00:00Z",
+					Blueprint: "/tmp/test1.bp",
+					OS:        "mac",
+				},
+				{
+					URL:       "https://github.com/charmbracelet/bubbletea.git",
+					Path:      "/tmp/bubbletea-repo",
+					ClonedAt:  "2025-12-26T17:01:00Z",
+					Blueprint: "/tmp/test2.bp",
+					OS:        "linux",
+				},
+			},
+			expectOutput: []string{
+				"Cloned Repositories",
+				"/tmp/go-repo",
+				"/tmp/bubbletea-repo",
+				"https://github.com/golang/go.git",
+				"https://github.com/charmbracelet/bubbletea.git",
+				"URL:",
+			},
+			notExpect: []string{},
+		},
+		{
+			name: "clone with long https URL path",
+			clones: []CloneStatus{
+				{
+					URL:       "https://github.com/user/very-long-repository-name-with-many-characters.git",
+					Path:      "/tmp/repo",
+					ClonedAt:  "2025-12-26T17:00:00Z",
+					Blueprint: "/tmp/test.bp",
+					OS:        "mac",
+				},
+			},
+			expectOutput: []string{
+				"https://github.com/user/very-long-repository-name-with-many-characters.git",
+				"URL:",
+			},
+			notExpect: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := &CloneHandler{}
+
+			// Capture stdout
+			old := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			handler.DisplayStatus(tt.clones)
+
+			_ = w.Close()
+			os.Stdout = old
+
+			// Read captured output
+			var buf bytes.Buffer
+			_, _ = io.Copy(&buf, r)
+			output := buf.String()
+
+			// Verify expected content is present
+			for _, expected := range tt.expectOutput {
+				if !strings.Contains(output, expected) {
+					t.Errorf("DisplayStatus() output missing expected content %q\nGot:\n%s", expected, output)
+				}
+			}
+
+			// Verify undesired content is not present
+			for _, notExpected := range tt.notExpect {
+				if strings.Contains(output, notExpected) {
+					t.Errorf("DisplayStatus() output contains unexpected content %q\nGot:\n%s", notExpected, output)
+				}
+			}
+		})
+	}
+}
+
+func TestCloneHandlerDisplayStatusURLPreservation(t *testing.T) {
+	// Test specifically for https:// preservation (not truncated to https:/)
+	httpURLs := []string{
+		"https://github.com/golang/go.git",
+		"https://github.com/user/repo.git",
+		"https://gitlab.com/group/project.git",
+		"https://bitbucket.org/user/repo.git",
+		"https://git.example.com/path/to/repo.git",
+	}
+
+	for _, url := range httpURLs {
+		t.Run(fmt.Sprintf("URL_preservation_%s", url), func(t *testing.T) {
+			clones := []CloneStatus{
+				{
+					URL:       url,
+					Path:      "/tmp/test-repo",
+					ClonedAt:  "2025-12-26T17:00:00Z",
+					Blueprint: "/tmp/test.bp",
+					OS:        "mac",
+				},
+			}
+
+			handler := &CloneHandler{}
+
+			// Capture stdout
+			old := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			handler.DisplayStatus(clones)
+
+			_ = w.Close()
+			os.Stdout = old
+
+			// Read captured output
+			var buf bytes.Buffer
+			_, _ = io.Copy(&buf, r)
+			output := buf.String()
+
+			// Check that full URL with https:// is present
+			if !strings.Contains(output, url) {
+				t.Errorf("DisplayStatus() output missing full URL %q\nGot:\n%s", url, output)
+			}
+
+			// Check that the URL is NOT truncated to single slash
+			truncatedURL := strings.Replace(url, "https://", "https:/", 1)
+			if strings.Contains(output, truncatedURL) && !strings.Contains(output, url) {
+				t.Errorf("DisplayStatus() output shows truncated URL %q (missing slash)\nGot:\n%s", truncatedURL, output)
 			}
 		})
 	}
