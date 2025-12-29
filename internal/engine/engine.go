@@ -106,6 +106,7 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 	// Count cleanup operations only when not using skip options
 	var numCleanups int
 	if skipGroup == "" && skipID == "" {
+		// All auto-uninstall rules have action "uninstall" (packages, clones, decrypts)
 		numCleanups = len(autoUninstallRules)
 	}
 
@@ -202,7 +203,7 @@ func Run(file string, dry bool) {
 	autoUninstallRules := getAutoUninstallRules(filteredRules, file, currentOS)
 	allRules := append(filteredRules, autoUninstallRules...)
 
-	// Count cleanup operations (auto-uninstall rules for removed resources)
+	// Count cleanup operations (all auto-uninstall rules have action "uninstall")
 	numCleanups := len(autoUninstallRules)
 
 	// Extract base directory from setupPath for resolving relative file paths
