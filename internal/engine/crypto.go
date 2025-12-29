@@ -129,26 +129,15 @@ func promptForSudoPasswordWithOS(rules []parser.Rule, currentOS string) error {
 		return nil
 	}
 
-	// Check if any rule needs sudo by building the actual command
-	// Note: rules passed in are already filtered by OS, so we don't need to check ruleAppliesToOS()
+	// Check if any rule needs sudo by asking the handler
+	// This delegates sudo requirement determination to each handler type
 	needsSudoPassword := false
 	for _, rule := range rules {
-		// First check if the handler implements SudoAwareHandler
 		handler := handlerskg.NewHandler(rule, "", make(map[string]string))
 		if sudoAwareHandler, ok := handler.(handlerskg.SudoAwareHandler); ok {
 			if sudoAwareHandler.NeedsSudo() {
 				needsSudoPassword = true
 				break
-			}
-		} else {
-			// Fall back to checking the command string
-			// Check install/uninstall rules
-			if rule.Action == "install" || rule.Action == "uninstall" {
-				cmd := buildCommand(rule)
-				if needsSudo(cmd) {
-					needsSudoPassword = true
-					break
-				}
 			}
 		}
 	}

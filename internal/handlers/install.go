@@ -291,3 +291,21 @@ func (h *InstallHandler) FindUninstallRules(status *Status, currentRules []parse
 	}
 	return rules
 }
+
+// NeedsSudo returns true if package installation/uninstallation requires sudo privileges
+func (h *InstallHandler) NeedsSudo() bool {
+	// Only package managers on Linux require sudo
+	if getOSName() != "linux" {
+		return false
+	}
+
+	// Check the command that will be executed
+	var cmd string
+	if h.Rule.Action == "uninstall" {
+		cmd = h.buildUninstallCommand(h.Rule)
+	} else {
+		cmd = h.buildCommand()
+	}
+
+	return needsSudo(cmd)
+}
