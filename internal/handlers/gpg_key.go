@@ -197,39 +197,32 @@ func (h *GPGKeyHandler) GetDisplayDetails(isUninstall bool) string {
 	return h.Rule.GPGKeyring
 }
 
-// GetCurrentResourceKey returns the GPG keyring as the identifying key
-func (h *GPGKeyHandler) GetCurrentResourceKey() string {
-	return h.Rule.GPGKeyring
-}
+// FindUninstallRules compares GPG key status against current rules and returns uninstall rules
+func (h *GPGKeyHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
+	normalizedBlueprint := normalizePath(blueprintFile)
 
-// GetStatusRecords returns all GPG key status records from the status
-func (h *GPGKeyHandler) GetStatusRecords(status *Status) []interface{} {
-	if status.GPGKeys == nil {
-		return []interface{}{}
-	}
-	result := make([]interface{}, len(status.GPGKeys))
-	for i, gpg := range status.GPGKeys {
-		result[i] = gpg
-	}
-	return result
-}
-
-// GetStatusRecordKey extracts the keyring from a GPG key status record
-func (h *GPGKeyHandler) GetStatusRecordKey(record interface{}) string {
-	if gpg, ok := record.(GPGKeyStatus); ok {
-		return gpg.Keyring
-	}
-	return ""
-}
-
-// BuildUninstallRule creates an uninstall rule from a GPG key status record
-func (h *GPGKeyHandler) BuildUninstallRule(record interface{}, osName string) parser.Rule {
-	if gpg, ok := record.(GPGKeyStatus); ok {
-		return parser.Rule{
-			Action:     "uninstall",
-			GPGKeyring: gpg.Keyring,
-			OSList:     []string{osName},
+	// Build set of current GPG keyrings from gpg-key rules
+	currentGPGKeys := make(map[string]bool)
+	for _, rule := range currentRules {
+		if rule.Action == "gpg-key" && rule.GPGKeyring != "" {
+			currentGPGKeys[rule.GPGKeyring] = true
 		}
 	}
-	return parser.Rule{}
+
+	// Find GPG keys to uninstall (in status but not in current rules)
+	var rules []parser.Rule
+	if status.GPGKeys != nil {
+		for _, gpg := range status.GPGKeys {
+			normalizedStatusBlueprint := normalizePath(gpg.Blueprint)
+			if normalizedStatusBlueprint == normalizedBlueprint && gpg.OS == osName && !currentGPGKeys[gpg.Keyring] {
+				rules = append(rules, parser.Rule{
+					Action:     "uninstall",
+					GPGKeyring: gpg.Keyring,
+					OSList:     []string{osName},
+				})
+			}
+		}
+	}
+
+	return rules
 }

@@ -283,39 +283,32 @@ func (h *KnownHostsHandler) GetDisplayDetails(isUninstall bool) string {
 	return h.Rule.KnownHosts
 }
 
-// GetCurrentResourceKey returns the known host as the identifying key
-func (h *KnownHostsHandler) GetCurrentResourceKey() string {
-	return h.Rule.KnownHosts
-}
+// FindUninstallRules compares known hosts status against current rules and returns uninstall rules
+func (h *KnownHostsHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
+	normalizedBlueprint := normalizePath(blueprintFile)
 
-// GetStatusRecords returns all known hosts status records from the status
-func (h *KnownHostsHandler) GetStatusRecords(status *Status) []interface{} {
-	if status.KnownHosts == nil {
-		return []interface{}{}
-	}
-	result := make([]interface{}, len(status.KnownHosts))
-	for i, host := range status.KnownHosts {
-		result[i] = host
-	}
-	return result
-}
-
-// GetStatusRecordKey extracts the host from a known hosts status record
-func (h *KnownHostsHandler) GetStatusRecordKey(record interface{}) string {
-	if host, ok := record.(KnownHostsStatus); ok {
-		return host.Host
-	}
-	return ""
-}
-
-// BuildUninstallRule creates an uninstall rule from a known hosts status record
-func (h *KnownHostsHandler) BuildUninstallRule(record interface{}, osName string) parser.Rule {
-	if host, ok := record.(KnownHostsStatus); ok {
-		return parser.Rule{
-			Action:     "uninstall",
-			KnownHosts: host.Host,
-			OSList:     []string{osName},
+	// Build set of current known hosts from known_hosts rules
+	currentKnownHosts := make(map[string]bool)
+	for _, rule := range currentRules {
+		if rule.Action == "known_hosts" && rule.KnownHosts != "" {
+			currentKnownHosts[rule.KnownHosts] = true
 		}
 	}
-	return parser.Rule{}
+
+	// Find known hosts to uninstall (in status but not in current rules)
+	var rules []parser.Rule
+	if status.KnownHosts != nil {
+		for _, host := range status.KnownHosts {
+			normalizedStatusBlueprint := normalizePath(host.Blueprint)
+			if normalizedStatusBlueprint == normalizedBlueprint && host.OS == osName && !currentKnownHosts[host.Host] {
+				rules = append(rules, parser.Rule{
+					Action:     "uninstall",
+					KnownHosts: host.Host,
+					OSList:     []string{osName},
+				})
+			}
+		}
+	}
+
+	return rules
 }

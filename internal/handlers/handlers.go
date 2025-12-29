@@ -141,29 +141,24 @@ type DisplayProvider interface {
 }
 
 // StatusProvider is an optional interface that handlers can implement
-// to specify how to extract and manage status records for auto-uninstall.
-// This eliminates hardcoded action type checks in getAutoUninstallRules by allowing
-// each handler to describe how to identify and remove its resources from the status.
+// to specify how to manage status records for auto-uninstall.
+// This eliminates ALL hardcoded action type checks by allowing each handler
+// to completely own the logic of comparing its status against current rules.
 type StatusProvider interface {
-	// GetCurrentResourceKey returns the identifying key from a current rule.
-	// Used to check if a resource from status still exists in the current blueprint.
-	// Examples: "package-name", "~/path/to/clone", "hostname", "~/.ssh/id_rsa"
-	GetCurrentResourceKey() string
-
-	// GetStatusRecords returns all status records of this handler's type.
-	// Used to iterate through status records matching this handler type.
-	// Examples: status.Packages, status.Clones, status.Mkdirs, etc.
-	GetStatusRecords(status *Status) []interface{}
-
-	// GetStatusRecordKey extracts the identifying key from a status record.
-	// Used to compare status records with current resources in the blueprint.
-	// The record type matches what was returned by GetStatusRecords().
-	GetStatusRecordKey(record interface{}) string
-
-	// BuildUninstallRule creates a minimal uninstall rule from a status record.
-	// The rule only needs the fields required for the Down() operation.
-	// The engine will set the Action, OSList, and Blueprint fields.
-	BuildUninstallRule(record interface{}, osName string) parser.Rule
+	// FindUninstallRules compares status records against current rules and returns
+	// uninstall rules for any resources that are no longer in the blueprint.
+	// The handler encapsulates ALL logic for status comparison - the engine has
+	// no knowledge of specific status types or field names.
+	//
+	// Parameters:
+	//   status - The current blueprint status with all installed resources
+	//   currentRules - The rules currently in the blueprint being applied
+	//   blueprintFile - The blueprint file being applied (for filtering records)
+	//   osName - The OS being targeted (for filtering records)
+	//
+	// Returns:
+	//   A slice of uninstall rules for resources no longer in the blueprint
+	FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule
 }
 
 // BaseHandler contains common fields for all handlers

@@ -255,39 +255,32 @@ func (h *MkdirHandler) GetDisplayDetails(isUninstall bool) string {
 	return h.Rule.Mkdir
 }
 
-// GetCurrentResourceKey returns the mkdir path as the identifying key
-func (h *MkdirHandler) GetCurrentResourceKey() string {
-	return h.Rule.Mkdir
-}
+// FindUninstallRules compares mkdir status against current rules and returns uninstall rules
+func (h *MkdirHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
+	normalizedBlueprint := normalizePath(blueprintFile)
 
-// GetStatusRecords returns all mkdir status records from the status
-func (h *MkdirHandler) GetStatusRecords(status *Status) []interface{} {
-	if status.Mkdirs == nil {
-		return []interface{}{}
-	}
-	result := make([]interface{}, len(status.Mkdirs))
-	for i, mkdir := range status.Mkdirs {
-		result[i] = mkdir
-	}
-	return result
-}
-
-// GetStatusRecordKey extracts the path from a mkdir status record
-func (h *MkdirHandler) GetStatusRecordKey(record interface{}) string {
-	if mkdir, ok := record.(MkdirStatus); ok {
-		return mkdir.Path
-	}
-	return ""
-}
-
-// BuildUninstallRule creates an uninstall rule from a mkdir status record
-func (h *MkdirHandler) BuildUninstallRule(record interface{}, osName string) parser.Rule {
-	if mkdir, ok := record.(MkdirStatus); ok {
-		return parser.Rule{
-			Action: "uninstall",
-			Mkdir:  mkdir.Path,
-			OSList: []string{osName},
+	// Build set of current mkdir paths from mkdir rules
+	currentMkdirPaths := make(map[string]bool)
+	for _, rule := range currentRules {
+		if rule.Action == "mkdir" && rule.Mkdir != "" {
+			currentMkdirPaths[rule.Mkdir] = true
 		}
 	}
-	return parser.Rule{}
+
+	// Find mkdirs to uninstall (in status but not in current rules)
+	var rules []parser.Rule
+	if status.Mkdirs != nil {
+		for _, mkdir := range status.Mkdirs {
+			normalizedStatusBlueprint := normalizePath(mkdir.Blueprint)
+			if normalizedStatusBlueprint == normalizedBlueprint && mkdir.OS == osName && !currentMkdirPaths[mkdir.Path] {
+				rules = append(rules, parser.Rule{
+					Action: "uninstall",
+					Mkdir:  mkdir.Path,
+					OSList: []string{osName},
+				})
+			}
+		}
+	}
+
+	return rules
 }

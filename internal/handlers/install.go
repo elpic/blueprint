@@ -252,44 +252,42 @@ func (h *InstallHandler) GetDisplayDetails(isUninstall bool) string {
 	return packages
 }
 
-// GetCurrentResourceKey returns the first package name as the identifying key
-func (h *InstallHandler) GetCurrentResourceKey() string {
-	if len(h.Rule.Packages) > 0 {
-		return h.Rule.Packages[0].Name
-	}
-	return ""
-}
+// FindUninstallRules compares package status against current rules and returns uninstall rules
+func (h *InstallHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
+	normalizedBlueprint := normalizePath(blueprintFile)
 
-// GetStatusRecords returns all package status records from the status
-func (h *InstallHandler) GetStatusRecords(status *Status) []interface{} {
-	if status.Packages == nil {
-		return []interface{}{}
-	}
-	result := make([]interface{}, len(status.Packages))
-	for i, pkg := range status.Packages {
-		result[i] = pkg
-	}
-	return result
-}
-
-// GetStatusRecordKey extracts the package name from a package status record
-func (h *InstallHandler) GetStatusRecordKey(record interface{}) string {
-	if pkg, ok := record.(PackageStatus); ok {
-		return pkg.Name
-	}
-	return ""
-}
-
-// BuildUninstallRule creates an uninstall rule from a package status record
-func (h *InstallHandler) BuildUninstallRule(record interface{}, osName string) parser.Rule {
-	if pkg, ok := record.(PackageStatus); ok {
-		return parser.Rule{
-			Action: "uninstall",
-			Packages: []parser.Package{
-				{Name: pkg.Name, Version: "latest"},
-			},
-			OSList: []string{osName},
+	// Build set of current package names from install rules
+	currentPackages := make(map[string]bool)
+	for _, rule := range currentRules {
+		if rule.Action == "install" {
+			for _, pkg := range rule.Packages {
+				currentPackages[pkg.Name] = true
+			}
 		}
 	}
-	return parser.Rule{}
+
+	// Find packages to uninstall (in status but not in current rules)
+	var packagesToUninstall []parser.Package
+	if status.Packages != nil {
+		for _, pkg := range status.Packages {
+			normalizedStatusBlueprint := normalizePath(pkg.Blueprint)
+			if normalizedStatusBlueprint == normalizedBlueprint && pkg.OS == osName && !currentPackages[pkg.Name] {
+				packagesToUninstall = append(packagesToUninstall, parser.Package{
+					Name:    pkg.Name,
+					Version: "latest",
+				})
+			}
+		}
+	}
+
+	// Return uninstall rule if there are packages to uninstall
+	var rules []parser.Rule
+	if len(packagesToUninstall) > 0 {
+		rules = append(rules, parser.Rule{
+			Action:   "uninstall",
+			Packages: packagesToUninstall,
+			OSList:   []string{osName},
+		})
+	}
+	return rules
 }

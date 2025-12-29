@@ -375,46 +375,39 @@ func (h *AsdfHandler) GetDisplayDetails(isUninstall bool) string {
 	return "asdf"
 }
 
-// GetCurrentResourceKey returns "asdf" as the identifying key
-func (h *AsdfHandler) GetCurrentResourceKey() string {
-	return "asdf"
-}
+// FindUninstallRules compares asdf status against current rules and returns uninstall rules
+// Note: asdf is tracked as a clone with path ~/.asdf
+func (h *AsdfHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
+	normalizedBlueprint := normalizePath(blueprintFile)
 
-// GetStatusRecords returns asdf status records from the clones (using ~/.asdf path)
-// Since asdf is tracked as a clone with path ~/.asdf, we filter for that specific path
-func (h *AsdfHandler) GetStatusRecords(status *Status) []interface{} {
-	if status.Clones == nil {
-		return []interface{}{}
-	}
-	var result []interface{}
-	// Only return the ~/asdf clone status
-	for _, clone := range status.Clones {
-		if clone.Path == "~/.asdf" {
-			result = append(result, clone)
+	// Check if asdf is in current rules
+	asdfInCurrentRules := false
+	for _, rule := range currentRules {
+		if rule.Action == "asdf" {
+			asdfInCurrentRules = true
+			break
 		}
 	}
-	return result
-}
 
-// GetStatusRecordKey returns the path from a clone status record
-func (h *AsdfHandler) GetStatusRecordKey(record interface{}) string {
-	if clone, ok := record.(CloneStatus); ok {
-		return clone.Path
-	}
-	return ""
-}
-
-// BuildUninstallRule creates an uninstall rule from asdf's clone status record
-func (h *AsdfHandler) BuildUninstallRule(record interface{}, osName string) parser.Rule {
-	if clone, ok := record.(CloneStatus); ok && clone.Path == "~/.asdf" {
-		return parser.Rule{
-			Action:    "uninstall",
-			ClonePath: clone.Path,
-			CloneURL:  clone.URL,
-			OSList:    []string{osName},
+	// If asdf is not in current rules but is in status, uninstall it
+	var rules []parser.Rule
+	if !asdfInCurrentRules && status.Clones != nil {
+		for _, clone := range status.Clones {
+			if clone.Path == "~/.asdf" {
+				normalizedStatusBlueprint := normalizePath(clone.Blueprint)
+				if normalizedStatusBlueprint == normalizedBlueprint && clone.OS == osName {
+					rules = append(rules, parser.Rule{
+						Action:    "uninstall",
+						ClonePath: clone.Path,
+						CloneURL:  clone.URL,
+						OSList:    []string{osName},
+					})
+				}
+			}
 		}
 	}
-	return parser.Rule{}
+
+	return rules
 }
 
 // succeededAsdfUninstall checks if asdf uninstall was successful

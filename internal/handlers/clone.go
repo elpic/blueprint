@@ -205,40 +205,36 @@ func (h *CloneHandler) GetDisplayDetails(isUninstall bool) string {
 	return h.Rule.ClonePath
 }
 
-// GetCurrentResourceKey returns the clone path as the identifying key
-func (h *CloneHandler) GetCurrentResourceKey() string {
-	return h.Rule.ClonePath
-}
+// FindUninstallRules compares clone status against current rules and returns uninstall rules
+func (h *CloneHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
+	normalizedBlueprint := normalizePath(blueprintFile)
 
-// GetStatusRecords returns all clone status records from the status
-func (h *CloneHandler) GetStatusRecords(status *Status) []interface{} {
-	if status.Clones == nil {
-		return []interface{}{}
-	}
-	result := make([]interface{}, len(status.Clones))
-	for i, clone := range status.Clones {
-		result[i] = clone
-	}
-	return result
-}
-
-// GetStatusRecordKey extracts the path from a clone status record
-func (h *CloneHandler) GetStatusRecordKey(record interface{}) string {
-	if clone, ok := record.(CloneStatus); ok {
-		return clone.Path
-	}
-	return ""
-}
-
-// BuildUninstallRule creates an uninstall rule from a clone status record
-func (h *CloneHandler) BuildUninstallRule(record interface{}, osName string) parser.Rule {
-	if clone, ok := record.(CloneStatus); ok {
-		return parser.Rule{
-			Action:    "uninstall",
-			ClonePath: clone.Path,
-			CloneURL:  clone.URL,
-			OSList:    []string{osName},
+	// Build set of current clone paths from clone rules
+	currentClonePaths := make(map[string]bool)
+	for _, rule := range currentRules {
+		if rule.Action == "clone" && rule.ClonePath != "" {
+			currentClonePaths[rule.ClonePath] = true
 		}
 	}
-	return parser.Rule{}
+
+	// Find clones to uninstall (in status but not in current rules)
+	var rules []parser.Rule
+	if status.Clones != nil {
+		for _, clone := range status.Clones {
+			normalizedStatusBlueprint := normalizePath(clone.Blueprint)
+			if normalizedStatusBlueprint == normalizedBlueprint && clone.OS == osName && !currentClonePaths[clone.Path] {
+				// Don't uninstall asdf which is handled by AsdfHandler
+				if clone.Path != "~/.asdf" {
+					rules = append(rules, parser.Rule{
+						Action:    "uninstall",
+						ClonePath: clone.Path,
+						CloneURL:  clone.URL,
+						OSList:    []string{osName},
+					})
+				}
+			}
+		}
+	}
+
+	return rules
 }

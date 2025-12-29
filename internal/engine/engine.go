@@ -746,12 +746,9 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 
 
 // getAutoUninstallRules compares status with current rules and generates uninstall rules for removed resources
-// Uses handler StatusProvider interface: any resource in status but not in current rules gets flagged for removal
+// Each handler's FindUninstallRules method encapsulates all status comparison logic
 func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osName string) []parser.Rule {
 	var autoUninstallRules []parser.Rule
-
-	// Normalize the blueprint file path for comparison
-	normalizedBlueprintFile := normalizePath(blueprintFile)
 
 	// Load status file to check for removed resources
 	statusPath, err := getStatusPath()
@@ -771,146 +768,32 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 		return autoUninstallRules
 	}
 
-	// Build current resource keys from rules for each handler type
-	currentPackages := extractCurrentKeys(currentRules, "install")
-	currentClones := extractCurrentKeys(currentRules, "clone")
-	currentDecrypts := extractCurrentKeys(currentRules, "decrypt")
-	currentMkdirs := extractCurrentKeys(currentRules, "mkdir")
-	currentKnownHosts := extractCurrentKeys(currentRules, "known_hosts")
-	currentGPGKeys := extractCurrentKeys(currentRules, "gpg-key")
-
-	// Helper function to build uninstall rules from removed resources
-	buildUninstallRulesForHandler := func(handler handlerskg.Handler, actionType string) []parser.Rule {
-		statusProvider, ok := handler.(handlerskg.StatusProvider)
-		if !ok {
-			return nil
-		}
-
-		var rules []parser.Rule
-		statusRecords := statusProvider.GetStatusRecords(&status)
-
-		for _, record := range statusRecords {
-			var shouldProcess bool
-			var recordKey string
-
-			// Extract blueprint and OS from status record, and get the key
-			switch r := record.(type) {
-			case handlerskg.PackageStatus:
-				shouldProcess = r.Blueprint == normalizedBlueprintFile && r.OS == osName
-				recordKey = r.Name
-			case handlerskg.CloneStatus:
-				shouldProcess = r.Blueprint == normalizedBlueprintFile && r.OS == osName
-				recordKey = r.Path
-			case handlerskg.DecryptStatus:
-				shouldProcess = r.Blueprint == normalizedBlueprintFile && r.OS == osName
-				recordKey = r.DestPath
-			case handlerskg.MkdirStatus:
-				shouldProcess = r.Blueprint == normalizedBlueprintFile && r.OS == osName
-				recordKey = r.Path
-			case handlerskg.KnownHostsStatus:
-				shouldProcess = r.Blueprint == normalizedBlueprintFile && r.OS == osName
-				recordKey = r.Host
-			case handlerskg.GPGKeyStatus:
-				shouldProcess = r.Blueprint == normalizedBlueprintFile && r.OS == osName
-				recordKey = r.Keyring
-			default:
-				continue
-			}
-
-			// Get the current keys map for this handler type
-			var currentKeys map[string]bool
-			switch actionType {
-			case "install":
-				currentKeys = currentPackages
-			case "clone":
-				currentKeys = currentClones
-			case "decrypt":
-				currentKeys = currentDecrypts
-			case "mkdir":
-				currentKeys = currentMkdirs
-			case "known_hosts":
-				currentKeys = currentKnownHosts
-			case "gpg-key":
-				currentKeys = currentGPGKeys
-			}
-
-			// If this resource is not in current rules, flag for uninstall
-			if shouldProcess && !currentKeys[recordKey] {
-				uninstallRule := statusProvider.BuildUninstallRule(record, osName)
-				if uninstallRule.Action != "" {
-					rules = append(rules, uninstallRule)
-				}
-			}
-		}
-
-		return rules
+	// Create handlers - each implements StatusProvider.FindUninstallRules
+	// which completely owns the logic for comparing its resources against current rules
+	handlers := []handlerskg.Handler{
+		handlerskg.NewInstallHandler(parser.Rule{}, ""),
+		handlerskg.NewCloneHandler(parser.Rule{}, ""),
+		handlerskg.NewDecryptHandler(parser.Rule{}, "", nil),
+		handlerskg.NewAsdfHandler(parser.Rule{}, ""),
+		handlerskg.NewMkdirHandler(parser.Rule{}, ""),
+		handlerskg.NewKnownHostsHandler(parser.Rule{}, ""),
+		handlerskg.NewGPGKeyHandler(parser.Rule{}, ""),
 	}
 
-	// Process each handler type using StatusProvider
-	handlers := []struct {
-		handler handlerskg.Handler
-		action  string
-	}{
-		{handler: handlerskg.NewInstallHandler(parser.Rule{}, ""), action: "install"},
-		{handler: handlerskg.NewCloneHandler(parser.Rule{}, ""), action: "clone"},
-		{handler: handlerskg.NewDecryptHandler(parser.Rule{}, "", nil), action: "decrypt"},
-		{handler: handlerskg.NewAsdfHandler(parser.Rule{}, ""), action: "asdf"},
-		{handler: handlerskg.NewMkdirHandler(parser.Rule{}, ""), action: "mkdir"},
-		{handler: handlerskg.NewKnownHostsHandler(parser.Rule{}, ""), action: "known_hosts"},
-		{handler: handlerskg.NewGPGKeyHandler(parser.Rule{}, ""), action: "gpg-key"},
-	}
-
-	for _, h := range handlers {
-		uninstallRules := buildUninstallRulesForHandler(h.handler, h.action)
-		autoUninstallRules = append(autoUninstallRules, uninstallRules...)
+	// Let each handler determine its own uninstall rules by comparing
+	// its status records against current rules
+	for _, handler := range handlers {
+		if statusProvider, ok := handler.(handlerskg.StatusProvider); ok {
+			uninstallRules := statusProvider.FindUninstallRules(&status, currentRules, blueprintFile, osName)
+			autoUninstallRules = append(autoUninstallRules, uninstallRules...)
+		}
 	}
 
 	return autoUninstallRules
 }
 
-// extractCurrentKeys builds a map of keys from current rules for a specific action type
-func extractCurrentKeys(rules []parser.Rule, actionType string) map[string]bool {
-	keys := make(map[string]bool)
-	for _, rule := range rules {
-		if rule.Action != actionType {
-			continue
-		}
-
-		switch actionType {
-		case "install":
-			for _, pkg := range rule.Packages {
-				keys[pkg.Name] = true
-			}
-		case "clone":
-			if rule.ClonePath != "" {
-				keys[rule.ClonePath] = true
-			}
-		case "decrypt":
-			if rule.DecryptPath != "" {
-				keys[rule.DecryptPath] = true
-			}
-		case "mkdir":
-			if rule.Mkdir != "" {
-				keys[rule.Mkdir] = true
-			}
-		case "known_hosts":
-			if rule.KnownHosts != "" {
-				keys[rule.KnownHosts] = true
-			}
-		case "gpg-key":
-			if rule.GPGKeyring != "" {
-				keys[rule.GPGKeyring] = true
-			}
-		case "asdf":
-			// asdf is tracked as ~/.asdf in clones status
-			keys["~/.asdf"] = true
-		}
-	}
-	return keys
-}
-
 // deleteRemovedClones checks status for cloned repos that are no longer in the blueprint and deletes them
-// Uses CloneHandler's StatusProvider interface to get clone status records
+// Uses CloneHandler's FindUninstallRules to identify clones to delete, then removes them from filesystem
 // Returns the count of deleted directories
 func deleteRemovedClones(currentRules []parser.Rule, blueprintFile string, osName string) int {
 	// Load status
@@ -935,72 +818,66 @@ func deleteRemovedClones(currentRules []parser.Rule, blueprintFile string, osNam
 	// Normalize the blueprint file path for comparison
 	normalizedBlueprintFile := normalizePath(blueprintFile)
 
-	// Get current clone paths from blueprint rules (including asdf which uses ~/.asdf)
-	currentClonePaths := extractCurrentKeys(currentRules, "clone")
-	// Add asdf clones to the current paths
-	asdfPaths := extractCurrentKeys(currentRules, "asdf")
-	for path := range asdfPaths {
-		currentClonePaths[path] = true
-	}
-
-	// Use CloneHandler's StatusProvider to get clone status records
+	// Use CloneHandler to find clones that should be removed
 	cloneHandler := handlerskg.NewCloneHandler(parser.Rule{}, "")
-	statusProvider := handlerskg.Handler(cloneHandler)
-	statusProviderInterface, ok := statusProvider.(handlerskg.StatusProvider)
+	var statusProvider handlerskg.StatusProvider
+	statusProvider, ok := handlerskg.Handler(cloneHandler).(handlerskg.StatusProvider)
 	if !ok {
 		return 0
 	}
 
-	// Find cloned directories to delete (in status but not in current rules)
-	var directoriesToDelete []handlerskg.CloneStatus
+	// Get uninstall rules for removed clones - this encapsulates all the logic
+	// for comparing clone status against current rules
+	uninstallRules := statusProvider.FindUninstallRules(&status, currentRules, blueprintFile, osName)
+
+	// Find the actual CloneStatus records from status.Clones that match the uninstall rules
+	// so we can delete them from the filesystem
+	var directoriesToDelete []string
 	var clonesToKeep []handlerskg.CloneStatus
 
-	// Get clone status records using the StatusProvider
-	statusRecords := statusProviderInterface.GetStatusRecords(&status)
-	for _, record := range statusRecords {
-		clone, ok := record.(handlerskg.CloneStatus)
-		if !ok {
-			continue
-		}
+	if status.Clones != nil {
+		for _, clone := range status.Clones {
+			normalizedStatusBlueprint := normalizePath(clone.Blueprint)
+			// Check if this clone is marked for deletion by comparing against uninstall rules
+			shouldDelete := false
+			for _, rule := range uninstallRules {
+				if rule.ClonePath == clone.Path {
+					shouldDelete = true
+					break
+				}
+			}
 
-		normalizedStatusBlueprint := normalizePath(clone.Blueprint)
-		// Only consider clones from this blueprint on this OS
-		if normalizedStatusBlueprint == normalizedBlueprintFile && clone.OS == osName {
-			// If this clone path is not in current rules, mark it for deletion
-			if !currentClonePaths[clone.Path] {
-				directoriesToDelete = append(directoriesToDelete, clone)
+			if shouldDelete && normalizedStatusBlueprint == normalizedBlueprintFile && clone.OS == osName {
+				directoriesToDelete = append(directoriesToDelete, clone.Path)
 			} else {
 				clonesToKeep = append(clonesToKeep, clone)
 			}
-		} else {
-			// Keep clones from other blueprints or OSes
-			clonesToKeep = append(clonesToKeep, clone)
 		}
 	}
 
 	// Delete the directories from filesystem and count deletions
 	deletedCount := 0
-	for _, cloneToDelete := range directoriesToDelete {
+	for _, path := range directoriesToDelete {
 		// Expand home directory
-		path := cloneToDelete.Path
-		if strings.HasPrefix(path, "~") {
+		expandedPath := path
+		if strings.HasPrefix(expandedPath, "~") {
 			usr, err := user.Current()
 			if err == nil {
-				path = strings.Replace(path, "~", usr.HomeDir, 1)
+				expandedPath = strings.Replace(expandedPath, "~", usr.HomeDir, 1)
 			}
 		}
 
 		// Delete the directory recursively
-		if err := os.RemoveAll(path); err == nil {
+		if err := os.RemoveAll(expandedPath); err == nil {
 			deletedCount++
 			fmt.Printf("%s Removed cloned directory: %s\n",
 				ui.FormatSuccess("✓"),
-				ui.FormatInfo(cloneToDelete.Path))
+				ui.FormatInfo(path))
 		} else {
 			// Log error for debugging
 			fmt.Printf("%s Failed to remove cloned directory %s: %v\n",
 				ui.FormatError("✗"),
-				ui.FormatInfo(cloneToDelete.Path),
+				ui.FormatInfo(path),
 				err)
 		}
 	}
@@ -1018,6 +895,7 @@ func deleteRemovedClones(currentRules []parser.Rule, blueprintFile string, osNam
 }
 
 // deleteRemovedDecryptFiles checks status for decrypted files that are no longer in the blueprint and deletes them
+// Uses DecryptHandler's FindUninstallRules to identify files to delete, then removes them from filesystem
 // Returns the count of deleted files
 func deleteRemovedDecryptFiles(currentRules []parser.Rule, blueprintFile string, osName string) int {
 	// Load status
@@ -1042,16 +920,21 @@ func deleteRemovedDecryptFiles(currentRules []parser.Rule, blueprintFile string,
 	// Normalize the blueprint file path for comparison
 	normalizedBlueprintFile := normalizePath(blueprintFile)
 
-	// Get current decrypt file paths from blueprint rules
-	currentDecryptPaths := make(map[string]bool)
-	for _, rule := range currentRules {
-		if rule.Action == "decrypt" {
-			currentDecryptPaths[rule.DecryptPath] = true
-		}
+	// Use DecryptHandler to find decrypted files that should be removed
+	decryptHandler := handlerskg.NewDecryptHandler(parser.Rule{}, "", nil)
+	var statusProvider handlerskg.StatusProvider
+	statusProvider, ok := handlerskg.Handler(decryptHandler).(handlerskg.StatusProvider)
+	if !ok {
+		return 0
 	}
 
-	// Find decrypted files to delete (in status but not in current rules)
-	var filesToDelete []DecryptStatus
+	// Get uninstall rules for removed decrypts - this encapsulates all the logic
+	// for comparing decrypt status against current rules
+	uninstallRules := statusProvider.FindUninstallRules(&status, currentRules, blueprintFile, osName)
+
+	// Find the actual DecryptStatus records from status.Decrypts that match the uninstall rules
+	// so we can delete them from the filesystem
+	var filesToDelete []string
 	var decryptsToKeep []DecryptStatus
 
 	// Handle nil decrypts slice
@@ -1061,34 +944,36 @@ func deleteRemovedDecryptFiles(currentRules []parser.Rule, blueprintFile string,
 
 	for _, decrypt := range status.Decrypts {
 		normalizedStatusBlueprint := normalizePath(decrypt.Blueprint)
-		// Only consider files from this blueprint on this OS
-		if normalizedStatusBlueprint == normalizedBlueprintFile && decrypt.OS == osName {
-			// If this file is not in current decrypt rules, mark it for deletion
-			if !currentDecryptPaths[decrypt.DestPath] {
-				filesToDelete = append(filesToDelete, decrypt)
-			} else {
-				decryptsToKeep = append(decryptsToKeep, decrypt)
+		// Check if this decrypt is marked for deletion by comparing against uninstall rules
+		shouldDelete := false
+		for _, rule := range uninstallRules {
+			if rule.DecryptPath == decrypt.DestPath {
+				shouldDelete = true
+				break
 			}
+		}
+
+		if shouldDelete && normalizedStatusBlueprint == normalizedBlueprintFile && decrypt.OS == osName {
+			filesToDelete = append(filesToDelete, decrypt.DestPath)
 		} else {
-			// Keep decrypts from other blueprints or OSes
 			decryptsToKeep = append(decryptsToKeep, decrypt)
 		}
 	}
 
 	// Delete the files from filesystem and count deletions
 	deletedCount := 0
-	for _, fileToDelete := range filesToDelete {
+	for _, path := range filesToDelete {
 		// Expand home directory
-		path := fileToDelete.DestPath
-		if strings.HasPrefix(path, "~") {
+		expandedPath := path
+		if strings.HasPrefix(expandedPath, "~") {
 			usr, err := user.Current()
 			if err == nil {
-				path = strings.Replace(path, "~", usr.HomeDir, 1)
+				expandedPath = strings.Replace(expandedPath, "~", usr.HomeDir, 1)
 			}
 		}
 
 		// Delete the file
-		if err := os.Remove(path); err == nil {
+		if err := os.Remove(expandedPath); err == nil {
 			deletedCount++
 		}
 		// Silently ignore errors (file might already be deleted)

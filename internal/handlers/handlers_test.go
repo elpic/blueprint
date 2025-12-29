@@ -210,50 +210,50 @@ func TestStatusProviderInterface(t *testing.T) {
 	tests := []struct {
 		name              string
 		handler           Handler
-		expectedRecords   int
-		expectedUninstall bool
+		currentRules      []parser.Rule
+		expectedRuleCount int
 	}{
 		{
-			name:              "InstallHandler provides status records",
+			name:              "InstallHandler implements StatusProvider",
 			handler:           NewInstallHandler(parser.Rule{Packages: []parser.Package{{Name: "vim"}}}, ""),
-			expectedRecords:   0, // No status records from empty status
-			expectedUninstall: true,
+			currentRules:      []parser.Rule{}, // No current rules means resources should be uninstalled
+			expectedRuleCount: 0,               // No uninstall rules from empty status
 		},
 		{
-			name:              "CloneHandler provides status records",
+			name:              "CloneHandler implements StatusProvider",
 			handler:           NewCloneHandler(parser.Rule{ClonePath: "~/repo"}, ""),
-			expectedRecords:   0,
-			expectedUninstall: true,
+			currentRules:      []parser.Rule{},
+			expectedRuleCount: 0,
 		},
 		{
-			name:              "DecryptHandler provides status records",
+			name:              "DecryptHandler implements StatusProvider",
 			handler:           NewDecryptHandler(parser.Rule{DecryptPath: "~/.ssh/key"}, "", nil),
-			expectedRecords:   0,
-			expectedUninstall: true,
+			currentRules:      []parser.Rule{},
+			expectedRuleCount: 0,
 		},
 		{
-			name:              "AsdfHandler provides status records",
+			name:              "AsdfHandler implements StatusProvider",
 			handler:           NewAsdfHandler(parser.Rule{Action: "asdf"}, ""),
-			expectedRecords:   0,
-			expectedUninstall: true,
+			currentRules:      []parser.Rule{},
+			expectedRuleCount: 0,
 		},
 		{
-			name:              "MkdirHandler provides status records",
+			name:              "MkdirHandler implements StatusProvider",
 			handler:           NewMkdirHandler(parser.Rule{Mkdir: "~/projects"}, ""),
-			expectedRecords:   0,
-			expectedUninstall: true,
+			currentRules:      []parser.Rule{},
+			expectedRuleCount: 0,
 		},
 		{
-			name:              "KnownHostsHandler provides status records",
+			name:              "KnownHostsHandler implements StatusProvider",
 			handler:           NewKnownHostsHandler(parser.Rule{KnownHosts: "github.com"}, ""),
-			expectedRecords:   0,
-			expectedUninstall: true,
+			currentRules:      []parser.Rule{},
+			expectedRuleCount: 0,
 		},
 		{
-			name:              "GPGKeyHandler provides status records",
+			name:              "GPGKeyHandler implements StatusProvider",
 			handler:           NewGPGKeyHandler(parser.Rule{GPGKeyring: "ubuntu"}, ""),
-			expectedRecords:   0,
-			expectedUninstall: true,
+			currentRules:      []parser.Rule{},
+			expectedRuleCount: 0,
 		},
 	}
 
@@ -266,24 +266,11 @@ func TestStatusProviderInterface(t *testing.T) {
 				return
 			}
 
-			// Verify GetCurrentResourceKey returns a non-empty key
-			key := statusProvider.GetCurrentResourceKey()
-			if key == "" {
-				t.Errorf("GetCurrentResourceKey() returned empty string")
-			}
-
-			// Verify GetStatusRecords works with empty status
+			// Verify FindUninstallRules method works with empty status
 			emptyStatus := &Status{}
-			records := statusProvider.GetStatusRecords(emptyStatus)
-			if len(records) != tt.expectedRecords {
-				t.Errorf("GetStatusRecords(empty) = %d records, want %d", len(records), tt.expectedRecords)
-			}
-
-			// Verify BuildUninstallRule creates a valid rule
-			if tt.expectedUninstall {
-				// Get a mock record (just check that BuildUninstallRule doesn't panic)
-				// We can't easily create a status record here, so just verify the method exists
-				// by checking if it's callable (which we've already done via the interface)
+			rules := statusProvider.FindUninstallRules(emptyStatus, tt.currentRules, "/tmp/test.bp", "mac")
+			if len(rules) != tt.expectedRuleCount {
+				t.Errorf("FindUninstallRules(empty) = %d rules, want %d", len(rules), tt.expectedRuleCount)
 			}
 		})
 	}
