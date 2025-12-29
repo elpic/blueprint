@@ -261,8 +261,3 @@ func Run(file string, dry bool) {
 		}
 	}
 }
-func executeRules(rules []parser.Rule, blueprint string, osName string, basePath string, runNumber int) []ExecutionRecord {
-	// Use the refactored version with handlers
-	return executeRulesWithHandlers(rules, blueprint, osName, basePath, runNumber)
-}
-

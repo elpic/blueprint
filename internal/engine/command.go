@@ -99,9 +99,9 @@ func executeCommand(cmdStr string) (string, error) {
 	return string(output), err
 }
 
-// executeRulesWithHandlers executes rules using the handler pattern
+// executeRules executes rules using the handler pattern
 
-func executeRulesWithHandlers(rules []parser.Rule, blueprint string, osName string, basePath string, runNumber int) []ExecutionRecord {
+func executeRules(rules []parser.Rule, blueprint string, osName string, basePath string, runNumber int) []ExecutionRecord {
 	var records []ExecutionRecord
 
 	// Set up the handler package with our executeCommand function
