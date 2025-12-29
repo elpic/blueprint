@@ -768,17 +768,8 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 		return autoUninstallRules
 	}
 
-	// Create handlers - each implements StatusProvider.FindUninstallRules
-	// which completely owns the logic for comparing its resources against current rules
-	handlers := []handlerskg.Handler{
-		handlerskg.NewInstallHandler(parser.Rule{}, ""),
-		handlerskg.NewCloneHandler(parser.Rule{}, ""),
-		handlerskg.NewDecryptHandler(parser.Rule{}, "", nil),
-		handlerskg.NewAsdfHandler(parser.Rule{}, ""),
-		handlerskg.NewMkdirHandler(parser.Rule{}, ""),
-		handlerskg.NewKnownHostsHandler(parser.Rule{}, ""),
-		handlerskg.NewGPGKeyHandler(parser.Rule{}, ""),
-	}
+	// Get all status provider handlers from the factory (single place where handlers are instantiated)
+	handlers := handlerskg.GetStatusProviderHandlers()
 
 	// Let each handler determine its own uninstall rules by comparing
 	// its status records against current rules

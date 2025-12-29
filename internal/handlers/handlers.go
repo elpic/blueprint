@@ -281,6 +281,21 @@ func GetHandlerFactory(action string) HandlerFactory {
 	return factories[action]
 }
 
+// GetStatusProviderHandlers returns all handler instances that implement StatusProvider
+// This is the single place where all handler instantiation happens for status comparisons
+// Used by engine for getAutoUninstallRules and other status-related operations
+func GetStatusProviderHandlers() []Handler {
+	return []Handler{
+		NewInstallHandler(parser.Rule{}, ""),
+		NewCloneHandler(parser.Rule{}, ""),
+		NewDecryptHandler(parser.Rule{}, "", nil),
+		NewAsdfHandler(parser.Rule{}, ""),
+		NewMkdirHandler(parser.Rule{}, ""),
+		NewKnownHostsHandler(parser.Rule{}, ""),
+		NewGPGKeyHandler(parser.Rule{}, ""),
+	}
+}
+
 // Shared utility functions for status management
 
 // normalizePath normalizes a file path to an absolute path for consistent comparison
