@@ -15,44 +15,6 @@ import (
 	"time"
 )
 
-func buildCommand(rule parser.Rule) string {
-	if len(rule.Packages) == 0 {
-		return fmt.Sprintf("%s %v", rule.Action, rule.Packages)
-	}
-
-	pkgNames := ""
-	for i, pkg := range rule.Packages {
-		if i > 0 {
-			pkgNames += " "
-		}
-		pkgNames += pkg.Name
-	}
-
-	// Determine target OS: use first in OSList if specified, otherwise use current OS
-	targetOS := getOSName()
-	if len(rule.OSList) > 0 {
-		targetOS = strings.TrimSpace(rule.OSList[0])
-	}
-
-	switch rule.Action {
-	case "install":
-		// Use brew for macOS, apt for Linux
-		if targetOS == "mac" {
-			return fmt.Sprintf("brew install %s", pkgNames)
-		}
-		return fmt.Sprintf("apt-get install -y %s", pkgNames)
-	case "uninstall":
-		// Uninstall commands
-		if targetOS == "mac" {
-			return fmt.Sprintf("brew uninstall -y %s", pkgNames)
-		}
-		return fmt.Sprintf("apt-get remove -y %s", pkgNames)
-	}
-
-	return fmt.Sprintf("%s %v", rule.Action, rule.Packages)
-}
-
-
 func needsSudo(command string) bool {
 	// Only on Linux
 	if runtime.GOOS != "linux" {
