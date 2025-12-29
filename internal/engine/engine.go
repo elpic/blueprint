@@ -99,23 +99,14 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 	currentOS := getOSName()
 
 	// Check history and add auto-uninstall rules for removed packages
+	// Handlers will manage cleanup via Down() and status updates via UpdateStatus()
 	autoUninstallRules := getAutoUninstallRules(filteredRules, file, currentOS)
 	allRules := append(filteredRules, autoUninstallRules...)
 
-	// Delete cloned repos and decrypted files only if not using skip options
+	// Count cleanup operations only when not using skip options
 	var numCleanups int
 	if skipGroup == "" && skipID == "" {
-		numClonedDeletions := deleteRemovedClones(filteredRules, file, currentOS)
-		numDecryptedDeletions := deleteRemovedDecryptFiles(filteredRules, file, currentOS)
-
-		// Count uninstall rules as cleanups
-		numUninstalls := 0
-		for _, rule := range autoUninstallRules {
-			if rule.Action == "uninstall" {
-				numUninstalls++
-			}
-		}
-		numCleanups = numClonedDeletions + numDecryptedDeletions + numUninstalls
+		numCleanups = len(autoUninstallRules)
 	}
 
 	// Extract base directory from setupPath for resolving relative file paths
@@ -207,21 +198,12 @@ func Run(file string, dry bool) {
 	currentOS := getOSName()
 
 	// Check history and add auto-uninstall rules for removed packages
+	// Handlers will manage cleanup via Down() and status updates via UpdateStatus()
 	autoUninstallRules := getAutoUninstallRules(filteredRules, file, currentOS)
 	allRules := append(filteredRules, autoUninstallRules...)
 
-	// Delete cloned repos and decrypted files that are no longer in the blueprint
-	numClonedDeletions := deleteRemovedClones(filteredRules, file, currentOS)
-	numDecryptedDeletions := deleteRemovedDecryptFiles(filteredRules, file, currentOS)
-
-	// Count uninstall rules as cleanups
-	numUninstalls := 0
-	for _, rule := range autoUninstallRules {
-		if rule.Action == "uninstall" {
-			numUninstalls++
-		}
-	}
-	numCleanups := numClonedDeletions + numDecryptedDeletions + numUninstalls
+	// Count cleanup operations (auto-uninstall rules for removed resources)
+	numCleanups := len(autoUninstallRules)
 
 	// Extract base directory from setupPath for resolving relative file paths
 	basePath := filepath.Dir(setupPath)
