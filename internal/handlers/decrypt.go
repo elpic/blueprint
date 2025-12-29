@@ -213,6 +213,14 @@ func (h *DecryptHandler) DisplayStatus(decrypts []DecryptStatus) {
 	}
 }
 
+// DisplayStatusFromStatus displays decrypt handler status from Status object
+func (h *DecryptHandler) DisplayStatusFromStatus(status *Status) {
+	if status == nil || status.Decrypts == nil {
+		return
+	}
+	h.DisplayStatus(status.Decrypts)
+}
+
 // GetDependencyKey returns the unique key for this rule in dependency resolution
 func (h *DecryptHandler) GetDependencyKey() string {
 	return getDependencyKey(h.Rule, h.Rule.DecryptPath)

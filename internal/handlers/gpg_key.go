@@ -187,6 +187,14 @@ func (h *GPGKeyHandler) DisplayStatus(keys []GPGKeyStatus) {
 	}
 }
 
+// DisplayStatusFromStatus displays GPG key handler status from Status object
+func (h *GPGKeyHandler) DisplayStatusFromStatus(status *Status) {
+	if status == nil || status.GPGKeys == nil {
+		return
+	}
+	h.DisplayStatus(status.GPGKeys)
+}
+
 // GetDependencyKey returns the unique key for this rule in dependency resolution
 func (h *GPGKeyHandler) GetDependencyKey() string {
 	return getDependencyKey(h.Rule, h.Rule.GPGKeyring)

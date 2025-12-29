@@ -195,6 +195,14 @@ func (h *CloneHandler) DisplayStatus(clones []CloneStatus) {
 	}
 }
 
+// DisplayStatusFromStatus displays clone handler status from Status object
+func (h *CloneHandler) DisplayStatusFromStatus(status *Status) {
+	if status == nil || status.Clones == nil {
+		return
+	}
+	h.DisplayStatus(status.Clones)
+}
+
 // GetDependencyKey returns the unique key for this rule in dependency resolution
 func (h *CloneHandler) GetDependencyKey() string {
 	return getDependencyKey(h.Rule, h.Rule.ClonePath)

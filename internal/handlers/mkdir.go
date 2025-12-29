@@ -245,6 +245,14 @@ func (h *MkdirHandler) DisplayStatus(mkdirs []MkdirStatus) {
 	}
 }
 
+// DisplayStatusFromStatus displays mkdir handler status from Status object
+func (h *MkdirHandler) DisplayStatusFromStatus(status *Status) {
+	if status == nil || status.Mkdirs == nil {
+		return
+	}
+	h.DisplayStatus(status.Mkdirs)
+}
+
 // GetDependencyKey returns the unique key for this rule in dependency resolution
 func (h *MkdirHandler) GetDependencyKey() string {
 	return getDependencyKey(h.Rule, h.Rule.Mkdir)

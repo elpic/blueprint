@@ -230,6 +230,14 @@ func (h *InstallHandler) DisplayStatus(packages []PackageStatus) {
 	}
 }
 
+// DisplayStatusFromStatus displays install handler status from Status object
+func (h *InstallHandler) DisplayStatusFromStatus(status *Status) {
+	if status == nil || status.Packages == nil {
+		return
+	}
+	h.DisplayStatus(status.Packages)
+}
+
 // GetDependencyKey returns the unique key for this rule in dependency resolution
 func (h *InstallHandler) GetDependencyKey() string {
 	fallback := "install"

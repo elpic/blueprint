@@ -240,26 +240,21 @@ func PrintStatus() {
 	// Display header
 	fmt.Printf("\n%s\n", ui.FormatHighlight("=== Blueprint Status ==="))
 
-	// Use handlers to display their respective status
-	installHandler := &handlerskg.InstallHandler{}
-	installHandler.DisplayStatus(status.Packages)
+	// Use handler factory to display status from all handler types
+	// Each handler knows how to display its own status data
+	hasAnyStatus := false
+	handlers := handlerskg.GetStatusProviderHandlers()
+	for _, handler := range handlers {
+		// Type assert to StatusDisplay interface if handler implements it
+		if displayHandler, ok := handler.(interface {
+			DisplayStatusFromStatus(status *handlerskg.Status)
+		}); ok {
+			displayHandler.DisplayStatusFromStatus(&status)
+			hasAnyStatus = true
+		}
+	}
 
-	cloneHandler := &handlerskg.CloneHandler{}
-	cloneHandler.DisplayStatus(status.Clones)
-
-	decryptHandler := &handlerskg.DecryptHandler{}
-	decryptHandler.DisplayStatus(status.Decrypts)
-
-	mkdirHandler := &handlerskg.MkdirHandler{}
-	mkdirHandler.DisplayStatus(status.Mkdirs)
-
-	knownHostsHandler := &handlerskg.KnownHostsHandler{}
-	knownHostsHandler.DisplayStatus(status.KnownHosts)
-
-	gpgKeyHandler := &handlerskg.GPGKeyHandler{}
-	gpgKeyHandler.DisplayStatus(status.GPGKeys)
-
-	if len(status.Packages) == 0 && len(status.Clones) == 0 && len(status.Decrypts) == 0 && len(status.Mkdirs) == 0 && len(status.KnownHosts) == 0 && len(status.GPGKeys) == 0 {
+	if !hasAnyStatus {
 		fmt.Printf("\n%s\n", ui.FormatInfo("No packages, repositories, decrypted files, directories, known hosts, or GPG keys created"))
 	}
 

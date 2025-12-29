@@ -273,6 +273,14 @@ func (h *KnownHostsHandler) DisplayStatus(hosts []KnownHostsStatus) {
 	}
 }
 
+// DisplayStatusFromStatus displays known hosts handler status from Status object
+func (h *KnownHostsHandler) DisplayStatusFromStatus(status *Status) {
+	if status == nil || status.KnownHosts == nil {
+		return
+	}
+	h.DisplayStatus(status.KnownHosts)
+}
+
 // GetDependencyKey returns the unique key for this rule in dependency resolution
 func (h *KnownHostsHandler) GetDependencyKey() string {
 	return getDependencyKey(h.Rule, h.Rule.KnownHosts)
