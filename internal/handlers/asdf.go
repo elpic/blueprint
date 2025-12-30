@@ -359,6 +359,47 @@ func (h *AsdfHandler) DisplayInfo() {
 	}
 }
 
+// DisplayStatusFromStatus displays asdf handler status from Status object
+// Asdf is tracked in status.Clones with path ~/.asdf, so we filter for that entry
+func (h *AsdfHandler) DisplayStatusFromStatus(status *Status) {
+	if status == nil || status.Clones == nil {
+		return
+	}
+
+	// Find the asdf clone entry (path ~/.asdf)
+	var asdfClones []CloneStatus
+	for _, clone := range status.Clones {
+		if clone.Path == "~/.asdf" {
+			asdfClones = append(asdfClones, clone)
+		}
+	}
+
+	if len(asdfClones) == 0 {
+		return
+	}
+
+	// Display asdf installations separately from regular clones
+	fmt.Printf("\n%s\n", ui.FormatHighlight("ASDF Version Manager:"))
+	for _, clone := range asdfClones {
+		// Parse timestamp for display
+		t, err := time.Parse(time.RFC3339, clone.ClonedAt)
+		var timeStr string
+		if err == nil {
+			timeStr = t.Format("2006-01-02 15:04:05")
+		} else {
+			timeStr = clone.ClonedAt
+		}
+
+		fmt.Printf("  %s %s (%s) [%s, %s]\n",
+			ui.FormatSuccess("●"),
+			ui.FormatInfo(clone.Path),
+			ui.FormatDim(timeStr),
+			ui.FormatDim(clone.OS),
+			ui.FormatDim(abbreviateBlueprintPath(clone.Blueprint)),
+		)
+	}
+}
+
 // GetDependencyKey returns the unique key for this rule in dependency resolution
 func (h *AsdfHandler) GetDependencyKey() string {
 	fallback := "asdf"

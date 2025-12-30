@@ -170,8 +170,20 @@ func (h *CloneHandler) DisplayStatus(clones []CloneStatus) {
 		return
 	}
 
-	fmt.Printf("\n%s\n", ui.FormatHighlight("Cloned Repositories:"))
+	// Filter out ~/.asdf (handled by AsdfHandler)
+	var regularClones []CloneStatus
 	for _, clone := range clones {
+		if clone.Path != "~/.asdf" {
+			regularClones = append(regularClones, clone)
+		}
+	}
+
+	if len(regularClones) == 0 {
+		return
+	}
+
+	fmt.Printf("\n%s\n", ui.FormatHighlight("Cloned Repositories:"))
+	for _, clone := range regularClones {
 		// Parse timestamp for display
 		t, err := time.Parse(time.RFC3339, clone.ClonedAt)
 		var timeStr string
