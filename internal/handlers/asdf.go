@@ -43,6 +43,10 @@ func (h *AsdfHandler) Up() (string, error) {
 	}
 
 	// Install plugins and versions
+	// Build a single shell command that sources asdf first, then installs all packages
+	// This ensures asdf is available even if freshly installed
+	var allCmds []string
+
 	for _, pkg := range h.Rule.AsdfPackages {
 		parts := strings.Split(pkg, "@")
 		if len(parts) != 2 {
@@ -60,20 +64,21 @@ func (h *AsdfHandler) Up() (string, error) {
 			return "", fmt.Errorf("invalid version: %s (contains invalid characters)", version)
 		}
 
-		// Add plugin
-		addPluginCmd := fmt.Sprintf("asdf plugin add %s 2>/dev/null || true", plugin)
-		_ = exec.Command("sh", "-c", addPluginCmd).Run() // Continue even if plugin add fails (might already exist)
+		// Add each command to the list
+		allCmds = append(allCmds,
+			fmt.Sprintf("asdf plugin add %s 2>/dev/null || true", plugin),
+			fmt.Sprintf("asdf install %s %s", plugin, version),
+			fmt.Sprintf("asdf local %s %s", plugin, version),
+		)
+	}
 
-		// Install version
-		installCmd := fmt.Sprintf("asdf install %s %s", plugin, version)
-		if err := exec.Command("sh", "-c", installCmd).Run(); err != nil {
-			return "", fmt.Errorf("failed to install %s@%s: %w", plugin, version, err)
-		}
-
-		// Set local version
-		setCmd := fmt.Sprintf("asdf local %s %s", plugin, version)
-		if err := exec.Command("sh", "-c", setCmd).Run(); err != nil {
-			return "", fmt.Errorf("failed to set %s version to %s: %w", plugin, version, err)
+	// Execute all commands in a single shell session with asdf sourced once
+	if len(allCmds) > 0 {
+		// Source bashrc once at the beginning to make asdf available for all commands
+		combinedCmd := strings.Join(allCmds, " && ")
+		fullCmd := fmt.Sprintf(". ~/.bashrc 2>/dev/null || true && %s", combinedCmd)
+		if err := exec.Command("sh", "-c", fullCmd).Run(); err != nil {
+			return "", fmt.Errorf("failed to install asdf packages: %w", err)
 		}
 	}
 
