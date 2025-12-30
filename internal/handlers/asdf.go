@@ -430,8 +430,12 @@ func (h *AsdfHandler) GetDependencyKey() string {
 	return getDependencyKey(h.Rule, fallback)
 }
 
-// GetDisplayDetails returns "asdf" to display during execution
+// GetDisplayDetails returns the packages to display during execution
+// Shows comma-separated package@version pairs (e.g., "node@18, python@3.11")
 func (h *AsdfHandler) GetDisplayDetails(isUninstall bool) string {
+	if len(h.Rule.AsdfPackages) > 0 {
+		return strings.Join(h.Rule.AsdfPackages, ", ")
+	}
 	return "asdf"
 }
 
