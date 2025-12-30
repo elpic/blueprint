@@ -65,10 +65,10 @@ func (h *AsdfHandler) Up() (string, error) {
 		}
 
 		// Add each command to the list
+		// Only add plugin and install version, don't set local version
 		allCmds = append(allCmds,
 			fmt.Sprintf("asdf plugin add %s 2>/dev/null || true", plugin),
 			fmt.Sprintf("asdf install %s %s", plugin, version),
-			fmt.Sprintf("asdf local %s %s", plugin, version),
 		)
 	}
 
@@ -108,25 +108,22 @@ func (h *AsdfHandler) Down() (string, error) {
 		// Uninstall version
 		uninstallCmd := fmt.Sprintf("asdf uninstall %s %s", plugin, version)
 		_ = exec.Command("sh", "-c", uninstallCmd).Run() // Continue even if uninstall fails
-	}
 
-	// Remove plugins
-	for _, pkg := range h.Rule.AsdfPackages {
-		parts := strings.Split(pkg, "@")
-		if len(parts) != 2 {
-			continue
+		// Check if there are any other versions of this plugin installed
+		// Only remove the plugin if no other versions exist
+		checkCmd := fmt.Sprintf(". ~/.bashrc 2>/dev/null || true && asdf list %s 2>/dev/null | grep -v '^ ' | wc -l", plugin)
+		output, err := exec.Command("sh", "-c", checkCmd).Output()
+		if err == nil {
+			// Count of installed versions (excluding system version)
+			versionCount := 0
+			fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &versionCount)
+
+			// If no other versions exist, remove the plugin
+			if versionCount == 0 {
+				removeCmd := fmt.Sprintf(". ~/.bashrc 2>/dev/null || true && asdf plugin remove %s 2>/dev/null || true", plugin)
+				_ = exec.Command("sh", "-c", removeCmd).Run() // Continue even if remove fails
+			}
 		}
-
-		plugin := strings.TrimSpace(parts[0])
-
-		// Validate plugin name
-		if !isValidAsdfIdentifier(plugin) {
-			continue
-		}
-
-		// Remove plugin
-		removeCmd := fmt.Sprintf("asdf plugin remove %s 2>/dev/null || true", plugin)
-		_ = exec.Command("sh", "-c", removeCmd).Run() // Continue even if remove fails
 	}
 
 	// Uninstall asdf completely
