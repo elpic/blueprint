@@ -332,6 +332,26 @@ func (h *AsdfHandler) UpdateStatus(status *Status, records []ExecutionRecord, bl
 				Blueprint: blueprint,
 				OS:        osName,
 			})
+
+			// Also store individual asdf packages/plugins
+			// Clear existing entries for this blueprint/OS
+			status.Asdfs = removeAsdfStatus(status.Asdfs, "", blueprint, osName)
+
+			// Add new entries for each package
+			for _, pkg := range h.Rule.AsdfPackages {
+				parts := strings.Split(pkg, "@")
+				if len(parts) == 2 {
+					plugin := strings.TrimSpace(parts[0])
+					version := strings.TrimSpace(parts[1])
+					status.Asdfs = append(status.Asdfs, AsdfStatus{
+						Plugin:      plugin,
+						Version:     version,
+						InstalledAt: time.Now().Format(time.RFC3339),
+						Blueprint:   blueprint,
+						OS:          osName,
+					})
+				}
+			}
 		}
 	} else if h.Rule.Action == "uninstall" && DetectRuleType(h.Rule) == "asdf" {
 		// Check if asdf was uninstalled successfully
@@ -339,6 +359,8 @@ func (h *AsdfHandler) UpdateStatus(status *Status, records []ExecutionRecord, bl
 			// Remove asdf from status
 			asdfPath := "~/.asdf"
 			status.Clones = removeCloneStatus(status.Clones, asdfPath, blueprint, osName)
+			// Also remove all asdf packages for this blueprint/OS
+			status.Asdfs = removeAsdfStatus(status.Asdfs, "", blueprint, osName)
 		}
 	}
 
@@ -360,43 +382,38 @@ func (h *AsdfHandler) DisplayInfo() {
 }
 
 // DisplayStatusFromStatus displays asdf handler status from Status object
-// Asdf is tracked in status.Clones with path ~/.asdf, so we filter for that entry
+// Displays both the asdf installation and the individual plugins/versions installed
 func (h *AsdfHandler) DisplayStatusFromStatus(status *Status) {
-	if status == nil || status.Clones == nil {
+	if status == nil {
 		return
 	}
 
-	// Find the asdf clone entry (path ~/.asdf)
-	var asdfClones []CloneStatus
-	for _, clone := range status.Clones {
-		if clone.Path == "~/.asdf" {
-			asdfClones = append(asdfClones, clone)
+	// Display asdf installation header if there are any asdf entries
+	if status.Asdfs != nil && len(status.Asdfs) > 0 {
+		fmt.Printf("\n%s\n", ui.FormatHighlight("ASDF Version Manager:"))
+
+		// Group packages by their installation date (usually all at once)
+		// Display each installed plugin/version
+		for _, asdf := range status.Asdfs {
+			// Parse timestamp for display
+			t, err := time.Parse(time.RFC3339, asdf.InstalledAt)
+			var timeStr string
+			if err == nil {
+				timeStr = t.Format("2006-01-02 15:04:05")
+			} else {
+				timeStr = asdf.InstalledAt
+			}
+
+			// Display plugin@version format
+			pluginVersion := fmt.Sprintf("%s@%s", asdf.Plugin, asdf.Version)
+			fmt.Printf("  %s %s (%s) [%s, %s]\n",
+				ui.FormatSuccess("●"),
+				ui.FormatInfo(pluginVersion),
+				ui.FormatDim(timeStr),
+				ui.FormatDim(asdf.OS),
+				ui.FormatDim(abbreviateBlueprintPath(asdf.Blueprint)),
+			)
 		}
-	}
-
-	if len(asdfClones) == 0 {
-		return
-	}
-
-	// Display asdf installations separately from regular clones
-	fmt.Printf("\n%s\n", ui.FormatHighlight("ASDF Version Manager:"))
-	for _, clone := range asdfClones {
-		// Parse timestamp for display
-		t, err := time.Parse(time.RFC3339, clone.ClonedAt)
-		var timeStr string
-		if err == nil {
-			timeStr = t.Format("2006-01-02 15:04:05")
-		} else {
-			timeStr = clone.ClonedAt
-		}
-
-		fmt.Printf("  %s %s (%s) [%s, %s]\n",
-			ui.FormatSuccess("●"),
-			ui.FormatInfo(clone.Path),
-			ui.FormatDim(timeStr),
-			ui.FormatDim(clone.OS),
-			ui.FormatDim(abbreviateBlueprintPath(clone.Blueprint)),
-		)
 	}
 }
 

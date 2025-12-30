@@ -74,6 +74,15 @@ type GPGKeyStatus struct {
 	OS        string `json:"os"`
 }
 
+// AsdfStatus tracks installed asdf plugins/versions
+type AsdfStatus struct {
+	Plugin      string `json:"plugin"`
+	Version     string `json:"version"`
+	InstalledAt string `json:"installed_at"`
+	Blueprint   string `json:"blueprint"`
+	OS          string `json:"os"`
+}
+
 // Status represents the current blueprint state
 type Status struct {
 	Packages   []PackageStatus    `json:"packages"`
@@ -82,6 +91,7 @@ type Status struct {
 	Mkdirs     []MkdirStatus      `json:"mkdirs"`
 	KnownHosts []KnownHostsStatus `json:"known_hosts"`
 	GPGKeys    []GPGKeyStatus     `json:"gpg_keys"`
+	Asdfs      []AsdfStatus       `json:"asdfs"`
 }
 
 // Handler is the interface that all command handlers must implement
@@ -392,6 +402,28 @@ func removeGPGKeyStatus(gpgKeys []GPGKeyStatus, keyring string, blueprint string
 		normalizedStoredBlueprint := normalizePath(gk.Blueprint)
 		if gk.Keyring != keyring || normalizedStoredBlueprint != normalizedBlueprint || gk.OS != osName {
 			result = append(result, gk)
+		}
+	}
+	return result
+}
+
+// removeAsdfStatus removes asdf packages from the status asdfs list
+// If plugin is empty string, removes all asdf entries for the given blueprint/OS
+func removeAsdfStatus(asdfs []AsdfStatus, plugin string, blueprint string, osName string) []AsdfStatus {
+	var result []AsdfStatus
+	normalizedBlueprint := normalizePath(blueprint)
+	for _, asdf := range asdfs {
+		normalizedStoredBlueprint := normalizePath(asdf.Blueprint)
+		// If plugin is empty, remove all entries for this blueprint/OS
+		// Otherwise, remove only the specific plugin entry
+		if plugin == "" {
+			if normalizedStoredBlueprint != normalizedBlueprint || asdf.OS != osName {
+				result = append(result, asdf)
+			}
+		} else {
+			if asdf.Plugin != plugin || normalizedStoredBlueprint != normalizedBlueprint || asdf.OS != osName {
+				result = append(result, asdf)
+			}
 		}
 	}
 	return result
