@@ -464,14 +464,10 @@ func parseAsdfRule(line string) *Rule {
 	// If no ID is provided, generate a unique ID based on the first package
 	if id == "" {
 		if len(asdfPackages) > 0 {
-			// Extract plugin name from first package (e.g., "node" from "node@18")
+			// Use the full package (plugin@version) to ensure uniqueness
+			// e.g., "node@18" becomes "asdf-node@18"
 			firstPkg := asdfPackages[0]
-			if parts := strings.Split(firstPkg, "@"); len(parts) > 0 {
-				pluginName := strings.TrimSpace(parts[0])
-				id = fmt.Sprintf("asdf-%s", pluginName)
-			} else {
-				id = fmt.Sprintf("asdf-%s", firstPkg)
-			}
+			id = fmt.Sprintf("asdf-%s", firstPkg)
 		} else {
 			// Fallback if no packages (shouldn't happen)
 			id = "asdf"
