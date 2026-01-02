@@ -319,30 +319,58 @@ func (h *AsdfHandler) UpdateStatus(status *Status, records []ExecutionRecord, bl
 
 		if commandExecuted {
 			// Store individual asdf packages/plugins in dedicated status
-			// Clear existing entries for this blueprint/OS
-			status.Asdfs = removeAsdfStatus(status.Asdfs, "", blueprint, osName)
-
-			// Add new entries for each package
+			// Just add entries for each package (don't remove, to allow multiple versions per plugin)
 			for _, pkg := range h.Rule.AsdfPackages {
 				parts := strings.Split(pkg, "@")
 				if len(parts) == 2 {
 					plugin := strings.TrimSpace(parts[0])
 					version := strings.TrimSpace(parts[1])
-					status.Asdfs = append(status.Asdfs, AsdfStatus{
-						Plugin:      plugin,
-						Version:     version,
-						InstalledAt: time.Now().Format(time.RFC3339),
-						Blueprint:   blueprint,
-						OS:          osName,
-					})
+
+					// Check if this exact plugin@version already exists
+					exists := false
+					for _, asdf := range status.Asdfs {
+						if asdf.Plugin == plugin && asdf.Version == version &&
+							normalizePath(asdf.Blueprint) == blueprint && asdf.OS == osName {
+							exists = true
+							break
+						}
+					}
+
+					// Only add if it doesn't already exist
+					if !exists {
+						status.Asdfs = append(status.Asdfs, AsdfStatus{
+							Plugin:      plugin,
+							Version:     version,
+							InstalledAt: time.Now().Format(time.RFC3339),
+							Blueprint:   blueprint,
+							OS:          osName,
+						})
+					}
 				}
 			}
 		}
 	} else if h.Rule.Action == "uninstall" && DetectRuleType(h.Rule) == "asdf" {
 		// Check if asdf was uninstalled successfully
 		if succeededAsdfUninstall(records) {
-			// Remove all asdf packages for this blueprint/OS
-			status.Asdfs = removeAsdfStatus(status.Asdfs, "", blueprint, osName)
+			// Remove only the specific packages (plugin@version) specified in this rule
+			for _, pkg := range h.Rule.AsdfPackages {
+				parts := strings.Split(pkg, "@")
+				if len(parts) == 2 {
+					plugin := strings.TrimSpace(parts[0])
+					version := strings.TrimSpace(parts[1])
+
+					// Remove this specific plugin@version entry
+					var newAsdfs []AsdfStatus
+					for _, asdf := range status.Asdfs {
+						// Keep all entries that are NOT this specific plugin@version
+						if !(asdf.Plugin == plugin && asdf.Version == version &&
+							normalizePath(asdf.Blueprint) == blueprint && asdf.OS == osName) {
+							newAsdfs = append(newAsdfs, asdf)
+						}
+					}
+					status.Asdfs = newAsdfs
+				}
+			}
 		}
 	}
 
