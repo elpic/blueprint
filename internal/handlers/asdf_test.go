@@ -65,13 +65,14 @@ func TestAsdfHandlerGetCommand(t *testing.T) {
 
 func TestAsdfHandlerUpdateStatus(t *testing.T) {
 	tests := []struct {
-		name           string
-		rule           parser.Rule
-		records        []ExecutionRecord
-		initialStatus  Status
-		expectedClones int
-		shouldContain  bool
-		expectedPath   string
+		name          string
+		rule          parser.Rule
+		records       []ExecutionRecord
+		initialStatus Status
+		expectedAsdfs int
+		shouldContain bool
+		expectedPlugin string
+		expectedVersion string
 	}{
 		{
 			name: "add asdf to status on successful install",
@@ -86,10 +87,11 @@ func TestAsdfHandlerUpdateStatus(t *testing.T) {
 					Output:  "Installed asdf (SHA: abc123def456)",
 				},
 			},
-			initialStatus:  Status{},
-			expectedClones: 1,
-			shouldContain:  true,
-			expectedPath:   "~/.asdf",
+			initialStatus:    Status{},
+			expectedAsdfs:    1,
+			shouldContain:    true,
+			expectedPlugin:   "nodejs",
+			expectedVersion:  "18.0.0",
 		},
 		{
 			name: "remove asdf from status on uninstall",
@@ -104,17 +106,18 @@ func TestAsdfHandlerUpdateStatus(t *testing.T) {
 				},
 			},
 			initialStatus: Status{
-				Clones: []CloneStatus{
+				Asdfs: []AsdfStatus{
 					{
-						URL:       "https://github.com/asdf-vm/asdf.git",
-						Path:      "~/.asdf",
-						Blueprint: "/tmp/test.bp",
-						OS:        "mac",
+						Plugin:      "nodejs",
+						Version:     "18.0.0",
+						Blueprint:   "/tmp/test.bp",
+						OS:          "mac",
+						InstalledAt: "2024-01-01T00:00:00Z",
 					},
 				},
 			},
-			expectedClones: 0,
-			shouldContain:  false,
+			expectedAsdfs: 0,
+			shouldContain: false,
 		},
 		{
 			name: "no action if asdf install failed",
@@ -129,9 +132,9 @@ func TestAsdfHandlerUpdateStatus(t *testing.T) {
 					Error:   "Installation failed",
 				},
 			},
-			initialStatus:  Status{},
-			expectedClones: 0,
-			shouldContain:  false,
+			initialStatus: Status{},
+			expectedAsdfs: 0,
+			shouldContain: false,
 		},
 	}
 
@@ -145,16 +148,16 @@ func TestAsdfHandlerUpdateStatus(t *testing.T) {
 				t.Errorf("UpdateStatus() error = %v", err)
 			}
 
-			if len(status.Clones) != tt.expectedClones {
-				t.Errorf("UpdateStatus() clones count = %d, want %d", len(status.Clones), tt.expectedClones)
+			if len(status.Asdfs) != tt.expectedAsdfs {
+				t.Errorf("UpdateStatus() asdfs count = %d, want %d", len(status.Asdfs), tt.expectedAsdfs)
 			}
 
-			if tt.shouldContain && len(status.Clones) > 0 {
-				if status.Clones[0].Path != tt.expectedPath {
-					t.Errorf("UpdateStatus() path = %q, want %q", status.Clones[0].Path, tt.expectedPath)
+			if tt.shouldContain && len(status.Asdfs) > 0 {
+				if status.Asdfs[0].Plugin != tt.expectedPlugin {
+					t.Errorf("UpdateStatus() plugin = %q, want %q", status.Asdfs[0].Plugin, tt.expectedPlugin)
 				}
-				if status.Clones[0].URL != "https://github.com/asdf-vm/asdf.git" {
-					t.Errorf("UpdateStatus() URL = %q, want %q", status.Clones[0].URL, "https://github.com/asdf-vm/asdf.git")
+				if status.Asdfs[0].Version != tt.expectedVersion {
+					t.Errorf("UpdateStatus() version = %q, want %q", status.Asdfs[0].Version, tt.expectedVersion)
 				}
 			}
 		})

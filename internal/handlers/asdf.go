@@ -309,33 +309,16 @@ func (h *AsdfHandler) UpdateStatus(status *Status, records []ExecutionRecord, bl
 	if h.Rule.Action == "asdf" {
 		// Check if asdf was executed successfully
 		commandExecuted := false
-		var asdfSHA string
 		for _, record := range records {
 			// Check if this is an asdf install command that succeeded
 			if record.Status == "success" && strings.Contains(record.Command, "asdf install") {
 				commandExecuted = true
-				// Extract SHA from output using regex
-				asdfSHA = extractSHAFromOutput(record.Output)
 				break
 			}
 		}
 
 		if commandExecuted {
-			// Use "~/.asdf" as the path identifier for status tracking
-			asdfPath := "~/.asdf"
-			// Remove existing asdf entry if present
-			status.Clones = removeCloneStatus(status.Clones, asdfPath, blueprint, osName)
-			// Add new entry
-			status.Clones = append(status.Clones, CloneStatus{
-				URL:       "https://github.com/asdf-vm/asdf.git",
-				Path:      asdfPath,
-				SHA:       asdfSHA,
-				ClonedAt:  time.Now().Format(time.RFC3339),
-				Blueprint: blueprint,
-				OS:        osName,
-			})
-
-			// Also store individual asdf packages/plugins
+			// Store individual asdf packages/plugins in dedicated status
 			// Clear existing entries for this blueprint/OS
 			status.Asdfs = removeAsdfStatus(status.Asdfs, "", blueprint, osName)
 
@@ -358,10 +341,7 @@ func (h *AsdfHandler) UpdateStatus(status *Status, records []ExecutionRecord, bl
 	} else if h.Rule.Action == "uninstall" && DetectRuleType(h.Rule) == "asdf" {
 		// Check if asdf was uninstalled successfully
 		if succeededAsdfUninstall(records) {
-			// Remove asdf from status
-			asdfPath := "~/.asdf"
-			status.Clones = removeCloneStatus(status.Clones, asdfPath, blueprint, osName)
-			// Also remove all asdf packages for this blueprint/OS
+			// Remove all asdf packages for this blueprint/OS
 			status.Asdfs = removeAsdfStatus(status.Asdfs, "", blueprint, osName)
 		}
 	}
@@ -440,7 +420,6 @@ func (h *AsdfHandler) GetDisplayDetails(isUninstall bool) string {
 }
 
 // FindUninstallRules compares asdf status against current rules and returns uninstall rules
-// Note: asdf is tracked as a clone with path ~/.asdf
 func (h *AsdfHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizePath(blueprintFile)
 
@@ -455,18 +434,18 @@ func (h *AsdfHandler) FindUninstallRules(status *Status, currentRules []parser.R
 
 	// If asdf is not in current rules but is in status, uninstall it
 	var rules []parser.Rule
-	if !asdfInCurrentRules && status.Clones != nil {
-		for _, clone := range status.Clones {
-			if clone.Path == "~/.asdf" {
-				normalizedStatusBlueprint := normalizePath(clone.Blueprint)
-				if normalizedStatusBlueprint == normalizedBlueprint && clone.OS == osName {
-					rules = append(rules, parser.Rule{
-						Action:    "uninstall",
-						ClonePath: clone.Path,
-						CloneURL:  clone.URL,
-						OSList:    []string{osName},
-					})
-				}
+	if !asdfInCurrentRules && status.Asdfs != nil && len(status.Asdfs) > 0 {
+		for _, asdf := range status.Asdfs {
+			normalizedStatusBlueprint := normalizePath(asdf.Blueprint)
+			if normalizedStatusBlueprint == normalizedBlueprint && asdf.OS == osName {
+				// Return a single uninstall rule for asdf (not per-plugin)
+				// Only add once per blueprint/OS combination
+				rules = append(rules, parser.Rule{
+					Action:        "uninstall",
+					AsdfPackages:  nil, // Will be detected by DetectRuleType
+					OSList:        []string{osName},
+				})
+				break // Only one uninstall rule needed per blueprint/OS
 			}
 		}
 	}
