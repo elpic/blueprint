@@ -407,28 +407,6 @@ func removeGPGKeyStatus(gpgKeys []GPGKeyStatus, keyring string, blueprint string
 	return result
 }
 
-// removeAsdfStatus removes asdf packages from the status asdfs list
-// If plugin is empty string, removes all asdf entries for the given blueprint/OS
-func removeAsdfStatus(asdfs []AsdfStatus, plugin string, blueprint string, osName string) []AsdfStatus {
-	var result []AsdfStatus
-	normalizedBlueprint := normalizePath(blueprint)
-	for _, asdf := range asdfs {
-		normalizedStoredBlueprint := normalizePath(asdf.Blueprint)
-		// If plugin is empty, remove all entries for this blueprint/OS
-		// Otherwise, remove only the specific plugin entry
-		if plugin == "" {
-			if normalizedStoredBlueprint != normalizedBlueprint || asdf.OS != osName {
-				result = append(result, asdf)
-			}
-		} else {
-			if asdf.Plugin != plugin || normalizedStoredBlueprint != normalizedBlueprint || asdf.OS != osName {
-				result = append(result, asdf)
-			}
-		}
-	}
-	return result
-}
-
 // abbreviateBlueprintPath shortens blueprint paths for display
 // Shows relative paths for blueprints in the repo, full paths for external ones
 func abbreviateBlueprintPath(path string) string {

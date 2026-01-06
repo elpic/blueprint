@@ -116,7 +116,7 @@ func (h *AsdfHandler) Down() (string, error) {
 		if err == nil {
 			// Count of installed versions (excluding system version)
 			versionCount := 0
-			fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &versionCount)
+			_, _ = fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &versionCount)
 
 			// If no other versions exist, remove the plugin
 			if versionCount == 0 {
@@ -363,8 +363,8 @@ func (h *AsdfHandler) UpdateStatus(status *Status, records []ExecutionRecord, bl
 					var newAsdfs []AsdfStatus
 					for _, asdf := range status.Asdfs {
 						// Keep all entries that are NOT this specific plugin@version
-						if !(asdf.Plugin == plugin && asdf.Version == version &&
-							normalizePath(asdf.Blueprint) == blueprint && asdf.OS == osName) {
+						if asdf.Plugin != plugin || asdf.Version != version ||
+							normalizePath(asdf.Blueprint) != blueprint || asdf.OS != osName {
 							newAsdfs = append(newAsdfs, asdf)
 						}
 					}
@@ -399,7 +399,7 @@ func (h *AsdfHandler) DisplayStatusFromStatus(status *Status) {
 	}
 
 	// Display asdf installation header if there are any asdf entries
-	if status.Asdfs != nil && len(status.Asdfs) > 0 {
+	if len(status.Asdfs) > 0 {
 		fmt.Printf("\n%s\n", ui.FormatHighlight("ASDF Version Manager:"))
 
 		// Group packages by their installation date (usually all at once)
