@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -17,7 +16,7 @@ import (
 
 func needsSudo(command string) bool {
 	// Only on Linux
-	if runtime.GOOS != "linux" {
+	if getOSName() != "linux" {
 		return false
 	}
 
@@ -31,29 +30,9 @@ func needsSudo(command string) bool {
 		}
 	}
 
-	// Package managers that require sudo on Linux
-	// Both install and remove/uninstall commands need sudo
-	// Note: Handlers can implement the SudoAwareHandler interface to declare their own sudo requirements
-	sudoRequired := []string{
-		"apt", "apt-get", "aptitude",
-		"yum", "dnf",
-		"pacman", "pamac",
-		"zypper",
-		"emerge",
-		"opkg",
-		"apk",
-		"pkg",
-	}
-
-	cmdName := strings.Fields(command)[0]
-	for _, pm := range sudoRequired {
-		if cmdName == pm {
-			return true
-		}
-	}
-
 	// Check if this is a shell command that contains sudo
 	// (e.g., "sh -c 'sudo gpg ...'")
+	cmdName := strings.Fields(command)[0]
 	if cmdName == "sh" || cmdName == "bash" {
 		if strings.Contains(command, "sudo") {
 			return true
