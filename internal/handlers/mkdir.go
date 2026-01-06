@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"github.com/elpic/blueprint/internal"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -41,8 +42,8 @@ func (h *MkdirHandler) Up() (string, error) {
 		}
 	}
 
-	// Create directory with mkdir -p (use default 0750 if no perms specified)
-	mode := os.FileMode(0750)
+	// Create directory with mkdir -p (use default DirectoryPermission if no perms specified)
+	mode := internal.DirectoryPermission
 	if h.Rule.MkdirPerms != "" {
 		// Parse the octal permission string
 		var octal int

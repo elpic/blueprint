@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"github.com/elpic/blueprint/internal"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
@@ -215,7 +216,7 @@ func getBlueprintDir() (string, error) {
 	blueprintDir := filepath.Join(homeDir, ".blueprint")
 
 	// Create directory if it doesn't exist
-	if err := os.MkdirAll(blueprintDir, 0750); err != nil {
+	if err := os.MkdirAll(blueprintDir, internal.DirectoryPermission); err != nil {
 		return "", fmt.Errorf("failed to create .blueprint directory: %w", err)
 	}
 

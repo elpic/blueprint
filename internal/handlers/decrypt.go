@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"github.com/elpic/blueprint/internal"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -64,12 +65,12 @@ func (h *DecryptHandler) Up() (string, error) {
 
 	// Create directory if needed
 	destDir := filepath.Dir(destPath)
-	if err := os.MkdirAll(destDir, 0700); err != nil {
+	if err := os.MkdirAll(destDir, internal.SensitiveDirectoryPermission); err != nil {
 		return "", fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	// Write decrypted file
-	if err := os.WriteFile(destPath, decryptedData, 0600); err != nil {
+	if err := os.WriteFile(destPath, decryptedData, internal.FilePermission); err != nil {
 		return "", fmt.Errorf("failed to write decrypted file: %w", err)
 	}
 

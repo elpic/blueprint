@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"github.com/elpic/blueprint/internal"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,7 +39,7 @@ func (h *GPGKeyHandler) Up() (string, error) {
 
 	// Write sources list content to temp file
 	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("sources-%s.list", keyring))
-	err := os.WriteFile(tmpFile, []byte(debSourceLine+"\n"), 0600)
+	err := os.WriteFile(tmpFile, []byte(debSourceLine+"\n"), internal.FilePermission)
 	if err != nil {
 		return "", fmt.Errorf("failed to write sources file: %w", err)
 	}

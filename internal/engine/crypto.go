@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"github.com/elpic/blueprint/internal"
 	cryptopkg "github.com/elpic/blueprint/internal/crypto"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
@@ -45,7 +46,7 @@ func EncryptFile(filePath string, passwordID string) {
 
 	// Write encrypted file with .enc extension
 	encryptedPath := filePath + ".enc"
-	if err := os.WriteFile(encryptedPath, encryptedData, 0600); err != nil {
+	if err := os.WriteFile(encryptedPath, encryptedData, internal.FilePermission); err != nil {
 		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Failed to write encrypted file: %v", err)))
 		os.Exit(1)
 	}

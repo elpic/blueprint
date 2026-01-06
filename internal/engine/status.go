@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/elpic/blueprint/internal"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
@@ -21,7 +22,7 @@ func getHistoryPath() (string, error) {
 	blueprintDir := filepath.Join(homeDir, ".blueprint")
 
 	// Create directory if it doesn't exist
-	if err := os.MkdirAll(blueprintDir, 0750); err != nil {
+	if err := os.MkdirAll(blueprintDir, internal.DirectoryPermission); err != nil {
 		return "", fmt.Errorf("failed to create .blueprint directory: %w", err)
 	}
 
@@ -38,7 +39,7 @@ func getStatusPath() (string, error) {
 	blueprintDir := filepath.Join(homeDir, ".blueprint")
 
 	// Create directory if it doesn't exist
-	if err := os.MkdirAll(blueprintDir, 0750); err != nil {
+	if err := os.MkdirAll(blueprintDir, internal.DirectoryPermission); err != nil {
 		return "", fmt.Errorf("failed to create .blueprint directory: %w", err)
 	}
 
@@ -107,7 +108,7 @@ func saveHistory(records []ExecutionRecord) error {
 		return fmt.Errorf("failed to marshal history: %w", err)
 	}
 
-	if err := os.WriteFile(historyPath, data, 0600); err != nil {
+	if err := os.WriteFile(historyPath, data, internal.FilePermission); err != nil {
 		return fmt.Errorf("failed to write history file: %w", err)
 	}
 
@@ -166,7 +167,7 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 		return fmt.Errorf("failed to marshal status: %w", err)
 	}
 
-	if err := os.WriteFile(statusPath, data, 0600); err != nil {
+	if err := os.WriteFile(statusPath, data, internal.FilePermission); err != nil {
 		return fmt.Errorf("failed to write status file: %w", err)
 	}
 
@@ -279,7 +280,7 @@ func getNextRunNumber() (int, error) {
 	runNumber++
 
 	// Write back
-	if err := os.WriteFile(runNumberFile, []byte(fmt.Sprintf("%d", runNumber)), 0600); err != nil {
+	if err := os.WriteFile(runNumberFile, []byte(fmt.Sprintf("%d", runNumber)), internal.FilePermission); err != nil {
 		return 0, err
 	}
 
@@ -294,14 +295,14 @@ func saveRuleOutput(runNumber, ruleIndex int, output, stderr string) error {
 	}
 
 	historyDir := filepath.Join(blueprintDir, "history", fmt.Sprintf("%d", runNumber))
-	if err := os.MkdirAll(historyDir, 0750); err != nil {
+	if err := os.MkdirAll(historyDir, internal.DirectoryPermission); err != nil {
 		return err
 	}
 
 	outputFile := filepath.Join(historyDir, fmt.Sprintf("%d.output", ruleIndex))
 	content := fmt.Sprintf("=== STDOUT ===\n%s\n\n=== STDERR ===\n%s\n", output, stderr)
 
-	return os.WriteFile(outputFile, []byte(content), 0600)
+	return os.WriteFile(outputFile, []byte(content), internal.FilePermission)
 }
 
 // getLatestRunNumber returns the latest run number from the history directory

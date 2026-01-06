@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"github.com/elpic/blueprint/internal"
 	"fmt"
 	"os"
 	"os/exec"
@@ -96,7 +97,7 @@ func sshDir(create bool) (string, error) {
 
 	if create {
 		// Create .ssh directory with proper permissions (700)
-		if err := os.MkdirAll(sshPath, 0700); err != nil {
+		if err := os.MkdirAll(sshPath, internal.SensitiveDirectoryPermission); err != nil {
 			return "", fmt.Errorf("failed to create .ssh directory: %w", err)
 		}
 	}
@@ -115,7 +116,7 @@ func knownHostsFile(create bool) (string, error) {
 
 	if create {
 		if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
-			if err := os.WriteFile(knownHostsPath, []byte{}, 0600); err != nil {
+			if err := os.WriteFile(knownHostsPath, []byte{}, internal.FilePermission); err != nil {
 				return "", fmt.Errorf("failed to create known_hosts file: %w", err)
 			}
 		}
