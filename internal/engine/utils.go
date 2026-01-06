@@ -111,20 +111,28 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 		return rules, nil
 	}
 
-	// Build maps for lookup by ID and package name
+	// Build maps for lookup by ID and other identifiers
 	rulesByID := make(map[string]*parser.Rule)
-	rulesByPackage := make(map[string]*parser.Rule)
+	rulesByKey := make(map[string]*parser.Rule)  // Maps handler-provided keys to rules
 
 	for i := range rules {
 		if rules[i].ID != "" {
 			rulesByID[rules[i].ID] = &rules[i]
 		}
-		for _, pkg := range rules[i].Packages {
-			rulesByPackage[pkg.Name] = &rules[i]
+
+		// Let the handler provide its dependency keys
+		handler := handlerskg.NewHandler(rules[i], "", nil)
+		if handler != nil {
+			// Check if handler implements KeyProvider to provide custom identifiers
+			if keyProvider, ok := handler.(handlerskg.KeyProvider); ok {
+				key := keyProvider.GetDependencyKey()
+				rulesByKey[key] = &rules[i]
+			}
 		}
-		// Also allow clone rules to be referenced by their path
-		if rules[i].Action == "clone" && rules[i].ClonePath != "" {
-			rulesByPackage[rules[i].ClonePath] = &rules[i]
+
+		// Also allow install packages to be referenced by package name
+		for _, pkg := range rules[i].Packages {
+			rulesByKey[pkg.Name] = &rules[i]
 		}
 	}
 
@@ -169,8 +177,8 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 
 			// First try to find by ID
 			if depRule = rulesByID[depName]; depRule == nil {
-				// Then try to find by package name
-				depRule = rulesByPackage[depName]
+				// Then try to find by handler-provided key or package name
+				depRule = rulesByKey[depName]
 			}
 
 			if depRule != nil {
