@@ -43,6 +43,10 @@ func (h *AsdfHandler) Up() (string, error) {
 	}
 
 	// Install plugins and versions
+	// Build a single shell command that sources asdf first, then installs all packages
+	// This ensures asdf is available even if freshly installed
+	var allCmds []string
+
 	for _, pkg := range h.Rule.AsdfPackages {
 		parts := strings.Split(pkg, "@")
 		if len(parts) != 2 {
@@ -60,20 +64,21 @@ func (h *AsdfHandler) Up() (string, error) {
 			return "", fmt.Errorf("invalid version: %s (contains invalid characters)", version)
 		}
 
-		// Add plugin
-		addPluginCmd := fmt.Sprintf("asdf plugin add %s 2>/dev/null || true", plugin)
-		_ = exec.Command("sh", "-c", addPluginCmd).Run() // Continue even if plugin add fails (might already exist)
+		// Add each command to the list
+		// Only add plugin and install version, don't set local version
+		allCmds = append(allCmds,
+			fmt.Sprintf("asdf plugin add %s 2>/dev/null || true", plugin),
+			fmt.Sprintf("asdf install %s %s", plugin, version),
+		)
+	}
 
-		// Install version
-		installCmd := fmt.Sprintf("asdf install %s %s", plugin, version)
-		if err := exec.Command("sh", "-c", installCmd).Run(); err != nil {
-			return "", fmt.Errorf("failed to install %s@%s: %w", plugin, version, err)
-		}
-
-		// Set local version
-		setCmd := fmt.Sprintf("asdf local %s %s", plugin, version)
-		if err := exec.Command("sh", "-c", setCmd).Run(); err != nil {
-			return "", fmt.Errorf("failed to set %s version to %s: %w", plugin, version, err)
+	// Execute all commands in a single shell session with asdf sourced once
+	if len(allCmds) > 0 {
+		// Source bashrc once at the beginning to make asdf available for all commands
+		combinedCmd := strings.Join(allCmds, " && ")
+		fullCmd := fmt.Sprintf(". ~/.bashrc 2>/dev/null || true && %s", combinedCmd)
+		if err := exec.Command("sh", "-c", fullCmd).Run(); err != nil {
+			return "", fmt.Errorf("failed to install asdf packages: %w", err)
 		}
 	}
 
@@ -103,25 +108,22 @@ func (h *AsdfHandler) Down() (string, error) {
 		// Uninstall version
 		uninstallCmd := fmt.Sprintf("asdf uninstall %s %s", plugin, version)
 		_ = exec.Command("sh", "-c", uninstallCmd).Run() // Continue even if uninstall fails
-	}
 
-	// Remove plugins
-	for _, pkg := range h.Rule.AsdfPackages {
-		parts := strings.Split(pkg, "@")
-		if len(parts) != 2 {
-			continue
+		// Check if there are any other versions of this plugin installed
+		// Only remove the plugin if no other versions exist
+		checkCmd := fmt.Sprintf(". ~/.bashrc 2>/dev/null || true && asdf list %s 2>/dev/null | grep -v '^ ' | wc -l", plugin)
+		output, err := exec.Command("sh", "-c", checkCmd).Output()
+		if err == nil {
+			// Count of installed versions (excluding system version)
+			versionCount := 0
+			_, _ = fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &versionCount)
+
+			// If no other versions exist, remove the plugin
+			if versionCount == 0 {
+				removeCmd := fmt.Sprintf(". ~/.bashrc 2>/dev/null || true && asdf plugin remove %s 2>/dev/null || true", plugin)
+				_ = exec.Command("sh", "-c", removeCmd).Run() // Continue even if remove fails
+			}
 		}
-
-		plugin := strings.TrimSpace(parts[0])
-
-		// Validate plugin name
-		if !isValidAsdfIdentifier(plugin) {
-			continue
-		}
-
-		// Remove plugin
-		removeCmd := fmt.Sprintf("asdf plugin remove %s 2>/dev/null || true", plugin)
-		_ = exec.Command("sh", "-c", removeCmd).Run() // Continue even if remove fails
 	}
 
 	// Uninstall asdf completely
@@ -307,38 +309,68 @@ func (h *AsdfHandler) UpdateStatus(status *Status, records []ExecutionRecord, bl
 	if h.Rule.Action == "asdf" {
 		// Check if asdf was executed successfully
 		commandExecuted := false
-		var asdfSHA string
 		for _, record := range records {
 			// Check if this is an asdf install command that succeeded
 			if record.Status == "success" && strings.Contains(record.Command, "asdf install") {
 				commandExecuted = true
-				// Extract SHA from output using regex
-				asdfSHA = extractSHAFromOutput(record.Output)
 				break
 			}
 		}
 
 		if commandExecuted {
-			// Use "~/.asdf" as the path identifier for status tracking
-			asdfPath := "~/.asdf"
-			// Remove existing asdf entry if present
-			status.Clones = removeCloneStatus(status.Clones, asdfPath, blueprint, osName)
-			// Add new entry
-			status.Clones = append(status.Clones, CloneStatus{
-				URL:       "https://github.com/asdf-vm/asdf.git",
-				Path:      asdfPath,
-				SHA:       asdfSHA,
-				ClonedAt:  time.Now().Format(time.RFC3339),
-				Blueprint: blueprint,
-				OS:        osName,
-			})
+			// Store individual asdf packages/plugins in dedicated status
+			// Just add entries for each package (don't remove, to allow multiple versions per plugin)
+			for _, pkg := range h.Rule.AsdfPackages {
+				parts := strings.Split(pkg, "@")
+				if len(parts) == 2 {
+					plugin := strings.TrimSpace(parts[0])
+					version := strings.TrimSpace(parts[1])
+
+					// Check if this exact plugin@version already exists
+					exists := false
+					for _, asdf := range status.Asdfs {
+						if asdf.Plugin == plugin && asdf.Version == version &&
+							normalizePath(asdf.Blueprint) == blueprint && asdf.OS == osName {
+							exists = true
+							break
+						}
+					}
+
+					// Only add if it doesn't already exist
+					if !exists {
+						status.Asdfs = append(status.Asdfs, AsdfStatus{
+							Plugin:      plugin,
+							Version:     version,
+							InstalledAt: time.Now().Format(time.RFC3339),
+							Blueprint:   blueprint,
+							OS:          osName,
+						})
+					}
+				}
+			}
 		}
 	} else if h.Rule.Action == "uninstall" && DetectRuleType(h.Rule) == "asdf" {
 		// Check if asdf was uninstalled successfully
 		if succeededAsdfUninstall(records) {
-			// Remove asdf from status
-			asdfPath := "~/.asdf"
-			status.Clones = removeCloneStatus(status.Clones, asdfPath, blueprint, osName)
+			// Remove only the specific packages (plugin@version) specified in this rule
+			for _, pkg := range h.Rule.AsdfPackages {
+				parts := strings.Split(pkg, "@")
+				if len(parts) == 2 {
+					plugin := strings.TrimSpace(parts[0])
+					version := strings.TrimSpace(parts[1])
+
+					// Remove this specific plugin@version entry
+					var newAsdfs []AsdfStatus
+					for _, asdf := range status.Asdfs {
+						// Keep all entries that are NOT this specific plugin@version
+						if asdf.Plugin != plugin || asdf.Version != version ||
+							normalizePath(asdf.Blueprint) != blueprint || asdf.OS != osName {
+							newAsdfs = append(newAsdfs, asdf)
+						}
+					}
+					status.Asdfs = newAsdfs
+				}
+			}
 		}
 	}
 
@@ -357,6 +389,96 @@ func (h *AsdfHandler) DisplayInfo() {
 	} else {
 		fmt.Printf("  %s\n", formatFunc("Description: Installs asdf version manager"))
 	}
+}
+
+// DisplayStatusFromStatus displays asdf handler status from Status object
+// Displays both the asdf installation and the individual plugins/versions installed
+func (h *AsdfHandler) DisplayStatusFromStatus(status *Status) {
+	if status == nil {
+		return
+	}
+
+	// Display asdf installation header if there are any asdf entries
+	if len(status.Asdfs) > 0 {
+		fmt.Printf("\n%s\n", ui.FormatHighlight("ASDF Version Manager:"))
+
+		// Group packages by their installation date (usually all at once)
+		// Display each installed plugin/version
+		for _, asdf := range status.Asdfs {
+			// Parse timestamp for display
+			t, err := time.Parse(time.RFC3339, asdf.InstalledAt)
+			var timeStr string
+			if err == nil {
+				timeStr = t.Format("2006-01-02 15:04:05")
+			} else {
+				timeStr = asdf.InstalledAt
+			}
+
+			// Display plugin@version format
+			pluginVersion := fmt.Sprintf("%s@%s", asdf.Plugin, asdf.Version)
+			fmt.Printf("  %s %s (%s) [%s, %s]\n",
+				ui.FormatSuccess("●"),
+				ui.FormatInfo(pluginVersion),
+				ui.FormatDim(timeStr),
+				ui.FormatDim(asdf.OS),
+				ui.FormatDim(abbreviateBlueprintPath(asdf.Blueprint)),
+			)
+		}
+	}
+}
+
+// GetDependencyKey returns the unique key for this rule in dependency resolution
+func (h *AsdfHandler) GetDependencyKey() string {
+	fallback := "asdf"
+	if h.Rule.Action == "uninstall" {
+		if DetectRuleType(h.Rule) == "asdf" {
+			fallback = "uninstall-asdf"
+		}
+	}
+	return getDependencyKey(h.Rule, fallback)
+}
+
+// GetDisplayDetails returns the packages to display during execution
+// Shows comma-separated package@version pairs (e.g., "node@18, python@3.11")
+func (h *AsdfHandler) GetDisplayDetails(isUninstall bool) string {
+	if len(h.Rule.AsdfPackages) > 0 {
+		return strings.Join(h.Rule.AsdfPackages, ", ")
+	}
+	return "asdf"
+}
+
+// FindUninstallRules compares asdf status against current rules and returns uninstall rules
+func (h *AsdfHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
+	normalizedBlueprint := normalizePath(blueprintFile)
+
+	// Check if asdf is in current rules
+	asdfInCurrentRules := false
+	for _, rule := range currentRules {
+		if rule.Action == "asdf" {
+			asdfInCurrentRules = true
+			break
+		}
+	}
+
+	// If asdf is not in current rules but is in status, uninstall it
+	var rules []parser.Rule
+	if !asdfInCurrentRules && status.Asdfs != nil && len(status.Asdfs) > 0 {
+		for _, asdf := range status.Asdfs {
+			normalizedStatusBlueprint := normalizePath(asdf.Blueprint)
+			if normalizedStatusBlueprint == normalizedBlueprint && asdf.OS == osName {
+				// Return a single uninstall rule for asdf (not per-plugin)
+				// Only add once per blueprint/OS combination
+				rules = append(rules, parser.Rule{
+					Action:        "uninstall",
+					AsdfPackages:  nil, // Will be detected by DetectRuleType
+					OSList:        []string{osName},
+				})
+				break // Only one uninstall rule needed per blueprint/OS
+			}
+		}
+	}
+
+	return rules
 }
 
 // succeededAsdfUninstall checks if asdf uninstall was successful

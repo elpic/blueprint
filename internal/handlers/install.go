@@ -229,3 +229,91 @@ func (h *InstallHandler) DisplayStatus(packages []PackageStatus) {
 		)
 	}
 }
+
+// DisplayStatusFromStatus displays install handler status from Status object
+func (h *InstallHandler) DisplayStatusFromStatus(status *Status) {
+	if status == nil || status.Packages == nil {
+		return
+	}
+	h.DisplayStatus(status.Packages)
+}
+
+// GetDependencyKey returns the unique key for this rule in dependency resolution
+func (h *InstallHandler) GetDependencyKey() string {
+	fallback := "install"
+	if len(h.Rule.Packages) > 0 {
+		fallback = h.Rule.Packages[0].Name
+	}
+	return getDependencyKey(h.Rule, fallback)
+}
+
+// GetDisplayDetails returns the packages to display during execution
+func (h *InstallHandler) GetDisplayDetails(isUninstall bool) string {
+	// Build package list string
+	packages := ""
+	for j, pkg := range h.Rule.Packages {
+		if j > 0 {
+			packages += ", "
+		}
+		packages += pkg.Name
+	}
+	return packages
+}
+
+// FindUninstallRules compares package status against current rules and returns uninstall rules
+func (h *InstallHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
+	normalizedBlueprint := normalizePath(blueprintFile)
+
+	// Build set of current package names from install rules
+	currentPackages := make(map[string]bool)
+	for _, rule := range currentRules {
+		if rule.Action == "install" {
+			for _, pkg := range rule.Packages {
+				currentPackages[pkg.Name] = true
+			}
+		}
+	}
+
+	// Find packages to uninstall (in status but not in current rules)
+	var packagesToUninstall []parser.Package
+	if status.Packages != nil {
+		for _, pkg := range status.Packages {
+			normalizedStatusBlueprint := normalizePath(pkg.Blueprint)
+			if normalizedStatusBlueprint == normalizedBlueprint && pkg.OS == osName && !currentPackages[pkg.Name] {
+				packagesToUninstall = append(packagesToUninstall, parser.Package{
+					Name:    pkg.Name,
+					Version: "latest",
+				})
+			}
+		}
+	}
+
+	// Return uninstall rule if there are packages to uninstall
+	var rules []parser.Rule
+	if len(packagesToUninstall) > 0 {
+		rules = append(rules, parser.Rule{
+			Action:   "uninstall",
+			Packages: packagesToUninstall,
+			OSList:   []string{osName},
+		})
+	}
+	return rules
+}
+
+// NeedsSudo returns true if package installation/uninstallation requires sudo privileges
+func (h *InstallHandler) NeedsSudo() bool {
+	// Only package managers on Linux require sudo
+	if getOSName() != "linux" {
+		return false
+	}
+
+	// Check the command that will be executed
+	var cmd string
+	if h.Rule.Action == "uninstall" {
+		cmd = h.buildUninstallCommand(h.Rule)
+	} else {
+		cmd = h.buildCommand()
+	}
+
+	return needsSudo(cmd)
+}

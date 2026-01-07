@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"github.com/elpic/blueprint/internal"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -64,12 +65,12 @@ func (h *DecryptHandler) Up() (string, error) {
 
 	// Create directory if needed
 	destDir := filepath.Dir(destPath)
-	if err := os.MkdirAll(destDir, 0700); err != nil {
+	if err := os.MkdirAll(destDir, internal.SensitiveDirectoryPermission); err != nil {
 		return "", fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	// Write decrypted file
-	if err := os.WriteFile(destPath, decryptedData, 0600); err != nil {
+	if err := os.WriteFile(destPath, decryptedData, internal.FilePermission); err != nil {
 		return "", fmt.Errorf("failed to write decrypted file: %w", err)
 	}
 
@@ -211,4 +212,52 @@ func (h *DecryptHandler) DisplayStatus(decrypts []DecryptStatus) {
 			ui.FormatInfo(decrypt.SourceFile),
 		)
 	}
+}
+
+// DisplayStatusFromStatus displays decrypt handler status from Status object
+func (h *DecryptHandler) DisplayStatusFromStatus(status *Status) {
+	if status == nil || status.Decrypts == nil {
+		return
+	}
+	h.DisplayStatus(status.Decrypts)
+}
+
+// GetDependencyKey returns the unique key for this rule in dependency resolution
+func (h *DecryptHandler) GetDependencyKey() string {
+	return getDependencyKey(h.Rule, h.Rule.DecryptPath)
+}
+
+// GetDisplayDetails returns the decrypt path to display during execution
+func (h *DecryptHandler) GetDisplayDetails(isUninstall bool) string {
+	return h.Rule.DecryptPath
+}
+
+// FindUninstallRules compares decrypt status against current rules and returns uninstall rules
+func (h *DecryptHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
+	normalizedBlueprint := normalizePath(blueprintFile)
+
+	// Build set of current decrypt paths from decrypt rules
+	currentDecryptPaths := make(map[string]bool)
+	for _, rule := range currentRules {
+		if rule.Action == "decrypt" && rule.DecryptPath != "" {
+			currentDecryptPaths[rule.DecryptPath] = true
+		}
+	}
+
+	// Find decrypts to uninstall (in status but not in current rules)
+	var rules []parser.Rule
+	if status.Decrypts != nil {
+		for _, decrypt := range status.Decrypts {
+			normalizedStatusBlueprint := normalizePath(decrypt.Blueprint)
+			if normalizedStatusBlueprint == normalizedBlueprint && decrypt.OS == osName && !currentDecryptPaths[decrypt.DestPath] {
+				rules = append(rules, parser.Rule{
+					Action:      "uninstall",
+					DecryptPath: decrypt.DestPath,
+					OSList:      []string{osName},
+				})
+			}
+		}
+	}
+
+	return rules
 }

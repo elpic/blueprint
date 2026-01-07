@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"github.com/elpic/blueprint/internal"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,7 +39,7 @@ func (h *GPGKeyHandler) Up() (string, error) {
 
 	// Write sources list content to temp file
 	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("sources-%s.list", keyring))
-	err := os.WriteFile(tmpFile, []byte(debSourceLine+"\n"), 0600)
+	err := os.WriteFile(tmpFile, []byte(debSourceLine+"\n"), internal.FilePermission)
 	if err != nil {
 		return "", fmt.Errorf("failed to write sources file: %w", err)
 	}
@@ -185,4 +186,52 @@ func (h *GPGKeyHandler) DisplayStatus(keys []GPGKeyStatus) {
 			ui.FormatDim(abbreviateBlueprintPath(key.Blueprint)),
 		)
 	}
+}
+
+// DisplayStatusFromStatus displays GPG key handler status from Status object
+func (h *GPGKeyHandler) DisplayStatusFromStatus(status *Status) {
+	if status == nil || status.GPGKeys == nil {
+		return
+	}
+	h.DisplayStatus(status.GPGKeys)
+}
+
+// GetDependencyKey returns the unique key for this rule in dependency resolution
+func (h *GPGKeyHandler) GetDependencyKey() string {
+	return getDependencyKey(h.Rule, h.Rule.GPGKeyring)
+}
+
+// GetDisplayDetails returns the GPG keyring to display during execution
+func (h *GPGKeyHandler) GetDisplayDetails(isUninstall bool) string {
+	return h.Rule.GPGKeyring
+}
+
+// FindUninstallRules compares GPG key status against current rules and returns uninstall rules
+func (h *GPGKeyHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
+	normalizedBlueprint := normalizePath(blueprintFile)
+
+	// Build set of current GPG keyrings from gpg-key rules
+	currentGPGKeys := make(map[string]bool)
+	for _, rule := range currentRules {
+		if rule.Action == "gpg-key" && rule.GPGKeyring != "" {
+			currentGPGKeys[rule.GPGKeyring] = true
+		}
+	}
+
+	// Find GPG keys to uninstall (in status but not in current rules)
+	var rules []parser.Rule
+	if status.GPGKeys != nil {
+		for _, gpg := range status.GPGKeys {
+			normalizedStatusBlueprint := normalizePath(gpg.Blueprint)
+			if normalizedStatusBlueprint == normalizedBlueprint && gpg.OS == osName && !currentGPGKeys[gpg.Keyring] {
+				rules = append(rules, parser.Rule{
+					Action:     "uninstall",
+					GPGKeyring: gpg.Keyring,
+					OSList:     []string{osName},
+				})
+			}
+		}
+	}
+
+	return rules
 }

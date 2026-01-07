@@ -65,13 +65,15 @@ func TestAsdfHandlerGetCommand(t *testing.T) {
 
 func TestAsdfHandlerUpdateStatus(t *testing.T) {
 	tests := []struct {
-		name           string
-		rule           parser.Rule
-		records        []ExecutionRecord
-		initialStatus  Status
-		expectedClones int
-		shouldContain  bool
-		expectedPath   string
+		name          string
+		rule          parser.Rule
+		records       []ExecutionRecord
+		initialStatus Status
+		expectedAsdfs int
+		shouldContain bool
+		expectedPlugin string
+		expectedVersion string
+		description    string
 	}{
 		{
 			name: "add asdf to status on successful install",
@@ -86,13 +88,73 @@ func TestAsdfHandlerUpdateStatus(t *testing.T) {
 					Output:  "Installed asdf (SHA: abc123def456)",
 				},
 			},
-			initialStatus:  Status{},
-			expectedClones: 1,
-			shouldContain:  true,
-			expectedPath:   "~/.asdf",
+			initialStatus:    Status{},
+			expectedAsdfs:    1,
+			shouldContain:    true,
+			expectedPlugin:   "nodejs",
+			expectedVersion:  "18.0.0",
+			description:      "Single asdf rule adds one package",
 		},
 		{
-			name: "remove asdf from status on uninstall",
+			name: "multiple asdf rules preserve packages from other rules",
+			rule: parser.Rule{
+				Action:       "asdf",
+				AsdfPackages: []string{"python@3.11.0"},
+			},
+			records: []ExecutionRecord{
+				{
+					Status:  "success",
+					Command: "asdf install python 3.11.0",
+				},
+			},
+			initialStatus: Status{
+				Asdfs: []AsdfStatus{
+					{
+						Plugin:      "nodejs",
+						Version:     "18.0.0",
+						Blueprint:   "/tmp/test.bp",
+						OS:          "mac",
+						InstalledAt: "2024-01-01T00:00:00Z",
+					},
+				},
+			},
+			expectedAsdfs:    2,
+			shouldContain:    true,
+			expectedPlugin:   "python",
+			expectedVersion:  "3.11.0",
+			description:      "Second asdf rule preserves nodejs entry and adds python",
+		},
+		{
+			name: "multiple versions of same plugin coexist",
+			rule: parser.Rule{
+				Action:       "asdf",
+				AsdfPackages: []string{"nodejs@20.0.0"},
+			},
+			records: []ExecutionRecord{
+				{
+					Status:  "success",
+					Command: "asdf install nodejs 20.0.0",
+				},
+			},
+			initialStatus: Status{
+				Asdfs: []AsdfStatus{
+					{
+						Plugin:      "nodejs",
+						Version:     "18.0.0",
+						Blueprint:   "/tmp/test.bp",
+						OS:          "mac",
+						InstalledAt: "2024-01-01T00:00:00Z",
+					},
+				},
+			},
+			expectedAsdfs:    2,
+			shouldContain:    true,
+			expectedPlugin:   "nodejs",
+			expectedVersion:  "20.0.0",
+			description:      "Multiple versions of same plugin can coexist (node@18 and node@20)",
+		},
+		{
+			name: "remove specific plugin version on uninstall, preserve other versions",
 			rule: parser.Rule{
 				Action:       "uninstall",
 				AsdfPackages: []string{"nodejs@18.0.0"},
@@ -104,17 +166,62 @@ func TestAsdfHandlerUpdateStatus(t *testing.T) {
 				},
 			},
 			initialStatus: Status{
-				Clones: []CloneStatus{
+				Asdfs: []AsdfStatus{
 					{
-						URL:       "https://github.com/asdf-vm/asdf.git",
-						Path:      "~/.asdf",
-						Blueprint: "/tmp/test.bp",
-						OS:        "mac",
+						Plugin:      "nodejs",
+						Version:     "18.0.0",
+						Blueprint:   "/tmp/test.bp",
+						OS:          "mac",
+						InstalledAt: "2024-01-01T00:00:00Z",
+					},
+					{
+						Plugin:      "nodejs",
+						Version:     "20.0.0",
+						Blueprint:   "/tmp/test.bp",
+						OS:          "mac",
+						InstalledAt: "2024-01-01T00:00:00Z",
+					},
+					{
+						Plugin:      "python",
+						Version:     "3.11.0",
+						Blueprint:   "/tmp/test.bp",
+						OS:          "mac",
+						InstalledAt: "2024-01-01T00:00:00Z",
 					},
 				},
 			},
-			expectedClones: 0,
-			shouldContain:  false,
+			expectedAsdfs: 2,
+			shouldContain: false,
+			description:   "Uninstall removes only nodejs@18, keeps nodejs@20 and python@3.11",
+		},
+		{
+			name: "installing same version twice doesn't create duplicates",
+			rule: parser.Rule{
+				Action:       "asdf",
+				AsdfPackages: []string{"nodejs@18.0.0"},
+			},
+			records: []ExecutionRecord{
+				{
+					Status:  "success",
+					Command: "asdf install nodejs 18.0.0",
+				},
+			},
+			initialStatus: Status{
+				Asdfs: []AsdfStatus{
+					{
+						Plugin:      "nodejs",
+						Version:     "18.0.0",
+						Blueprint:   "/tmp/test.bp",
+						OS:          "mac",
+						InstalledAt: "2024-01-01T00:00:00Z",
+					},
+				},
+			},
+			expectedAsdfs:    1,
+			shouldContain:    true,
+			expectedPlugin:   "nodejs",
+			expectedVersion:  "18.0.0",
+			description:      "Idempotent: installing same version twice keeps count at 1",
 		},
 		{
 			name: "no action if asdf install failed",
@@ -129,9 +236,10 @@ func TestAsdfHandlerUpdateStatus(t *testing.T) {
 					Error:   "Installation failed",
 				},
 			},
-			initialStatus:  Status{},
-			expectedClones: 0,
-			shouldContain:  false,
+			initialStatus: Status{},
+			expectedAsdfs: 0,
+			shouldContain: false,
+			description:   "Failed installation doesn't update status",
 		},
 	}
 
@@ -145,16 +253,22 @@ func TestAsdfHandlerUpdateStatus(t *testing.T) {
 				t.Errorf("UpdateStatus() error = %v", err)
 			}
 
-			if len(status.Clones) != tt.expectedClones {
-				t.Errorf("UpdateStatus() clones count = %d, want %d", len(status.Clones), tt.expectedClones)
+			if len(status.Asdfs) != tt.expectedAsdfs {
+				t.Errorf("UpdateStatus() asdfs count = %d, want %d (test: %s)", len(status.Asdfs), tt.expectedAsdfs, tt.description)
 			}
 
-			if tt.shouldContain && len(status.Clones) > 0 {
-				if status.Clones[0].Path != tt.expectedPath {
-					t.Errorf("UpdateStatus() path = %q, want %q", status.Clones[0].Path, tt.expectedPath)
+			if tt.shouldContain {
+				// Find the expected plugin in the asdf list
+				found := false
+				for _, asdf := range status.Asdfs {
+					if asdf.Plugin == tt.expectedPlugin && asdf.Version == tt.expectedVersion {
+						found = true
+						break
+					}
 				}
-				if status.Clones[0].URL != "https://github.com/asdf-vm/asdf.git" {
-					t.Errorf("UpdateStatus() URL = %q, want %q", status.Clones[0].URL, "https://github.com/asdf-vm/asdf.git")
+				if !found {
+					t.Errorf("UpdateStatus() expected to find %s@%s in status, but didn't (test: %s)",
+						tt.expectedPlugin, tt.expectedVersion, tt.description)
 				}
 			}
 		})
@@ -277,6 +391,41 @@ func TestAsdfHandlerDisplayInfo(t *testing.T) {
 				if !strings.Contains(output, expected) {
 					t.Errorf("DisplayInfo() output missing expected content %q\nGot: %s", expected, output)
 				}
+			}
+		})
+	}
+}
+
+
+func TestAsdfHandlerGetDependencyKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		rule     parser.Rule
+		expected string
+	}{
+		{
+			name: "returns ID when present",
+			rule: parser.Rule{
+				ID:     "my-asdf",
+				Action: "asdf",
+			},
+			expected: "my-asdf",
+		},
+		{
+			name: "returns asdf when ID is empty",
+			rule: parser.Rule{
+				Action: "asdf",
+			},
+			expected: "asdf",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := NewAsdfHandler(tt.rule, "")
+			got := handler.GetDependencyKey()
+			if got != tt.expected {
+				t.Errorf("GetDependencyKey() = %q, want %q", got, tt.expected)
 			}
 		})
 	}

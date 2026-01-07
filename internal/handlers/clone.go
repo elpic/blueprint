@@ -170,8 +170,20 @@ func (h *CloneHandler) DisplayStatus(clones []CloneStatus) {
 		return
 	}
 
-	fmt.Printf("\n%s\n", ui.FormatHighlight("Cloned Repositories:"))
+	// Filter out ~/.asdf (handled by AsdfHandler)
+	var regularClones []CloneStatus
 	for _, clone := range clones {
+		if clone.Path != "~/.asdf" {
+			regularClones = append(regularClones, clone)
+		}
+	}
+
+	if len(regularClones) == 0 {
+		return
+	}
+
+	fmt.Printf("\n%s\n", ui.FormatHighlight("Cloned Repositories:"))
+	for _, clone := range regularClones {
 		// Parse timestamp for display
 		t, err := time.Parse(time.RFC3339, clone.ClonedAt)
 		var timeStr string
@@ -193,4 +205,56 @@ func (h *CloneHandler) DisplayStatus(clones []CloneStatus) {
 			ui.FormatInfo(clone.URL),
 		)
 	}
+}
+
+// DisplayStatusFromStatus displays clone handler status from Status object
+func (h *CloneHandler) DisplayStatusFromStatus(status *Status) {
+	if status == nil || status.Clones == nil {
+		return
+	}
+	h.DisplayStatus(status.Clones)
+}
+
+// GetDependencyKey returns the unique key for this rule in dependency resolution
+func (h *CloneHandler) GetDependencyKey() string {
+	return getDependencyKey(h.Rule, h.Rule.ClonePath)
+}
+
+// GetDisplayDetails returns the clone path to display during execution
+func (h *CloneHandler) GetDisplayDetails(isUninstall bool) string {
+	return h.Rule.ClonePath
+}
+
+// FindUninstallRules compares clone status against current rules and returns uninstall rules
+func (h *CloneHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
+	normalizedBlueprint := normalizePath(blueprintFile)
+
+	// Build set of current clone paths from clone rules
+	currentClonePaths := make(map[string]bool)
+	for _, rule := range currentRules {
+		if rule.Action == "clone" && rule.ClonePath != "" {
+			currentClonePaths[rule.ClonePath] = true
+		}
+	}
+
+	// Find clones to uninstall (in status but not in current rules)
+	var rules []parser.Rule
+	if status.Clones != nil {
+		for _, clone := range status.Clones {
+			normalizedStatusBlueprint := normalizePath(clone.Blueprint)
+			if normalizedStatusBlueprint == normalizedBlueprint && clone.OS == osName && !currentClonePaths[clone.Path] {
+				// Don't uninstall asdf which is handled by AsdfHandler
+				if clone.Path != "~/.asdf" {
+					rules = append(rules, parser.Rule{
+						Action:    "uninstall",
+						ClonePath: clone.Path,
+						CloneURL:  clone.URL,
+						OSList:    []string{osName},
+					})
+				}
+			}
+		}
+	}
+
+	return rules
 }

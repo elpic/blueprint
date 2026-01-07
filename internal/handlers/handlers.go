@@ -74,6 +74,15 @@ type GPGKeyStatus struct {
 	OS        string `json:"os"`
 }
 
+// AsdfStatus tracks installed asdf plugins/versions
+type AsdfStatus struct {
+	Plugin      string `json:"plugin"`
+	Version     string `json:"version"`
+	InstalledAt string `json:"installed_at"`
+	Blueprint   string `json:"blueprint"`
+	OS          string `json:"os"`
+}
+
 // Status represents the current blueprint state
 type Status struct {
 	Packages   []PackageStatus    `json:"packages"`
@@ -82,6 +91,7 @@ type Status struct {
 	Mkdirs     []MkdirStatus      `json:"mkdirs"`
 	KnownHosts []KnownHostsStatus `json:"known_hosts"`
 	GPGKeys    []GPGKeyStatus     `json:"gpg_keys"`
+	Asdfs      []AsdfStatus       `json:"asdfs"`
 }
 
 // Handler is the interface that all command handlers must implement
@@ -116,10 +126,72 @@ type SudoAwareHandler interface {
 	NeedsSudo() bool
 }
 
+// KeyProvider is an optional interface that handlers can implement
+// to specify how they should be identified in dependency resolution.
+// If a handler implements this, the engine will use GetDependencyKey()
+// instead of hardcoded action type checks. This makes dependency
+// resolution fully extensible without modifying the engine.
+type KeyProvider interface {
+	// GetDependencyKey returns the unique key for this rule when no ID is present.
+	// This is used for resolving dependencies in topological sort.
+	// Examples: clone path, decrypt destination, mkdir path, etc.
+	GetDependencyKey() string
+}
+
+// DisplayProvider is an optional interface that handlers can implement
+// to specify what details should be displayed during execution.
+// This eliminates hardcoded action type checks in the engine by allowing
+// each handler to provide its own display information (path, packages, hostname, etc.)
+type DisplayProvider interface {
+	// GetDisplayDetails returns the detail to display for this rule during execution
+	// and whether it should be formatted as an error/uninstall action.
+	// Examples: "~/path/to/repo", "package1, package2", "github.com", "~/.ssh/config"
+	// isError should be true for uninstall actions or errors
+	GetDisplayDetails(isUninstall bool) string
+}
+
+// StatusProvider is an optional interface that handlers can implement
+// to specify how to manage status records for auto-uninstall.
+// This eliminates ALL hardcoded action type checks by allowing each handler
+// to completely own the logic of comparing its status against current rules.
+type StatusProvider interface {
+	// FindUninstallRules compares status records against current rules and returns
+	// uninstall rules for any resources that are no longer in the blueprint.
+	// The handler encapsulates ALL logic for status comparison - the engine has
+	// no knowledge of specific status types or field names.
+	//
+	// Parameters:
+	//   status - The current blueprint status with all installed resources
+	//   currentRules - The rules currently in the blueprint being applied
+	//   blueprintFile - The blueprint file being applied (for filtering records)
+	//   osName - The OS being targeted (for filtering records)
+	//
+	// Returns:
+	//   A slice of uninstall rules for resources no longer in the blueprint
+	FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule
+}
+
 // BaseHandler contains common fields for all handlers
 type BaseHandler struct {
 	Rule     parser.Rule
 	BasePath string // For resolving relative paths
+}
+
+// getDependencyKey is a helper function that centralizes the ID check logic.
+// Handlers should call this instead of duplicating the ID check.
+// If rule.ID is present, it's returned; otherwise fallbackKey is returned.
+func getDependencyKey(rule parser.Rule, fallbackKey string) string {
+	if rule.ID != "" {
+		return rule.ID
+	}
+	return fallbackKey
+}
+
+// GetFallbackDependencyKey returns the handler-specific fallback key when rule.ID is not present.
+// Handlers can override this method to provide their own key logic.
+// Default implementation returns the action name as fallback.
+func (h *BaseHandler) GetFallbackDependencyKey() string {
+	return h.Rule.Action
 }
 
 // HandlerFactory creates a handler for a given rule
@@ -217,6 +289,21 @@ func GetHandlerFactory(action string) HandlerFactory {
 	}
 
 	return factories[action]
+}
+
+// GetStatusProviderHandlers returns all handler instances that implement StatusProvider
+// This is the single place where all handler instantiation happens for status comparisons
+// Used by engine for getAutoUninstallRules and other status-related operations
+func GetStatusProviderHandlers() []Handler {
+	return []Handler{
+		NewInstallHandler(parser.Rule{}, ""),
+		NewCloneHandler(parser.Rule{}, ""),
+		NewDecryptHandler(parser.Rule{}, "", nil),
+		NewAsdfHandler(parser.Rule{}, ""),
+		NewMkdirHandler(parser.Rule{}, ""),
+		NewKnownHostsHandler(parser.Rule{}, ""),
+		NewGPGKeyHandler(parser.Rule{}, ""),
+	}
 }
 
 // Shared utility functions for status management

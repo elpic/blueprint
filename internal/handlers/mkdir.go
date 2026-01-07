@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"github.com/elpic/blueprint/internal"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -41,8 +42,8 @@ func (h *MkdirHandler) Up() (string, error) {
 		}
 	}
 
-	// Create directory with mkdir -p (use default 0750 if no perms specified)
-	mode := os.FileMode(0750)
+	// Create directory with mkdir -p (use default DirectoryPermission if no perms specified)
+	mode := internal.DirectoryPermission
 	if h.Rule.MkdirPerms != "" {
 		// Parse the octal permission string
 		var octal int
@@ -243,4 +244,52 @@ func (h *MkdirHandler) DisplayStatus(mkdirs []MkdirStatus) {
 			ui.FormatDim(abbreviateBlueprintPath(mkdir.Blueprint)),
 		)
 	}
+}
+
+// DisplayStatusFromStatus displays mkdir handler status from Status object
+func (h *MkdirHandler) DisplayStatusFromStatus(status *Status) {
+	if status == nil || status.Mkdirs == nil {
+		return
+	}
+	h.DisplayStatus(status.Mkdirs)
+}
+
+// GetDependencyKey returns the unique key for this rule in dependency resolution
+func (h *MkdirHandler) GetDependencyKey() string {
+	return getDependencyKey(h.Rule, h.Rule.Mkdir)
+}
+
+// GetDisplayDetails returns the mkdir path to display during execution
+func (h *MkdirHandler) GetDisplayDetails(isUninstall bool) string {
+	return h.Rule.Mkdir
+}
+
+// FindUninstallRules compares mkdir status against current rules and returns uninstall rules
+func (h *MkdirHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
+	normalizedBlueprint := normalizePath(blueprintFile)
+
+	// Build set of current mkdir paths from mkdir rules
+	currentMkdirPaths := make(map[string]bool)
+	for _, rule := range currentRules {
+		if rule.Action == "mkdir" && rule.Mkdir != "" {
+			currentMkdirPaths[rule.Mkdir] = true
+		}
+	}
+
+	// Find mkdirs to uninstall (in status but not in current rules)
+	var rules []parser.Rule
+	if status.Mkdirs != nil {
+		for _, mkdir := range status.Mkdirs {
+			normalizedStatusBlueprint := normalizePath(mkdir.Blueprint)
+			if normalizedStatusBlueprint == normalizedBlueprint && mkdir.OS == osName && !currentMkdirPaths[mkdir.Path] {
+				rules = append(rules, parser.Rule{
+					Action: "uninstall",
+					Mkdir:  mkdir.Path,
+					OSList: []string{osName},
+				})
+			}
+		}
+	}
+
+	return rules
 }

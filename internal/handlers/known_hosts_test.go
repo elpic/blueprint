@@ -260,3 +260,38 @@ func TestKnownHostsHandlerDisplayInfo(t *testing.T) {
 		})
 	}
 }
+
+
+func TestKnownHostsHandlerGetDependencyKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		rule     parser.Rule
+		expected string
+	}{
+		{
+			name: "returns ID when present",
+			rule: parser.Rule{
+				ID:         "my-host",
+				KnownHosts: "github.com",
+			},
+			expected: "my-host",
+		},
+		{
+			name: "returns known_hosts when ID is empty",
+			rule: parser.Rule{
+				KnownHosts: "github.com",
+			},
+			expected: "github.com",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := NewKnownHostsHandler(tt.rule, "")
+			got := handler.GetDependencyKey()
+			if got != tt.expected {
+				t.Errorf("GetDependencyKey() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}

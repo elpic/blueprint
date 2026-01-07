@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"github.com/elpic/blueprint/internal"
 	"fmt"
 	"os"
 	"os/exec"
@@ -96,7 +97,7 @@ func sshDir(create bool) (string, error) {
 
 	if create {
 		// Create .ssh directory with proper permissions (700)
-		if err := os.MkdirAll(sshPath, 0700); err != nil {
+		if err := os.MkdirAll(sshPath, internal.SensitiveDirectoryPermission); err != nil {
 			return "", fmt.Errorf("failed to create .ssh directory: %w", err)
 		}
 	}
@@ -115,7 +116,7 @@ func knownHostsFile(create bool) (string, error) {
 
 	if create {
 		if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
-			if err := os.WriteFile(knownHostsPath, []byte{}, 0600); err != nil {
+			if err := os.WriteFile(knownHostsPath, []byte{}, internal.FilePermission); err != nil {
 				return "", fmt.Errorf("failed to create known_hosts file: %w", err)
 			}
 		}
@@ -271,4 +272,52 @@ func (h *KnownHostsHandler) DisplayStatus(hosts []KnownHostsStatus) {
 			ui.FormatDim(abbreviateBlueprintPath(kh.Blueprint)),
 		)
 	}
+}
+
+// DisplayStatusFromStatus displays known hosts handler status from Status object
+func (h *KnownHostsHandler) DisplayStatusFromStatus(status *Status) {
+	if status == nil || status.KnownHosts == nil {
+		return
+	}
+	h.DisplayStatus(status.KnownHosts)
+}
+
+// GetDependencyKey returns the unique key for this rule in dependency resolution
+func (h *KnownHostsHandler) GetDependencyKey() string {
+	return getDependencyKey(h.Rule, h.Rule.KnownHosts)
+}
+
+// GetDisplayDetails returns the known host to display during execution
+func (h *KnownHostsHandler) GetDisplayDetails(isUninstall bool) string {
+	return h.Rule.KnownHosts
+}
+
+// FindUninstallRules compares known hosts status against current rules and returns uninstall rules
+func (h *KnownHostsHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
+	normalizedBlueprint := normalizePath(blueprintFile)
+
+	// Build set of current known hosts from known_hosts rules
+	currentKnownHosts := make(map[string]bool)
+	for _, rule := range currentRules {
+		if rule.Action == "known_hosts" && rule.KnownHosts != "" {
+			currentKnownHosts[rule.KnownHosts] = true
+		}
+	}
+
+	// Find known hosts to uninstall (in status but not in current rules)
+	var rules []parser.Rule
+	if status.KnownHosts != nil {
+		for _, host := range status.KnownHosts {
+			normalizedStatusBlueprint := normalizePath(host.Blueprint)
+			if normalizedStatusBlueprint == normalizedBlueprint && host.OS == osName && !currentKnownHosts[host.Host] {
+				rules = append(rules, parser.Rule{
+					Action:     "uninstall",
+					KnownHosts: host.Host,
+					OSList:     []string{osName},
+				})
+			}
+		}
+	}
+
+	return rules
 }
