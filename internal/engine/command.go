@@ -32,7 +32,6 @@ func needsSudo(command string) bool {
 
 	// Check if this is a shell command that contains sudo
 	// (e.g., "sh -c 'sudo gpg ...'")
-	// Handlers are responsible for adding sudo to their commands
 	cmdName := strings.Fields(command)[0]
 	if cmdName == "sh" || cmdName == "bash" {
 		if strings.Contains(command, "sudo") {
