@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"fmt"
+	"os/user"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -111,6 +113,26 @@ func needsSudo(cmd string) bool {
 	return strings.Contains(cmd, "brew") || strings.Contains(cmd, "apt-get")
 }
 
+// shouldAddSudo checks if sudo should be added for package installation on this OS
+func (h *InstallHandler) shouldAddSudo() bool {
+	// Only Linux requires sudo for package managers
+	if getOSName() != "linux" {
+		return false
+	}
+
+	// Check if current user is root
+	currentUser, err := user.Current()
+	if err == nil {
+		uid, err := strconv.Atoi(currentUser.Uid)
+		if err == nil && uid == 0 {
+			// Already root, no sudo needed
+			return false
+		}
+	}
+
+	return true
+}
+
 // buildCommand builds the install command based on OS
 func (h *InstallHandler) buildCommand() string {
 	if len(h.Rule.Packages) == 0 {
@@ -134,7 +156,13 @@ func (h *InstallHandler) buildCommand() string {
 	if targetOS == "mac" {
 		return fmt.Sprintf("brew install %s", pkgNames)
 	}
-	return fmt.Sprintf("apt-get install -y %s", pkgNames)
+
+	// On Linux, package managers require sudo
+	cmd := fmt.Sprintf("apt-get install -y %s", pkgNames)
+	if h.shouldAddSudo() {
+		cmd = fmt.Sprintf("sudo %s", cmd)
+	}
+	return cmd
 }
 
 // buildUninstallCommand builds the uninstall command based on OS
@@ -160,7 +188,13 @@ func (h *InstallHandler) buildUninstallCommand(rule parser.Rule) string {
 	if targetOS == "mac" {
 		return fmt.Sprintf("brew uninstall -y %s", pkgNames)
 	}
-	return fmt.Sprintf("apt-get remove -y %s", pkgNames)
+
+	// On Linux, package managers require sudo
+	cmd := fmt.Sprintf("apt-get remove -y %s", pkgNames)
+	if h.shouldAddSudo() {
+		cmd = fmt.Sprintf("sudo %s", cmd)
+	}
+	return cmd
 }
 
 // getOSName returns the current operating system name
