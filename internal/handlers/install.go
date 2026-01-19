@@ -54,19 +54,11 @@ func (h *InstallHandler) Down() (string, error) {
 // GetCommand returns the actual command(s) that will be executed
 func (h *InstallHandler) GetCommand() string {
 	if h.Rule.Action == "uninstall" {
-		cmd := h.buildUninstallCommand(h.Rule)
-		if needsSudo(cmd) {
-			cmd = "sudo " + cmd
-		}
-		return cmd
+		return h.buildUninstallCommand(h.Rule)
 	}
 
 	// Install action
-	cmd := h.buildCommand()
-	if needsSudo(cmd) {
-		cmd = "sudo " + cmd
-	}
-	return cmd
+	return h.buildCommand()
 }
 
 // UpdateStatus updates the status after installing or uninstalling packages
@@ -78,10 +70,6 @@ func (h *InstallHandler) UpdateStatus(status *Status, records []ExecutionRecord,
 	case "install":
 		// Check if this rule's command was executed successfully
 		cmd := h.buildCommand()
-		if needsSudo(cmd) {
-			cmd = "sudo " + cmd
-		}
-
 		_, commandExecuted := commandSuccessfullyExecuted(cmd, records)
 
 		if commandExecuted {
@@ -115,8 +103,14 @@ func needsSudo(cmd string) bool {
 
 // shouldAddSudo checks if sudo should be added for package installation on this OS
 func (h *InstallHandler) shouldAddSudo() bool {
+	// Determine target OS
+	targetOS := getOSName()
+	if len(h.Rule.OSList) > 0 {
+		targetOS = strings.TrimSpace(h.Rule.OSList[0])
+	}
+
 	// Only Linux requires sudo for package managers
-	if getOSName() != "linux" {
+	if targetOS != "linux" {
 		return false
 	}
 
