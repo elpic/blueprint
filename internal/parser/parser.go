@@ -54,12 +54,20 @@ func Parse(content string) ([]Rule, error) {
 
 // ParseFile parses a file with include support
 func ParseFile(filePath string) ([]Rule, error) {
-	content, err := os.ReadFile(filePath)
+	// Convert to absolute path first to ensure relative includes work correctly
+	// regardless of the current working directory
+	absFilePath, err := filepath.Abs(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve blueprint path: %w", err)
+	}
+
+	content, err := os.ReadFile(absFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
-	baseDir := filepath.Dir(filePath)
+	// baseDir is now absolute, so all relative includes will be resolved correctly
+	baseDir := filepath.Dir(absFilePath)
 	return parseContent(string(content), baseDir, make(map[string]bool))
 }
 

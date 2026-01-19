@@ -23,7 +23,7 @@ func TestInstallHandlerGetCommand(t *testing.T) {
 				Packages: []parser.Package{{Name: "curl"}},
 				OSList:   []string{"mac"},
 			},
-			expected: "sudo brew install curl",
+			expected: "brew install curl",
 		},
 		{
 			name: "install multiple packages on mac",
@@ -36,7 +36,7 @@ func TestInstallHandlerGetCommand(t *testing.T) {
 				},
 				OSList: []string{"mac"},
 			},
-			expected: "sudo brew install git curl wget",
+			expected: "brew install git curl wget",
 		},
 		{
 			name: "install on linux",
@@ -54,7 +54,7 @@ func TestInstallHandlerGetCommand(t *testing.T) {
 				Packages: []parser.Package{{Name: "curl"}},
 				OSList:   []string{"mac"},
 			},
-			expected: "sudo brew uninstall -y curl",
+			expected: "brew uninstall -y curl",
 		},
 	}
 
@@ -91,7 +91,7 @@ func TestInstallHandlerBuildCommand(t *testing.T) {
 				{Name: "curl"},
 			},
 			osName:   "linux",
-			expected: "apt-get install -y curl",
+			expected: "sudo apt-get install -y curl",
 		},
 	}
 
