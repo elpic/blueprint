@@ -141,7 +141,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: test-binaries
+          name: test-binaries-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
             ${{ matrix.artifact }}
             ${{ matrix.artifact }}.sha256
@@ -157,19 +157,18 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          name: test-binaries
           path: ./binaries
 
       - name: Verify artifacts
         run: |
           echo "Downloaded artifacts:"
-          ls -lah ./binaries/
+          find ./binaries -type f
           echo ""
           echo "Artifact details:"
-          file ./binaries/*
+          file ./binaries/*/*
           echo ""
           echo "Checksums:"
-          cat ./binaries/*.sha256
+          find ./binaries -name "*.sha256" -exec cat {} \;
 
       - name: Test release info
         run: |
@@ -177,7 +176,7 @@ jobs:
           echo "Version that would be released: v$VERSION"
           echo "Tag: v$VERSION"
           echo "Artifacts that would be included:"
-          ls -1 ./binaries/
+          find ./binaries -type f -name "blueprint-*" ! -name "*.sha256"
 
   test-results:
     name: Test Release Workflow Summary
