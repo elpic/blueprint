@@ -179,34 +179,34 @@ jobs:
           echo "Artifacts that would be included:"
           ls -1 ./binaries/
 
-test-results:
-  name: Test Release Workflow Summary
-  runs-on: ubuntu-latest
-  needs: [test-version-detection, test-build, test-release-creation]
-  if: always()
-  steps:
-    - name: Check results
-      run: |
-        echo "## Release Workflow Test Summary" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Version Detection:**" >> $GITHUB_STEP_SUMMARY
-        echo "- Version: ${{ needs.test-version-detection.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-        echo "- Should Release: ${{ needs.test-version-detection.outputs.should_release }}" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Build Status:**" >> $GITHUB_STEP_SUMMARY
-        if [ "${{ needs.test-build.result }}" = "skipped" ]; then
-          echo "- Status: Skipped (no releasable commits)" >> $GITHUB_STEP_SUMMARY
-        elif [ "${{ needs.test-build.result }}" = "success" ]; then
-          echo "- Status: ✅ Success" >> $GITHUB_STEP_SUMMARY
-        else
-          echo "- Status: ❌ Failed" >> $GITHUB_STEP_SUMMARY
-        fi
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Release Creation:**" >> $GITHUB_STEP_SUMMARY
-        if [ "${{ needs.test-release-creation.result }}" = "skipped" ]; then
-          echo "- Status: Skipped (no releasable commits)" >> $GITHUB_STEP_SUMMARY
-        elif [ "${{ needs.test-release-creation.result }}" = "success" ]; then
-          echo "- Status: ✅ Success" >> $GITHUB_STEP_SUMMARY
-        else
-          echo "- Status: ❌ Failed" >> $GITHUB_STEP_SUMMARY
-        fi
+  test-results:
+    name: Test Release Workflow Summary
+    runs-on: ubuntu-latest
+    needs: [test-version-detection, test-build, test-release-creation]
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          echo "## Release Workflow Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version Detection:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Version: ${{ needs.test-version-detection.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Should Release: ${{ needs.test-version-detection.outputs.should_release }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Status:**" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.test-build.result }}" = "skipped" ]; then
+            echo "- Status: Skipped (no releasable commits)" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.test-build.result }}" = "success" ]; then
+            echo "- Status: ✅ Success" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Status: ❌ Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Release Creation:**" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.test-release-creation.result }}" = "skipped" ]; then
+            echo "- Status: Skipped (no releasable commits)" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.test-release-creation.result }}" = "success" ]; then
+            echo "- Status: ✅ Success" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Status: ❌ Failed" >> $GITHUB_STEP_SUMMARY
+          fi
