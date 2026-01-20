@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0). Leave empty for auto-detect'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -37,12 +43,16 @@ jobs:
           BUGFIX=false
 
           # Check for breaking changes, features, and fixes
-          echo "$COMMITS" | grep -q "^BREAKING CHANGE:" && BREAKING=true || true
-          echo "$COMMITS" | grep -q "^feat(" && FEATURE=true || true
-          echo "$COMMITS" | grep -q "^fix(" && BUGFIX=true || true
+          echo "$COMMITS" | grep -q "BREAKING CHANGE:" && BREAKING=true || true
+          echo "$COMMITS" | grep -q "^feat:" && FEATURE=true || true
+          echo "$COMMITS" | grep -q "^fix:" && BUGFIX=true || true
 
+          # Check if manual version was provided
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            SHOULD_RELEASE=true
+            NEW_VERSION="${{ github.event.inputs.version }}"
           # Only proceed if there are releasable commits
-          if [ "$BREAKING" = true ] || [ "$FEATURE" = true ] || [ "$BUGFIX" = true ]; then
+          elif [ "$BREAKING" = true ] || [ "$FEATURE" = true ] || [ "$BUGFIX" = true ]; then
             SHOULD_RELEASE=true
 
             # Parse current version
