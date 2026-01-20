@@ -1,0 +1,168 @@
+name: Semantic Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should_release: ${{ steps.version.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get latest tag
+        id: latest_tag
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+      - name: Analyze commits and determine version
+        id: version
+        run: |
+          LATEST_TAG=${{ steps.latest_tag.outputs.tag }}
+          COMMITS=$(git log ${LATEST_TAG}..HEAD --pretty=%B)
+
+          BREAKING=false
+          FEATURE=false
+          BUGFIX=false
+
+          # Check for breaking changes, features, and fixes
+          echo "$COMMITS" | grep -q "^BREAKING CHANGE:" && BREAKING=true || true
+          echo "$COMMITS" | grep -q "^feat(" && FEATURE=true || true
+          echo "$COMMITS" | grep -q "^fix(" && BUGFIX=true || true
+
+          # Only proceed if there are releasable commits
+          if [ "$BREAKING" = true ] || [ "$FEATURE" = true ] || [ "$BUGFIX" = true ]; then
+            SHOULD_RELEASE=true
+
+            # Parse current version
+            CURRENT_VERSION=${LATEST_TAG#v}
+            MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+            MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+            PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+
+            # Determine new version
+            if [ "$BREAKING" = true ]; then
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+            elif [ "$FEATURE" = true ]; then
+              MINOR=$((MINOR + 1))
+              PATCH=0
+            else
+              PATCH=$((PATCH + 1))
+            fi
+
+            NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          else
+            SHOULD_RELEASE=false
+            NEW_VERSION=""
+          fi
+
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "should_release=$SHOULD_RELEASE" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        if: steps.version.outputs.should_release == 'true'
+        id: changelog
+        run: |
+          LATEST_TAG=${{ steps.latest_tag.outputs.tag }}
+          CHANGELOG=$(git log ${LATEST_TAG}..HEAD --pretty=format:"- %s (%h)" | grep -E "^- (feat|fix|refactor|perf|docs)(\(.*\))?:" || echo "")
+
+          # Escape newlines for output
+          CHANGELOG="${CHANGELOG//'%'/'%25'}"
+          CHANGELOG="${CHANGELOG//$'\n'/'%0A'}"
+          CHANGELOG="${CHANGELOG//$'\r'/'%0D'}"
+
+          echo "changelog=$CHANGELOG" >> $GITHUB_OUTPUT
+
+      - name: Create git tag
+        if: steps.version.outputs.should_release == 'true'
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${VERSION}" -m "Release v${VERSION}"
+          git push origin "v${VERSION}"
+
+  build:
+    needs: release
+    if: needs.release.outputs.should_release == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            artifact: blueprint-linux-amd64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            artifact: blueprint-linux-arm64
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            artifact: blueprint-macos-amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            artifact: blueprint-macos-arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Build binary
+        run: |
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o ${{ matrix.artifact }} ./cmd/blueprint
+
+      - name: Generate checksum
+        run: |
+          sha256sum ${{ matrix.artifact }} > ${{ matrix.artifact }}.sha256
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: binaries
+          path: |
+            ${{ matrix.artifact }}
+            ${{ matrix.artifact }}.sha256
+
+  release-github:
+    needs: [release, build]
+    if: needs.release.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: binaries
+          path: ./binaries
+
+      - name: Create Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: v${{ needs.release.outputs.version }}
+          name: Release v${{ needs.release.outputs.version }}
+          body: |
+            ## Changes
+            ${{ needs.release.needs.changelog }}
+          artifacts: "binaries/*"
+          makeLatest: true
+          token: ${{ secrets.GITHUB_TOKEN }}
