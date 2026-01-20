@@ -1,0 +1,212 @@
+name: Test Release Workflow
+
+on:
+  push:
+    branches:
+      - 'fix/**'
+    paths:
+      - '.github/workflows/release.yml'
+      - '.github/workflows/test-release.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/release.yml'
+      - '.github/workflows/test-release.yml'
+  workflow_dispatch:
+
+jobs:
+  test-version-detection:
+    name: Test Version Detection
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should_release: ${{ steps.version.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get latest tag
+        id: latest_tag
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "Latest tag: $LATEST_TAG"
+
+      - name: Analyze commits and determine version
+        id: version
+        run: |
+          LATEST_TAG=${{ steps.latest_tag.outputs.tag }}
+          COMMITS=$(git log ${LATEST_TAG}..HEAD --pretty=%B)
+
+          echo "=== Commits since $LATEST_TAG ==="
+          echo "$COMMITS"
+          echo "================================"
+
+          BREAKING=false
+          FEATURE=false
+          BUGFIX=false
+
+          # Check for breaking changes, features, and fixes
+          echo "$COMMITS" | grep -q "BREAKING CHANGE:" && BREAKING=true || true
+          echo "$COMMITS" | grep -q "^feat:" && FEATURE=true || true
+          echo "$COMMITS" | grep -q "^fix:" && BUGFIX=true || true
+
+          echo "Breaking changes: $BREAKING"
+          echo "Features: $FEATURE"
+          echo "Bug fixes: $BUGFIX"
+
+          # Check if manual version was provided
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            SHOULD_RELEASE=true
+            NEW_VERSION="${{ github.event.inputs.version }}"
+          # Only proceed if there are releasable commits
+          elif [ "$BREAKING" = true ] || [ "$FEATURE" = true ] || [ "$BUGFIX" = true ]; then
+            SHOULD_RELEASE=true
+
+            # Parse current version
+            CURRENT_VERSION=${LATEST_TAG#v}
+            MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+            MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+            PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+
+            # Determine new version
+            if [ "$BREAKING" = true ]; then
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+            elif [ "$FEATURE" = true ]; then
+              MINOR=$((MINOR + 1))
+              PATCH=0
+            else
+              PATCH=$((PATCH + 1))
+            fi
+
+            NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          else
+            SHOULD_RELEASE=false
+            NEW_VERSION=""
+          fi
+
+          echo "Should release: $SHOULD_RELEASE"
+          echo "New version: $NEW_VERSION"
+          echo ""
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "should_release=$SHOULD_RELEASE" >> $GITHUB_OUTPUT
+
+  test-build:
+    name: Test Build
+    if: needs.test-version-detection.outputs.should_release == 'true'
+    needs: test-version-detection
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            artifact: blueprint-linux-amd64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            artifact: blueprint-linux-arm64
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            artifact: blueprint-macos-amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            artifact: blueprint-macos-arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Build binary
+        run: |
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o ${{ matrix.artifact }} ./cmd/blueprint
+          echo "Built ${{ matrix.artifact }}"
+
+      - name: Generate checksum
+        run: |
+          sha256sum ${{ matrix.artifact }} > ${{ matrix.artifact }}.sha256
+          echo "Checksums:"
+          cat ${{ matrix.artifact }}.sha256
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-binaries
+          path: |
+            ${{ matrix.artifact }}
+            ${{ matrix.artifact }}.sha256
+
+  test-release-creation:
+    name: Test Release Creation
+    if: needs.test-version-detection.outputs.should_release == 'true'
+    needs: [test-version-detection, test-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: test-binaries
+          path: ./binaries
+
+      - name: Verify artifacts
+        run: |
+          echo "Downloaded artifacts:"
+          ls -lah ./binaries/
+          echo ""
+          echo "Artifact details:"
+          file ./binaries/*
+          echo ""
+          echo "Checksums:"
+          cat ./binaries/*.sha256
+
+      - name: Test release info
+        run: |
+          VERSION=${{ needs.test-version-detection.outputs.version }}
+          echo "Version that would be released: v$VERSION"
+          echo "Tag: v$VERSION"
+          echo "Artifacts that would be included:"
+          ls -1 ./binaries/
+
+summary:
+  name: Test Release Workflow Summary
+  runs-on: ubuntu-latest
+  needs: [test-version-detection, test-build, test-release-creation]
+  if: always()
+  steps:
+    - name: Check results
+      run: |
+        echo "## Release Workflow Test Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Version Detection:**" >> $GITHUB_STEP_SUMMARY
+        echo "- Version: ${{ needs.test-version-detection.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Should Release: ${{ needs.test-version-detection.outputs.should_release }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Build Status:**" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ needs.test-build.result }}" = "skipped" ]; then
+          echo "- Status: Skipped (no releasable commits)" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ needs.test-build.result }}" = "success" ]; then
+          echo "- Status: ✅ Success" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- Status: ❌ Failed" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Release Creation:**" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ needs.test-release-creation.result }}" = "skipped" ]; then
+          echo "- Status: Skipped (no releasable commits)" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ needs.test-release-creation.result }}" = "success" ]; then
+          echo "- Status: ✅ Success" >> $GITHUB_STEP_STEP_SUMMARY
+        else
+          echo "- Status: ❌ Failed" >> $GITHUB_STEP_SUMMARY
+        fi
