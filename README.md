@@ -2,6 +2,16 @@
 
 Blueprint is a DSL (Domain Specific Language) based rule engine written in Go. It allows you to define and execute complex rules with conditions and actions in a declarative manner.
 
+## Installation
+
+You can install Blueprint using the installation script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/elpic/blueprint/main/install.sh | sh
+```
+
+Or download the latest binary from [releases](https://github.com/elpic/blueprint/releases).
+
 ## Project Structure
 
 ```
