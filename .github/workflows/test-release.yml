@@ -179,7 +179,7 @@ jobs:
           echo "Artifacts that would be included:"
           ls -1 ./binaries/
 
-test-summary:
+test-results:
   name: Test Release Workflow Summary
   runs-on: ubuntu-latest
   needs: [test-version-detection, test-build, test-release-creation]
