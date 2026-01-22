@@ -451,35 +451,39 @@ func (h *AsdfHandler) GetDisplayDetails(isUninstall bool) string {
 func (h *AsdfHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizePath(blueprintFile)
 
-	// Check if asdf is in current rules
-	asdfInCurrentRules := false
+	// Build set of current asdf packages from rules (plugin@version format)
+	currentPackages := make(map[string]bool)
 	for _, rule := range currentRules {
 		if rule.Action == "asdf" {
-			asdfInCurrentRules = true
-			break
+			for _, pkg := range rule.AsdfPackages {
+				currentPackages[pkg] = true
+			}
 		}
 	}
 
-	// If asdf is not in current rules but is in status, uninstall it
-	var rules []parser.Rule
-	if !asdfInCurrentRules && status.Asdfs != nil && len(status.Asdfs) > 0 {
-		var asdfPackagesToRemove []string
+	// Find packages to uninstall (in status but not in current rules)
+	var asdfPackagesToRemove []string
+	if status.Asdfs != nil {
 		for _, asdf := range status.Asdfs {
 			normalizedStatusBlueprint := normalizePath(asdf.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && asdf.OS == osName {
-				// Collect all packages (plugin@version) for this blueprint/OS
-				asdfPackagesToRemove = append(asdfPackagesToRemove, fmt.Sprintf("%s@%s", asdf.Plugin, asdf.Version))
+				pkgKey := fmt.Sprintf("%s@%s", asdf.Plugin, asdf.Version)
+				if !currentPackages[pkgKey] {
+					// This package is in status but not in current rules, so it should be uninstalled
+					asdfPackagesToRemove = append(asdfPackagesToRemove, pkgKey)
+				}
 			}
 		}
+	}
 
-		// If we found packages to remove, create a single uninstall rule
-		if len(asdfPackagesToRemove) > 0 {
-			rules = append(rules, parser.Rule{
-				Action:       "uninstall",
-				AsdfPackages: asdfPackagesToRemove,
-				OSList:       []string{osName},
-			})
-		}
+	// Return uninstall rule if there are packages to uninstall
+	var rules []parser.Rule
+	if len(asdfPackagesToRemove) > 0 {
+		rules = append(rules, parser.Rule{
+			Action:       "uninstall",
+			AsdfPackages: asdfPackagesToRemove,
+			OSList:       []string{osName},
+		})
 	}
 
 	return rules
