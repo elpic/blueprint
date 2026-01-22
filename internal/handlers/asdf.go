@@ -88,7 +88,7 @@ func (h *AsdfHandler) Up() (string, error) {
 	return "Installed asdf and plugins", nil
 }
 
-// Down uninstalls asdf and all versions completely
+// Down uninstalls asdf packages and optionally asdf itself
 func (h *AsdfHandler) Down() (string, error) {
 	// Uninstall each version
 	for _, pkg := range h.Rule.AsdfPackages {
@@ -126,12 +126,24 @@ func (h *AsdfHandler) Down() (string, error) {
 		}
 	}
 
-	// Uninstall asdf completely
-	if err := h.uninstallAsdf(); err != nil {
-		return "", fmt.Errorf("failed to uninstall asdf: %w", err)
+	// Only uninstall asdf completely if there are no more plugins installed
+	// Check if asdf has any plugins left
+	checkPluginsCmd := `. ~/.bashrc 2>/dev/null || true && asdf plugin list 2>/dev/null | wc -l`
+	output, err := exec.Command("sh", "-c", checkPluginsCmd).Output()
+	pluginCount := 0
+	if err == nil {
+		_, _ = fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &pluginCount)
 	}
 
-	return "Uninstalled asdf and all plugins", nil
+	// Only uninstall asdf if there are no plugins left
+	if pluginCount == 0 {
+		if err := h.uninstallAsdf(); err != nil {
+			return "", fmt.Errorf("failed to uninstall asdf: %w", err)
+		}
+		return "Uninstalled asdf and all plugins", nil
+	}
+
+	return "Uninstalled asdf packages", nil
 }
 
 // isAsdfInstalled checks if asdf is installed on the system
