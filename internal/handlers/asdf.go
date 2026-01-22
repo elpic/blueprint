@@ -463,18 +463,22 @@ func (h *AsdfHandler) FindUninstallRules(status *Status, currentRules []parser.R
 	// If asdf is not in current rules but is in status, uninstall it
 	var rules []parser.Rule
 	if !asdfInCurrentRules && status.Asdfs != nil && len(status.Asdfs) > 0 {
+		var asdfPackagesToRemove []string
 		for _, asdf := range status.Asdfs {
 			normalizedStatusBlueprint := normalizePath(asdf.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && asdf.OS == osName {
-				// Return a single uninstall rule for asdf (not per-plugin)
-				// Only add once per blueprint/OS combination
-				rules = append(rules, parser.Rule{
-					Action:        "uninstall",
-					AsdfPackages:  nil, // Will be detected by DetectRuleType
-					OSList:        []string{osName},
-				})
-				break // Only one uninstall rule needed per blueprint/OS
+				// Collect all packages (plugin@version) for this blueprint/OS
+				asdfPackagesToRemove = append(asdfPackagesToRemove, fmt.Sprintf("%s@%s", asdf.Plugin, asdf.Version))
 			}
+		}
+
+		// If we found packages to remove, create a single uninstall rule
+		if len(asdfPackagesToRemove) > 0 {
+			rules = append(rules, parser.Rule{
+				Action:       "uninstall",
+				AsdfPackages: asdfPackagesToRemove,
+				OSList:       []string{osName},
+			})
 		}
 	}
 
