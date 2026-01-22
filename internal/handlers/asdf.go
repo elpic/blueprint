@@ -485,7 +485,7 @@ func (h *AsdfHandler) FindUninstallRules(status *Status, currentRules []parser.R
 func succeededAsdfUninstall(records []ExecutionRecord) bool {
 	for _, record := range records {
 		// Check if any asdf uninstall command succeeded
-		if record.Status == "success" && record.Command == "asdf uninstall" {
+		if record.Status == "success" && strings.HasPrefix(record.Command, "asdf uninstall") {
 			return true
 		}
 	}
