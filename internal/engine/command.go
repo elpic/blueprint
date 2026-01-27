@@ -180,4 +180,14 @@ func shellEscape(s string) string {
 	return fmt.Sprintf("'%s'", escaped)
 }
 
+// clearSudoCache clears the sudo password cache on all operating systems
+// On Linux: runs 'sudo -K' to invalidate the sudo timestamp
+// On macOS: runs 'sudo -K' to invalidate the sudo timestamp
+func clearSudoCache() {
+	// Run sudo -K to clear the cached sudo session on all operating systems
+	cmd := exec.Command("sudo", "-K")
+	// Ignore errors - this is a cleanup operation
+	_ = cmd.Run()
+}
+
 // promptForSudoPassword checks if any rules need sudo and prompts for password upfront

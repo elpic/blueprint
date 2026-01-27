@@ -146,6 +146,9 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 		if err := saveStatus(allRules, records, file, currentOS); err != nil {
 			fmt.Printf("Warning: Failed to save status: %v\n", err)
 		}
+
+		// Clear sudo cache on all operating systems
+		clearSudoCache()
 	}
 }
 
@@ -242,5 +245,8 @@ func Run(file string, dry bool) {
 		if err := saveStatus(allRules, records, file, currentOS); err != nil {
 			fmt.Printf("Warning: Failed to save status: %v\n", err)
 		}
+
+		// Clear sudo cache on all operating systems
+		clearSudoCache()
 	}
 }
