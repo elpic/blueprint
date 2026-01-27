@@ -88,7 +88,7 @@ func (h *AsdfHandler) Up() (string, error) {
 	return "Installed asdf and plugins", nil
 }
 
-// Down uninstalls asdf and all versions completely
+// Down uninstalls asdf packages and optionally asdf itself
 func (h *AsdfHandler) Down() (string, error) {
 	// Uninstall each version
 	for _, pkg := range h.Rule.AsdfPackages {
@@ -126,12 +126,24 @@ func (h *AsdfHandler) Down() (string, error) {
 		}
 	}
 
-	// Uninstall asdf completely
-	if err := h.uninstallAsdf(); err != nil {
-		return "", fmt.Errorf("failed to uninstall asdf: %w", err)
+	// Only uninstall asdf completely if there are no more plugins installed
+	// Check if asdf has any plugins left
+	checkPluginsCmd := `. ~/.bashrc 2>/dev/null || true && asdf plugin list 2>/dev/null | wc -l`
+	output, err := exec.Command("sh", "-c", checkPluginsCmd).Output()
+	pluginCount := 0
+	if err == nil {
+		_, _ = fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &pluginCount)
 	}
 
-	return "Uninstalled asdf and all plugins", nil
+	// Only uninstall asdf if there are no plugins left
+	if pluginCount == 0 {
+		if err := h.uninstallAsdf(); err != nil {
+			return "", fmt.Errorf("failed to uninstall asdf: %w", err)
+		}
+		return "Uninstalled asdf and all plugins", nil
+	}
+
+	return "Uninstalled asdf packages", nil
 }
 
 // isAsdfInstalled checks if asdf is installed on the system
@@ -451,31 +463,39 @@ func (h *AsdfHandler) GetDisplayDetails(isUninstall bool) string {
 func (h *AsdfHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizePath(blueprintFile)
 
-	// Check if asdf is in current rules
-	asdfInCurrentRules := false
+	// Build set of current asdf packages from rules (plugin@version format)
+	currentPackages := make(map[string]bool)
 	for _, rule := range currentRules {
 		if rule.Action == "asdf" {
-			asdfInCurrentRules = true
-			break
+			for _, pkg := range rule.AsdfPackages {
+				currentPackages[pkg] = true
+			}
 		}
 	}
 
-	// If asdf is not in current rules but is in status, uninstall it
-	var rules []parser.Rule
-	if !asdfInCurrentRules && status.Asdfs != nil && len(status.Asdfs) > 0 {
+	// Find packages to uninstall (in status but not in current rules)
+	var asdfPackagesToRemove []string
+	if status.Asdfs != nil {
 		for _, asdf := range status.Asdfs {
 			normalizedStatusBlueprint := normalizePath(asdf.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && asdf.OS == osName {
-				// Return a single uninstall rule for asdf (not per-plugin)
-				// Only add once per blueprint/OS combination
-				rules = append(rules, parser.Rule{
-					Action:        "uninstall",
-					AsdfPackages:  nil, // Will be detected by DetectRuleType
-					OSList:        []string{osName},
-				})
-				break // Only one uninstall rule needed per blueprint/OS
+				pkgKey := fmt.Sprintf("%s@%s", asdf.Plugin, asdf.Version)
+				if !currentPackages[pkgKey] {
+					// This package is in status but not in current rules, so it should be uninstalled
+					asdfPackagesToRemove = append(asdfPackagesToRemove, pkgKey)
+				}
 			}
 		}
+	}
+
+	// Return uninstall rule if there are packages to uninstall
+	var rules []parser.Rule
+	if len(asdfPackagesToRemove) > 0 {
+		rules = append(rules, parser.Rule{
+			Action:       "uninstall",
+			AsdfPackages: asdfPackagesToRemove,
+			OSList:       []string{osName},
+		})
 	}
 
 	return rules
@@ -485,7 +505,7 @@ func (h *AsdfHandler) FindUninstallRules(status *Status, currentRules []parser.R
 func succeededAsdfUninstall(records []ExecutionRecord) bool {
 	for _, record := range records {
 		// Check if any asdf uninstall command succeeded
-		if record.Status == "success" && record.Command == "asdf uninstall" {
+		if record.Status == "success" && strings.HasPrefix(record.Command, "asdf uninstall") {
 			return true
 		}
 	}
