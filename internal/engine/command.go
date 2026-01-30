@@ -44,6 +44,9 @@ func needsSudo(command string) bool {
 
 
 func executeCommand(cmdStr string) (string, error) {
+	// Check if the command needs shell processing (contains pipes, redirects, tilde expansion, etc.)
+	needsShell := strings.ContainsAny(cmdStr, "|><&;$()~`")
+
 	// Check if sudo is needed
 	if needsSudo(cmdStr) {
 		// Check if user has passwordless sudo
@@ -63,7 +66,16 @@ func executeCommand(cmdStr string) (string, error) {
 		}
 	}
 
-	// Parse command string into parts
+	// If command needs shell processing or starts with sh -c, use shell
+	if needsShell || strings.HasPrefix(strings.TrimSpace(cmdStr), "sh -c") {
+		cmd := exec.Command("sh", "-c", cmdStr)
+		// Explicitly set Stdin to nil to prevent blocking on input
+		cmd.Stdin = nil
+		output, err := cmd.CombinedOutput()
+		return string(output), err
+	}
+
+	// Parse command string into parts for direct execution
 	parts := strings.Fields(cmdStr)
 	if len(parts) == 0 {
 		return "", fmt.Errorf("empty command")
@@ -71,6 +83,8 @@ func executeCommand(cmdStr string) (string, error) {
 
 	// Create command
 	cmd := exec.Command(parts[0], parts[1:]...)
+	// Explicitly set Stdin to nil to prevent blocking on input
+	cmd.Stdin = nil
 
 	// Capture output
 	output, err := cmd.CombinedOutput()
