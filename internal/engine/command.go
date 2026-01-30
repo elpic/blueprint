@@ -42,7 +42,6 @@ func needsSudo(command string) bool {
 	return false
 }
 
-
 func executeCommand(cmdStr string) (string, error) {
 	// Check if the command needs shell processing (contains pipes, redirects, tilde expansion, etc.)
 	needsShell := strings.ContainsAny(cmdStr, "|><&;$()~`")
