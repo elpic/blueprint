@@ -1,18 +1,27 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
-	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
+)
+
+// asdfVersionCache stores the fetched asdf version to avoid multiple API calls
+var (
+	asdfVersionCache string
+	asdfVersionMutex sync.Mutex
 )
 
 // AsdfHandler handles asdf version manager operations
@@ -34,10 +43,35 @@ func NewAsdfHandler(rule parser.Rule, basePath string) *AsdfHandler {
 func (h *AsdfHandler) Up() (string, error) {
 	// Check if asdf is installed
 	isInstalled := h.isAsdfInstalled()
+	needsInstall := false
+	var latestVersion string
 
-	// If asdf is not installed, install it
 	if !isInstalled {
-		if err := h.installAsdf(); err != nil {
+		needsInstall = true
+	} else {
+		// If asdf is installed, check if we need to update it
+		// Get the latest version available once
+		version, err := getLatestAsdfVersion()
+		if err == nil {
+			latestVersion = version
+			// Get currently installed version
+			installedVersion, err := h.getInstalledAsdfVersion()
+			if err == nil {
+				// Compare versions (simple string comparison for semver)
+				if installedVersion != latestVersion {
+					// Newer version available, remove old one first
+					if err := h.removeOldAsdf(); err != nil {
+						return "", fmt.Errorf("failed to remove old asdf: %w", err)
+					}
+					needsInstall = true
+				}
+			}
+		}
+	}
+
+	// Install asdf if needed (pass latestVersion to avoid fetching again)
+	if needsInstall {
+		if err := h.installAsdfWithVersion(latestVersion); err != nil {
 			return "", fmt.Errorf("failed to install asdf: %w", err)
 		}
 	}
@@ -72,13 +106,19 @@ func (h *AsdfHandler) Up() (string, error) {
 		)
 	}
 
-	// Execute all commands in a single shell session with asdf sourced once
+	// Execute all commands in a single shell session with asdf in PATH
 	if len(allCmds) > 0 {
-		// Source bashrc once at the beginning to make asdf available for all commands
+		// Build command with asdf in PATH - symlink and PATH are sufficient for asdf to work
 		combinedCmd := strings.Join(allCmds, " && ")
-		fullCmd := fmt.Sprintf(". ~/.bashrc 2>/dev/null || true && %s", combinedCmd)
-		if err := exec.Command("sh", "-c", fullCmd).Run(); err != nil {
-			return "", fmt.Errorf("failed to install asdf packages: %w", err)
+		// Set PATH to include asdf bin directory
+		fullCmd := fmt.Sprintf("export PATH=\"$HOME/.asdf/bin:$PATH\" && %s", combinedCmd)
+		cmd := exec.Command("bash", "-c", fullCmd)
+		// Ensure stdin is completely disconnected
+		cmd.Stdin = nil
+		// Capture output for debugging
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Sprintf("Installation output:\n%s", string(output)), fmt.Errorf("failed to install asdf packages: %w", err)
 		}
 	}
 
@@ -146,20 +186,68 @@ func (h *AsdfHandler) Down() (string, error) {
 	return "Uninstalled asdf packages", nil
 }
 
-// isAsdfInstalled checks if asdf is installed on the system
+// isAsdfInstalled checks if asdf is installed in /usr/local/bin
 func (h *AsdfHandler) isAsdfInstalled() bool {
-	checkCmd := "which asdf"
-	return exec.Command("sh", "-c", checkCmd).Run() == nil
+	// Check if /usr/local/bin/asdf exists
+	_, err := os.Stat("/usr/local/bin/asdf")
+	return err == nil
 }
 
-// installAsdf installs asdf using the best available method
-func (h *AsdfHandler) installAsdf() error {
+// getInstalledAsdfVersion returns the currently installed asdf version
+func (h *AsdfHandler) getInstalledAsdfVersion() (string, error) {
+	// Try to get version from asdf
+	cmd := exec.Command("sh", "-c", ". ~/.bashrc 2>/dev/null || true && asdf --version")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get asdf version: %w", err)
+	}
+
+	// Parse version from output (format: "v0.18.0" or "asdf 0.18.0")
+	versionStr := strings.TrimSpace(string(output))
+	if versionStr == "" {
+		return "", fmt.Errorf("empty version output from asdf --version")
+	}
+
+	// Remove 'v' prefix and 'asdf' prefix if present
+	versionStr = strings.TrimPrefix(versionStr, "v")
+	versionStr = strings.TrimPrefix(versionStr, "asdf ")
+
+	// Take first word if multiple words
+	fields := strings.Fields(versionStr)
+	if len(fields) > 0 {
+		versionStr = fields[0]
+	}
+
+	return versionStr, nil
+}
+
+// removeOldAsdf removes the old asdf installation from /usr/local/bin
+func (h *AsdfHandler) removeOldAsdf() error {
+	asdfPath := "/usr/local/bin/asdf"
+
+	// Try to remove without sudo first
+	if err := os.Remove(asdfPath); err == nil {
+		return nil
+	}
+
+	// If that fails, try with sudo
+	removeCmd := fmt.Sprintf("sudo rm -f %s", asdfPath)
+	if _, err := executeCommandWithCache(removeCmd); err != nil {
+		return fmt.Errorf("failed to remove old asdf: %w", err)
+	}
+
+	return nil
+}
+
+// installAsdfWithVersion installs asdf using the best available method with a cached version
+// Pass empty string for version to fetch it automatically
+func (h *AsdfHandler) installAsdfWithVersion(version string) error {
 	switch runtime.GOOS {
 	case "darwin":
 		return h.installAsdfMacOS()
 
 	case "linux":
-		return h.installAsdfLinux()
+		return h.installAsdfLinuxWithVersion(version)
 
 	default:
 		return fmt.Errorf("asdf installation not supported on %s", runtime.GOOS)
@@ -181,57 +269,82 @@ func (h *AsdfHandler) installAsdfMacOS() error {
 	return nil
 }
 
-// installAsdfLinux installs asdf on Linux by cloning the repository
-// Clones asdf to ~/.asdf and configures shell initialization
-func (h *AsdfHandler) installAsdfLinux() error {
-	// Install dependencies: bash
-	depCmd := "DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq bash 2>/dev/null || true"
-	_, _ = executeCommandWithCache(depCmd) // Don't fail - bash might already be installed
-
-	// Get home directory
-	homeDir, err := os.UserHomeDir()
+// installAsdfLinuxWithVersion installs asdf on Linux with a cached version
+// Pass empty string for version to fetch it automatically
+func (h *AsdfHandler) installAsdfLinuxWithVersion(version string) error {
+	// Get system architecture using uname -m (maps to asdf release names)
+	asdfArch, err := getSystemArchitecture()
 	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
+		return fmt.Errorf("failed to detect system architecture: %w", err)
 	}
 
-	// Clone asdf repository to ~/.asdf using go-git library
-	asdfPath := filepath.Join(homeDir, ".asdf")
-	_, _, _, err = gitpkg.CloneOrUpdateRepository(
-		"https://github.com/asdf-vm/asdf.git",
-		asdfPath,
-		"master",
-	)
+	// If version is empty, fetch the latest release version from GitHub API
+	if version == "" {
+		fetchedVersion, err := getLatestAsdfVersion()
+		if err != nil {
+			return fmt.Errorf("failed to get latest asdf version: %w", err)
+		}
+		version = fetchedVersion
+	}
+
+	downloadURL := fmt.Sprintf("https://github.com/asdf-vm/asdf/releases/download/v%s/asdf-v%s-linux-%s.tar.gz", version, version, asdfArch)
+
+	// Create temporary directory for download and extraction
+	tmpDir, err := os.MkdirTemp("", "asdf-install-*")
 	if err != nil {
-		return fmt.Errorf("failed to clone asdf repository: %w", err)
+		return fmt.Errorf("failed to create temporary directory: %w", err)
+	}
+	defer func() {
+		_ = os.RemoveAll(tmpDir)
+	}()
+
+	// Download the binary
+	asdfTarPath := filepath.Join(tmpDir, fmt.Sprintf("asdf-v%s-linux-%s.tar.gz", version, asdfArch))
+	downloadCmd := fmt.Sprintf("curl -fsSL -o %s %s", asdfTarPath, downloadURL)
+	if _, err := executeCommandWithCache(downloadCmd); err != nil {
+		return fmt.Errorf("failed to download asdf binary: %w", err)
 	}
 
-	// Add asdf.sh to bashrc if not already present
-	// First ensure bashrc exists
-	touchCmd := `touch ~/.bashrc`
-	if _, err := executeCommandWithCache(touchCmd); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not create ~/.bashrc\n")
+	// Extract tar.gz to temp directory
+	extractCmd := fmt.Sprintf("tar -xzf %s -C %s", asdfTarPath, tmpDir)
+	if _, err := executeCommandWithCache(extractCmd); err != nil {
+		return fmt.Errorf("failed to extract asdf binary: %w", err)
 	}
 
-	// Check if already present using grep
-	checkCmd := `grep -q '. $HOME/.asdf/asdf.sh' ~/.bashrc 2>/dev/null`
-	_, checkErr := executeCommandWithCache(checkCmd)
-	hasAsdfInit := checkErr == nil
+	// The extracted file is just 'asdf' in the temp directory
+	extractedBinary := filepath.Join(tmpDir, "asdf")
+	if _, err := os.Stat(extractedBinary); err != nil {
+		return fmt.Errorf("asdf binary not found in archive: %w", err)
+	}
 
-	if !hasAsdfInit {
-		// Add asdf initialization to bashrc
-		addCmd := `echo ". $HOME/.asdf/asdf.sh" >> ~/.bashrc`
-		if _, err := executeCommandWithCache(addCmd); err != nil {
-			// Don't fail if bashrc update fails
-			fmt.Fprintf(os.Stderr, "Warning: could not update ~/.bashrc\n")
+	// Install directly to /usr/local/bin/asdf
+	asdfBinPath := "/usr/local/bin/asdf"
+
+	// Try to copy the binary directly first (for root or if /usr/local/bin is writable)
+	if err := os.Rename(extractedBinary, asdfBinPath); err == nil {
+		// Successfully moved, make it executable
+		// 0755 is standard for system-wide binaries in /usr/local/bin
+		// #nosec G302
+		if err := os.Chmod(asdfBinPath, 0o755); err != nil {
+			return fmt.Errorf("failed to make asdf executable: %w", err)
+		}
+	} else {
+		// Need sudo, use cp with sudo
+		cpCmd := fmt.Sprintf("sudo cp %s %s", extractedBinary, asdfBinPath)
+		if _, err := executeCommandWithCache(cpCmd); err != nil {
+			return fmt.Errorf("failed to install asdf to %s: %w", asdfBinPath, err)
+		}
+
+		// Make it executable with sudo
+		// 0755 is standard for system-wide binaries in /usr/local/bin
+		chmodCmd := fmt.Sprintf("sudo chmod 755 %s", asdfBinPath) // nosec G302
+		if _, err := executeCommandWithCache(chmodCmd); err != nil {
+			return fmt.Errorf("failed to make asdf executable: %w", err)
 		}
 	}
 
-	// Source bashrc to load asdf in current shell
-	sourceCmd := `bash -c 'source ~/.bashrc'`
-	if _, err := executeCommandWithCache(sourceCmd); err != nil {
-		// Don't fail if sourcing fails - asdf will be available in new shell
-		fmt.Fprintf(os.Stderr, "Warning: asdf will be available in your next shell session\n")
-	}
+	// asdf is now installed to /usr/local/bin/asdf which is in default PATH
+	// No additional setup needed - asdf will create ~/.asdf on first use
 
 	return nil
 }
@@ -267,23 +380,20 @@ func (h *AsdfHandler) uninstallAsdfMacOS() error {
 	return nil
 }
 
-// uninstallAsdfLinux removes asdf from Linux (cloned from GitHub repository)
+// uninstallAsdfLinux removes asdf from Linux
 func (h *AsdfHandler) uninstallAsdfLinux() error {
-	// Remove asdf directory that was cloned from GitHub
-	removeAsdfCmd := `rm -rf ~/.asdf`
-	if _, err := executeCommandWithCache(removeAsdfCmd); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to remove ~/.asdf\n")
+	asdfPath := "/usr/local/bin/asdf"
+
+	// Try to remove without sudo first
+	if err := os.Remove(asdfPath); err == nil {
+		return nil
 	}
 
-	// Remove asdf initialization from bashrc using sed
-	removeBashrcCmd := `sed -i.bak '/. $HOME\/.asdf\/asdf.sh/d' ~/.bashrc 2>/dev/null || true`
-	if _, err := executeCommandWithCache(removeBashrcCmd); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not remove asdf initialization from ~/.bashrc\n")
+	// If that fails, try with sudo
+	removeCmd := fmt.Sprintf("sudo rm -f %s", asdfPath)
+	if _, err := executeCommandWithCache(removeCmd); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to remove asdf from %s\n", asdfPath)
 	}
-
-	// Clean up sed backup file if it was created
-	cleanupCmd := `rm -f ~/.bashrc.bak`
-	_, _ = executeCommandWithCache(cleanupCmd) // Ignore errors on cleanup
 
 	return nil
 }
@@ -524,4 +634,81 @@ func isValidAsdfIdentifier(identifier string) bool {
 		return false
 	}
 	return matched
+}
+
+// getSystemArchitecture detects the system architecture using uname -m
+// and maps it to asdf release names (amd64, arm64, 386, etc.)
+func getSystemArchitecture() (string, error) {
+	// Get architecture using uname -m
+	cmd := exec.Command("uname", "-m")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to detect architecture: %w", err)
+	}
+
+	arch := strings.TrimSpace(string(output))
+
+	// Map system architecture to asdf release names
+	switch arch {
+	case "x86_64":
+		return "amd64", nil
+	case "aarch64":
+		return "arm64", nil
+	case "arm64":
+		return "arm64", nil
+	case "i386", "i686":
+		return "386", nil
+	default:
+		return "", fmt.Errorf("unsupported architecture: %s", arch)
+	}
+}
+
+// getLatestAsdfVersion fetches the latest asdf version from GitHub API
+func getLatestAsdfVersion() (string, error) {
+	// Check cache first to avoid repeated API calls
+	asdfVersionMutex.Lock()
+	if asdfVersionCache != "" {
+		defer asdfVersionMutex.Unlock()
+		return asdfVersionCache, nil
+	}
+	asdfVersionMutex.Unlock()
+
+	// Fetch from GitHub API
+	resp, err := http.Get("https://api.github.com/repos/asdf-vm/asdf/releases/latest")
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch latest asdf version: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("github api returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var release struct {
+		TagName string `json:"tag_name"`
+	}
+
+	if err := json.Unmarshal(body, &release); err != nil {
+		return "", fmt.Errorf("failed to parse github response: %w", err)
+	}
+
+	// Remove 'v' prefix if present
+	version := strings.TrimPrefix(release.TagName, "v")
+	if version == "" {
+		return "", fmt.Errorf("invalid version from github api")
+	}
+
+	// Store in cache for future calls
+	asdfVersionMutex.Lock()
+	asdfVersionCache = version
+	asdfVersionMutex.Unlock()
+
+	return version, nil
 }
