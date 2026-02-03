@@ -14,7 +14,7 @@ type Package struct {
 
 type Rule struct {
 	ID       string // Unique identifier for this rule
-	Action   string // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "known_hosts", or "gpg-key"
+	Action   string // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "homebrew", "known_hosts", or "gpg-key"
 	Packages []Package
 	OSList   []string
 	After    []string // List of IDs or package names this rule depends on
@@ -45,6 +45,9 @@ type Rule struct {
 	GPGKeyURL  string // URL to the GPG key file
 	GPGKeyring string // Name of the keyring (without path or .gpg extension)
 	GPGDebURL  string // Debian repository URL
+
+	// Homebrew-specific fields
+	HomebrewPackages []string // List of "formula[@version]" for homebrew (e.g., "node@20", "git")
 }
 
 // Parse parses content without include support

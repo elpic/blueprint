@@ -83,6 +83,15 @@ type AsdfStatus struct {
 	OS          string `json:"os"`
 }
 
+// HomebrewStatus tracks installed homebrew formulas
+type HomebrewStatus struct {
+	Formula     string `json:"formula"`
+	Version     string `json:"version"`
+	InstalledAt string `json:"installed_at"`
+	Blueprint   string `json:"blueprint"`
+	OS          string `json:"os"`
+}
+
 // Status represents the current blueprint state
 type Status struct {
 	Packages   []PackageStatus    `json:"packages"`
@@ -92,6 +101,7 @@ type Status struct {
 	KnownHosts []KnownHostsStatus `json:"known_hosts"`
 	GPGKeys    []GPGKeyStatus     `json:"gpg_keys"`
 	Asdfs      []AsdfStatus       `json:"asdfs"`
+	Brews      []HomebrewStatus   `json:"brews"`
 }
 
 // Handler is the interface that all command handlers must implement
@@ -216,6 +226,9 @@ func DetectRuleType(rule parser.Rule) string {
 	if len(rule.AsdfPackages) > 0 {
 		return "asdf"
 	}
+	if len(rule.HomebrewPackages) > 0 {
+		return "homebrew"
+	}
 	if rule.KnownHosts != "" {
 		return "known_hosts"
 	}
@@ -249,6 +262,8 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 		return NewMkdirHandler(rule, basePath)
 	case "asdf":
 		return NewAsdfHandler(rule, basePath)
+	case "homebrew":
+		return NewHomebrewHandler(rule, basePath)
 	case "known_hosts":
 		return NewKnownHostsHandler(rule, basePath)
 	case "gpg-key":
@@ -280,6 +295,9 @@ func GetHandlerFactory(action string) HandlerFactory {
 		"asdf": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
 			return NewAsdfHandler(rule, basePath)
 		},
+		"homebrew": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
+			return NewHomebrewHandler(rule, basePath)
+		},
 		"known_hosts": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
 			return NewKnownHostsHandler(rule, basePath)
 		},
@@ -300,6 +318,7 @@ func GetStatusProviderHandlers() []Handler {
 		NewCloneHandler(parser.Rule{}, ""),
 		NewDecryptHandler(parser.Rule{}, "", nil),
 		NewAsdfHandler(parser.Rule{}, ""),
+		NewHomebrewHandler(parser.Rule{}, ""),
 		NewMkdirHandler(parser.Rule{}, ""),
 		NewKnownHostsHandler(parser.Rule{}, ""),
 		NewGPGKeyHandler(parser.Rule{}, ""),
@@ -402,6 +421,19 @@ func removeGPGKeyStatus(gpgKeys []GPGKeyStatus, keyring string, blueprint string
 		normalizedStoredBlueprint := normalizePath(gk.Blueprint)
 		if gk.Keyring != keyring || normalizedStoredBlueprint != normalizedBlueprint || gk.OS != osName {
 			result = append(result, gk)
+		}
+	}
+	return result
+}
+
+// removeHomebrewStatus removes a homebrew formula from the status brews list
+func removeHomebrewStatus(brews []HomebrewStatus, formula string, blueprint string, osName string) []HomebrewStatus {
+	var result []HomebrewStatus
+	normalizedBlueprint := normalizePath(blueprint)
+	for _, brew := range brews {
+		normalizedStoredBlueprint := normalizePath(brew.Blueprint)
+		if brew.Formula != formula || normalizedStoredBlueprint != normalizedBlueprint || brew.OS != osName {
+			result = append(result, brew)
 		}
 	}
 	return result
