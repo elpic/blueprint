@@ -254,12 +254,6 @@ func (h *AsdfHandler) installAsdfWithVersion(version string) error {
 	}
 }
 
-// installAsdf installs asdf using the best available method
-func (h *AsdfHandler) installAsdf() error {
-	// For backwards compatibility, fetch version automatically
-	return h.installAsdfWithVersion("")
-}
-
 // installAsdfMacOS installs asdf on macOS using Homebrew
 func (h *AsdfHandler) installAsdfMacOS() error {
 	// First install coreutils as dependency (continue if it fails, might already be installed)
@@ -300,7 +294,9 @@ func (h *AsdfHandler) installAsdfLinuxWithVersion(version string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create temporary directory: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		_ = os.RemoveAll(tmpDir)
+	}()
 
 	// Download the binary
 	asdfTarPath := filepath.Join(tmpDir, fmt.Sprintf("asdf-v%s-linux-%s.tar.gz", version, asdfArch))
@@ -327,7 +323,9 @@ func (h *AsdfHandler) installAsdfLinuxWithVersion(version string) error {
 	// Try to copy the binary directly first (for root or if /usr/local/bin is writable)
 	if err := os.Rename(extractedBinary, asdfBinPath); err == nil {
 		// Successfully moved, make it executable
-		if err := os.Chmod(asdfBinPath, 0755); err != nil {
+		// 0755 is standard for system-wide binaries in /usr/local/bin
+		// #nosec G302
+		if err := os.Chmod(asdfBinPath, 0o755); err != nil {
 			return fmt.Errorf("failed to make asdf executable: %w", err)
 		}
 	} else {
@@ -338,7 +336,8 @@ func (h *AsdfHandler) installAsdfLinuxWithVersion(version string) error {
 		}
 
 		// Make it executable with sudo
-		chmodCmd := fmt.Sprintf("sudo chmod 755 %s", asdfBinPath)
+		// 0755 is standard for system-wide binaries in /usr/local/bin
+		chmodCmd := fmt.Sprintf("sudo chmod 755 %s", asdfBinPath) // nosec G302
 		if _, err := executeCommandWithCache(chmodCmd); err != nil {
 			return fmt.Errorf("failed to make asdf executable: %w", err)
 		}
@@ -679,7 +678,9 @@ func getLatestAsdfVersion() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch latest asdf version: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("github api returned status %d", resp.StatusCode)
