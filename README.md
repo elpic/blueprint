@@ -30,6 +30,7 @@ Or download the latest binary from [releases](https://github.com/elpic/blueprint
 │   │   ├── clone.go        # Clone/pull git repositories
 │   │   ├── decrypt.go      # Decrypt encrypted files
 │   │   ├── asdf.go         # Version manager setup
+│   │   ├── homebrew.go     # Homebrew package manager setup
 │   │   ├── mkdir.go        # Directory creation
 │   │   ├── known_hosts.go  # SSH known_hosts management
 │   │   ├── gpg_key.go      # GPG key & repository setup
@@ -610,6 +611,88 @@ asdf versions nodejs
 asdf global nodejs 21.4.0
 ```
 
+### Homebrew Rules
+
+Install and maintain packages using Homebrew package manager:
+
+```
+homebrew [formula[@version] ...] [id: <rule-id>] [after: <dependency>] on: [platform1, platform2, ...]
+```
+
+**What is Homebrew?**
+Homebrew is a package manager for macOS and Linux that simplifies software installation and management. Learn more at https://brew.sh/
+
+**Formula Syntax:**
+- `formula` - Install a formula (e.g., `git`, `node`, `python@3.11`)
+- `formula@version` - Install a specific version of a formula (e.g., `node@18`, `python@3.11`)
+- Multiple formulas can be specified in a single rule
+- Supports versioned formulas like `formula@major.minor`
+
+**Options:**
+- `id: <rule-id>` - Give this rule a unique identifier (optional)
+- `after: <dependency>` - Execute after another rule (optional)
+- `on: [platforms]` - Target specific platforms (macOS: "mac", Linux: "linux") (optional)
+
+**Behavior:**
+- Automatically installs Homebrew if not already present
+  - On macOS: Uses official Homebrew installation script
+  - On Linux: Installs dependencies (git, curl, build-essential) then runs official script
+- Thread-safe installation prevents concurrent conflicts
+- Tracks installed packages with version information
+- Auto-uninstalls packages if removed from blueprint (like asdf)
+- Supports installation on both macOS and Linux
+
+**Examples:**
+
+```blueprint
+# Simple homebrew installation
+homebrew git on: [mac]
+
+# Multiple packages
+homebrew git curl wget on: [mac, linux]
+
+# With specific versions
+homebrew node@18 python@3.11 on: [mac]
+
+# With ID for dependencies
+homebrew git id: setup-git on: [mac]
+
+# After another rule
+homebrew build-essential after: setup-git on: [linux]
+
+# Complete example with dependencies
+asdf nodejs@18.19.0 id: version-manager on: [mac, linux]
+homebrew git curl after: version-manager on: [mac, linux]
+install typescript on: [mac, linux] after: version-manager
+```
+
+**Auto-Uninstall Example:**
+When you remove a homebrew rule from your blueprint, the packages are automatically uninstalled:
+
+```blueprint
+# Before (old setup.bp)
+homebrew git curl node on: [mac]
+install npm-tools on: [mac]
+
+# After (new setup.bp)
+homebrew git on: [mac]
+install npm-tools on: [mac]
+
+# When you run: ./blueprint apply setup.bp
+# Result: curl and node are automatically uninstalled with: brew uninstall -y curl node
+```
+
+**Platform Support:**
+- **macOS**: Full support via Homebrew
+- **Linux**: Full support via Linuxbrew (Homebrew for Linux)
+- **Windows**: Not supported
+
+**Security Notes:**
+- Homebrew installation downloads official scripts from GitHub
+- All installations use HTTPS
+- Packages are verified by Homebrew's official repositories
+- When removed from blueprint, packages are cleanly uninstalled
+
 ### Known Hosts Rules
 
 Manage SSH known_hosts file entries for host verification:
@@ -932,14 +1015,16 @@ install make on: [mac, linux]
 Blueprint automatically generates the correct package manager commands for both explicit rules and automatic cleanup:
 
 ### macOS
-- Install rules → `brew install <packages>`
+- Install rules → `brew install <packages>` (for `install` action)
+- Homebrew rules → `brew install <formulas>` (for `homebrew` action)
 - Auto-cleanup (removed packages) → `brew uninstall -y <packages>`
 
 ### Linux
-- Install rules → `apt-get install -y <packages>`
+- Install rules → `apt-get install -y <packages>` (for `install` action)
+- Homebrew rules → `brew install <formulas>` (for `homebrew` action via Linuxbrew)
 - Auto-cleanup (removed packages) → `apt-get remove -y <packages>`
 
-The system also automatically adds `sudo` when needed on Linux (if not running as root).
+The system also automatically adds `sudo` when needed on Linux (if not running as root). Homebrew installation automatically handles dependencies and permissions on both platforms.
 
 ## Status Tracking
 
@@ -962,6 +1047,11 @@ Installed Packages:
   ● curl (2025-12-06 01:05:00) [mac, setup.bp]
   ● nodejs (2025-12-06 01:10:00) [mac, setup.bp]
 
+Installed Homebrew Formulas:
+  ● git (2025-12-06 01:12:00) [mac, setup.bp]
+  ● node@18 (2025-12-06 01:13:00) [mac, setup.bp]
+  ● python@3.11 (2025-12-06 01:14:00) [mac, setup.bp]
+
 Cloned Repositories:
   ● ~/.dotfiles (2025-12-06 01:15:00) [mac, setup.bp]
      URL: https://github.com/user/dotfiles.git
@@ -980,12 +1070,14 @@ Cloned Repositories:
 
 The status file tracks:
 - **Packages:** Name, installation timestamp, blueprint source, OS
+- **Homebrew Formulas:** Formula name, version, installation timestamp, blueprint source, OS
 - **Cloned repositories:** URL, path, commit SHA, clone timestamp, blueprint source, OS
 
 This information is useful for:
 - Understanding what your current system setup includes
 - Tracking which blueprint file installed what
 - Seeing commit SHAs for cloned repositories
+- Monitoring homebrew formula versions and installation times
 - Auditing your system configuration
 
 ## History Tracking
