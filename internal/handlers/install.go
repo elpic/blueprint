@@ -185,18 +185,17 @@ func (h *InstallHandler) buildInstallCommandForManager(manager string, pkgNames 
 	// Handle specific package managers
 	switch manager {
 	case "snap":
-		// snap install doesn't support multiple packages in one command typically,
-		// but we can use a loop-like command
+		// snap install - each package requires separate sudo command
 		if targetOS == "linux" {
 			var snapCmds []string
 			for _, pkg := range pkgNames {
-				snapCmds = append(snapCmds, fmt.Sprintf("snap install %s", pkg))
+				snapCmd := fmt.Sprintf("snap install %s", pkg)
+				if h.shouldAddSudo() {
+					snapCmd = fmt.Sprintf("sudo %s", snapCmd)
+				}
+				snapCmds = append(snapCmds, snapCmd)
 			}
-			cmd := strings.Join(snapCmds, " && ")
-			if h.shouldAddSudo() {
-				cmd = fmt.Sprintf("sudo bash -c '%s'", cmd)
-			}
-			return cmd
+			return strings.Join(snapCmds, " && ")
 		}
 		return ""
 
@@ -278,17 +277,17 @@ func (h *InstallHandler) buildUninstallCommandForManager(manager string, pkgName
 	// Handle specific package managers
 	switch manager {
 	case "snap":
-		// snap remove command
+		// snap remove command - each package requires separate sudo command
 		if targetOS == "linux" {
 			var snapCmds []string
 			for _, pkg := range pkgNames {
-				snapCmds = append(snapCmds, fmt.Sprintf("snap remove %s", pkg))
+				snapCmd := fmt.Sprintf("snap remove %s", pkg)
+				if h.shouldAddSudo() {
+					snapCmd = fmt.Sprintf("sudo %s", snapCmd)
+				}
+				snapCmds = append(snapCmds, snapCmd)
 			}
-			cmd := strings.Join(snapCmds, " && ")
-			if h.shouldAddSudo() {
-				cmd = fmt.Sprintf("sudo bash -c '%s'", cmd)
-			}
-			return cmd
+			return strings.Join(snapCmds, " && ")
 		}
 		return ""
 
