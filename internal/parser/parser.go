@@ -8,8 +8,9 @@ import (
 )
 
 type Package struct {
-	Name    string
-	Version string
+	Name           string
+	Version        string
+	PackageManager string // e.g., "apt", "snap", defaults to system default
 }
 
 type Rule struct {
@@ -219,9 +220,10 @@ func parseInstallRule(line string) *Rule {
 		}
 	}
 
-	// Parse rule part: extract id: and after: clauses
+	// Parse rule part: extract id:, after:, and package-manager: clauses
 	var id string
 	var dependencies []string
+	var packageManager string
 
 	// Extract id: value
 	if strings.Contains(rulePart, "id:") {
@@ -256,11 +258,26 @@ func parseInstallRule(line string) *Rule {
 		}
 	}
 
+	// Extract package-manager: value
+	if strings.Contains(rulePart, "package-manager:") {
+		pkgMgrParts := strings.Split(rulePart, "package-manager:")
+		if len(pkgMgrParts) >= 2 {
+			pkgMgrValue := strings.TrimSpace(pkgMgrParts[1])
+			// Get the package manager (first word after package-manager:)
+			pkgMgrFields := strings.Fields(pkgMgrValue)
+			if len(pkgMgrFields) > 0 {
+				packageManager = pkgMgrFields[0]
+				// Reconstruct rulePart without the package-manager: part
+				rulePart = pkgMgrParts[0] + " " + strings.Join(pkgMgrFields[1:], " ")
+			}
+		}
+	}
+
 	// Extract package names (remaining words in rulePart)
 	packageNames := strings.Fields(rulePart)
 	pkgs := make([]Package, len(packageNames))
 	for i, pkg := range packageNames {
-		pkgs[i] = Package{Name: pkg, Version: "latest"}
+		pkgs[i] = Package{Name: pkg, Version: "latest", PackageManager: packageManager}
 	}
 
 	return &Rule{
