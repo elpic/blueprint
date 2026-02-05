@@ -131,6 +131,12 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 			if rule != nil {
 				rules = append(rules, *rule)
 			}
+		} else if strings.HasPrefix(line, "homebrew") {
+			// Parse format: homebrew [formula[@version] ...] [id: <id>] [after: <deps>] on: [<platforms>]
+			rule := parseHomebrewRule(line)
+			if rule != nil {
+				rules = append(rules, *rule)
+			}
 		} else if strings.HasPrefix(line, "decrypt ") {
 			// Parse format: decrypt <file> to: <path> [group: <group>] [password-id: <id>] [id: <id>] [after: <deps>] on: [<platforms>]
 			rule := parseDecryptRule(line)
@@ -491,6 +497,112 @@ func parseAsdfRule(line string) *Rule {
 		OSList:       osList,
 		After:        dependencies,
 		AsdfPackages: asdfPackages,
+	}
+}
+
+func parseHomebrewRule(line string) *Rule {
+	// Remove "homebrew" prefix
+	line = strings.TrimPrefix(line, "homebrew")
+	line = strings.TrimSpace(line)
+
+	// Split by "on:" to get OS list (on: is optional)
+	parts := strings.Split(line, "on:")
+	var osListStr string
+	var rulePart string
+
+	if len(parts) == 2 {
+		// "on:" clause is present
+		osListStr = strings.TrimSpace(parts[1])
+		rulePart = strings.TrimSpace(parts[0])
+	} else if len(parts) == 1 {
+		// No "on:" clause - rule applies to all systems
+		rulePart = strings.TrimSpace(parts[0])
+		osListStr = ""
+	} else {
+		return nil
+	}
+
+	// Parse OS list [linux, mac, windows]
+	var osList []string
+	if osListStr != "" {
+		osListStr = strings.Trim(osListStr, "[]")
+		osList = strings.Split(osListStr, ",")
+		for i := range osList {
+			osList[i] = strings.TrimSpace(osList[i])
+		}
+	}
+
+	// Parse rule part: extract formulas first, then id: and after: clauses
+	var id string
+	var dependencies []string
+	var homebrewPackages []string
+
+	// Extract id: value first
+	if strings.Contains(rulePart, "id:") {
+		idParts := strings.Split(rulePart, "id:")
+		if len(idParts) >= 2 {
+			idValue := strings.TrimSpace(idParts[1])
+			// Get the ID (first word after id:)
+			idFields := strings.Fields(idValue)
+			if len(idFields) > 0 {
+				id = idFields[0]
+				// Reconstruct rulePart without the id: part
+				rulePart = idParts[0] + " " + strings.Join(idFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract after: value
+	if strings.Contains(rulePart, "after:") {
+		afterParts := strings.Split(rulePart, "after:")
+		if len(afterParts) >= 2 {
+			afterValue := strings.TrimSpace(afterParts[1])
+			// Parse comma-separated dependencies
+			deps := strings.Split(afterValue, ",")
+			for _, dep := range deps {
+				dep = strings.TrimSpace(dep)
+				if dep != "" {
+					dependencies = append(dependencies, dep)
+				}
+			}
+			// Reconstruct rulePart without the after: part
+			rulePart = afterParts[0]
+		}
+	}
+
+	// Extract homebrew formulas (formula or formula@version format)
+	// Remaining text in rulePart should be space-separated formula pairs
+	rulePart = strings.TrimSpace(rulePart)
+	if rulePart != "" {
+		// Split by spaces and keep only valid formula names
+		fields := strings.Fields(rulePart)
+		for _, field := range fields {
+			// Valid homebrew formula format: name or name@version
+			if !strings.Contains(field, ":") {
+				homebrewPackages = append(homebrewPackages, field)
+			}
+		}
+	}
+
+	// If no ID is provided, generate a unique ID based on the first formula
+	if id == "" {
+		if len(homebrewPackages) > 0 {
+			// Use the first formula name to ensure uniqueness
+			// e.g., "node@18" becomes "homebrew-node@18"
+			firstPkg := homebrewPackages[0]
+			id = fmt.Sprintf("homebrew-%s", firstPkg)
+		} else {
+			// Fallback if no packages (shouldn't happen)
+			id = "homebrew"
+		}
+	}
+
+	return &Rule{
+		ID:               id,
+		Action:           "homebrew",
+		OSList:           osList,
+		After:            dependencies,
+		HomebrewPackages: homebrewPackages,
 	}
 }
 
