@@ -185,17 +185,29 @@ func (h *InstallHandler) buildInstallCommandForManager(manager string, pkgNames 
 	// Handle specific package managers
 	switch manager {
 	case "snap":
-		// snap install - each package requires separate sudo command
+		// snap install - for multiple packages, create a shell command with all installs
 		if targetOS == "linux" {
+			if len(pkgNames) == 1 {
+				// Single package: simple snap install
+				cmd := fmt.Sprintf("snap install %s", pkgNames[0])
+				if h.shouldAddSudo() {
+					cmd = fmt.Sprintf("sudo %s", cmd)
+				}
+				return cmd
+			}
+			// Multiple packages: chain them with && in a single shell invocation
+			// This way sudo only prompts once
 			var snapCmds []string
 			for _, pkg := range pkgNames {
-				snapCmd := fmt.Sprintf("snap install %s", pkg)
-				if h.shouldAddSudo() {
-					snapCmd = fmt.Sprintf("sudo %s", snapCmd)
-				}
-				snapCmds = append(snapCmds, snapCmd)
+				snapCmds = append(snapCmds, fmt.Sprintf("snap install %s", pkg))
 			}
-			return strings.Join(snapCmds, " && ")
+			chainedCmd := strings.Join(snapCmds, " && ")
+			if h.shouldAddSudo() {
+				// Wrap in sudo with shell so we only authenticate once
+				// The command executor will handle this properly via shell
+				return fmt.Sprintf("sudo %s", chainedCmd)
+			}
+			return chainedCmd
 		}
 		return ""
 
@@ -277,17 +289,28 @@ func (h *InstallHandler) buildUninstallCommandForManager(manager string, pkgName
 	// Handle specific package managers
 	switch manager {
 	case "snap":
-		// snap remove command - each package requires separate sudo command
+		// snap remove command
 		if targetOS == "linux" {
+			if len(pkgNames) == 1 {
+				// Single package: simple snap remove
+				cmd := fmt.Sprintf("snap remove %s", pkgNames[0])
+				if h.shouldAddSudo() {
+					cmd = fmt.Sprintf("sudo %s", cmd)
+				}
+				return cmd
+			}
+			// Multiple packages: chain them with && in a single shell invocation
+			// This way sudo only prompts once
 			var snapCmds []string
 			for _, pkg := range pkgNames {
-				snapCmd := fmt.Sprintf("snap remove %s", pkg)
-				if h.shouldAddSudo() {
-					snapCmd = fmt.Sprintf("sudo %s", snapCmd)
-				}
-				snapCmds = append(snapCmds, snapCmd)
+				snapCmds = append(snapCmds, fmt.Sprintf("snap remove %s", pkg))
 			}
-			return strings.Join(snapCmds, " && ")
+			chainedCmd := strings.Join(snapCmds, " && ")
+			if h.shouldAddSudo() {
+				// Wrap in sudo so we only authenticate once
+				return fmt.Sprintf("sudo %s", chainedCmd)
+			}
+			return chainedCmd
 		}
 		return ""
 
