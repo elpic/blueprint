@@ -30,9 +30,15 @@ func needsSudo(command string) bool {
 		}
 	}
 
+	cmdName := strings.Fields(command)[0]
+
+	// Check if command starts with sudo directly
+	if cmdName == "sudo" {
+		return true
+	}
+
 	// Check if this is a shell command that contains sudo
 	// (e.g., "sh -c 'sudo gpg ...'")
-	cmdName := strings.Fields(command)[0]
 	if cmdName == "sh" || cmdName == "bash" {
 		if strings.Contains(command, "sudo") {
 			return true

@@ -98,7 +98,7 @@ func (h *InstallHandler) UpdateStatus(status *Status, records []ExecutionRecord,
 
 // needsSudo checks if a command needs sudo
 func needsSudo(cmd string) bool {
-	return strings.Contains(cmd, "brew") || strings.Contains(cmd, "apt-get")
+	return strings.Contains(cmd, "brew") || strings.Contains(cmd, "apt-get") || strings.Contains(cmd, "snap")
 }
 
 // shouldAddSudo checks if sudo should be added for package installation on this OS
