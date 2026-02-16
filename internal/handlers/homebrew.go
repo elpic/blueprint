@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"os/exec"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -33,7 +32,7 @@ func NewHomebrewHandler(rule parser.Rule, basePath string) *HomebrewHandler {
 // Up installs the homebrew formulas and ensures homebrew is installed
 func (h *HomebrewHandler) Up() (string, error) {
 	// Homebrew only works on macOS and Linux
-	targetOS := getOSNameForAction()
+	targetOS := getOSName()
 	if targetOS != "mac" && targetOS != "linux" {
 		return "", fmt.Errorf("homebrew is not supported on %s", targetOS)
 	}
@@ -156,7 +155,7 @@ func (h *HomebrewHandler) ensureHomebrewInstalled() error {
 	}
 
 	// Determine OS and install accordingly
-	targetOS := getOSNameForAction()
+	targetOS := getOSName()
 	if len(h.Rule.OSList) > 0 {
 		targetOS = strings.TrimSpace(h.Rule.OSList[0])
 	}
@@ -353,15 +352,4 @@ func removeHomebrewStatus(brews []HomebrewStatus, formula string, blueprint stri
 	return result
 }
 
-// getOSNameForAction returns the current operating system name for action
-func getOSNameForAction() string {
-	switch runtime.GOOS {
-	case "darwin":
-		return "mac"
-	case "linux":
-		return "linux"
-	default:
-		return runtime.GOOS
-	}
-}
 
