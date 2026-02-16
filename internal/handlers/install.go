@@ -98,7 +98,7 @@ func (h *InstallHandler) UpdateStatus(status *Status, records []ExecutionRecord,
 
 // needsSudo checks if a command needs sudo
 func needsSudo(cmd string) bool {
-	return strings.Contains(cmd, "brew") || strings.Contains(cmd, "apt-get")
+	return strings.Contains(cmd, "brew") || strings.Contains(cmd, "apt-get") || strings.Contains(cmd, "snap")
 }
 
 // shouldAddSudo checks if sudo should be added for package installation on this OS
@@ -127,18 +127,10 @@ func (h *InstallHandler) shouldAddSudo() bool {
 	return true
 }
 
-// buildCommand builds the install command based on OS
+// buildCommand builds the install command based on OS and package manager
 func (h *InstallHandler) buildCommand() string {
 	if len(h.Rule.Packages) == 0 {
 		return ""
-	}
-
-	pkgNames := ""
-	for i, pkg := range h.Rule.Packages {
-		if i > 0 {
-			pkgNames += " "
-		}
-		pkgNames += pkg.Name
 	}
 
 	// Determine target OS
@@ -147,30 +139,109 @@ func (h *InstallHandler) buildCommand() string {
 		targetOS = strings.TrimSpace(h.Rule.OSList[0])
 	}
 
-	if targetOS == "mac" {
-		return fmt.Sprintf("brew install %s", pkgNames)
+	// Group packages by package manager
+	packagesByManager := h.groupPackagesByManager()
+
+	// Build commands for each package manager
+	var commands []string
+	for manager, pkgList := range packagesByManager {
+		cmd := h.buildInstallCommandForManager(manager, pkgList, targetOS)
+		if cmd != "" {
+			commands = append(commands, cmd)
+		}
 	}
 
-	// On Linux, package managers require sudo
-	cmd := fmt.Sprintf("apt-get install -y %s", pkgNames)
-	if h.shouldAddSudo() {
-		cmd = fmt.Sprintf("sudo %s", cmd)
+	// If multiple package managers, join with && to run sequentially
+	if len(commands) > 1 {
+		return strings.Join(commands, " && ")
+	} else if len(commands) == 1 {
+		return commands[0]
 	}
-	return cmd
+	return ""
 }
 
-// buildUninstallCommand builds the uninstall command based on OS
-func (h *InstallHandler) buildUninstallCommand(rule parser.Rule) string {
-	if len(rule.Packages) == 0 {
+// groupPackagesByManager groups packages by their package manager
+func (h *InstallHandler) groupPackagesByManager() map[string][]string {
+	groups := make(map[string][]string)
+	for _, pkg := range h.Rule.Packages {
+		manager := pkg.PackageManager
+		if manager == "" {
+			// Default to system package manager
+			manager = "default"
+		}
+		groups[manager] = append(groups[manager], pkg.Name)
+	}
+	return groups
+}
+
+// buildInstallCommandForManager builds install command for a specific package manager
+func (h *InstallHandler) buildInstallCommandForManager(manager string, pkgNames []string, targetOS string) string {
+	if len(pkgNames) == 0 {
 		return ""
 	}
 
-	pkgNames := ""
-	for i, pkg := range rule.Packages {
-		if i > 0 {
-			pkgNames += " "
+	pkgStr := strings.Join(pkgNames, " ")
+
+	// Handle specific package managers
+	switch manager {
+	case "snap":
+		// snap install - for multiple packages, create a shell command with all installs
+		if targetOS == "linux" {
+			if len(pkgNames) == 1 {
+				// Single package: simple snap install
+				cmd := fmt.Sprintf("snap install %s", pkgNames[0])
+				if h.shouldAddSudo() {
+					cmd = fmt.Sprintf("sudo %s", cmd)
+				}
+				return cmd
+			}
+			// Multiple packages: chain them with && in a single shell invocation
+			// This way sudo only prompts once
+			var snapCmds []string
+			for _, pkg := range pkgNames {
+				snapCmds = append(snapCmds, fmt.Sprintf("snap install %s", pkg))
+			}
+			chainedCmd := strings.Join(snapCmds, " && ")
+			if h.shouldAddSudo() {
+				// Wrap in sudo with shell so we only authenticate once
+				// The command executor will handle this properly via shell
+				return fmt.Sprintf("sudo %s", chainedCmd)
+			}
+			return chainedCmd
 		}
-		pkgNames += pkg.Name
+		return ""
+
+	case "homebrew", "brew":
+		// Homebrew (macOS and Linux)
+		return fmt.Sprintf("brew install %s", pkgStr)
+
+	case "apt", "apt-get", "default":
+		// apt-get (Linux default)
+		if targetOS == "mac" {
+			// Fallback to brew on macOS if apt is specified
+			return fmt.Sprintf("brew install %s", pkgStr)
+		}
+
+		cmd := fmt.Sprintf("apt-get install -y %s", pkgStr)
+		if h.shouldAddSudo() {
+			cmd = fmt.Sprintf("sudo %s", cmd)
+		}
+		return cmd
+
+	default:
+		// Unknown package manager, try to use it directly
+		cmd := fmt.Sprintf("%s install %s", manager, pkgStr)
+		if h.shouldAddSudo() {
+			cmd = fmt.Sprintf("sudo %s", cmd)
+		}
+		return cmd
+	}
+}
+
+// buildUninstallCommand builds the uninstall command based on OS and package manager
+func (h *InstallHandler) buildUninstallCommand(rule parser.Rule) string {
+	if len(rule.Packages) == 0 {
+		return ""
 	}
 
 	// Determine target OS
@@ -179,16 +250,95 @@ func (h *InstallHandler) buildUninstallCommand(rule parser.Rule) string {
 		targetOS = strings.TrimSpace(rule.OSList[0])
 	}
 
-	if targetOS == "mac" {
-		return fmt.Sprintf("brew uninstall -y %s", pkgNames)
+	// Group packages by package manager
+	packagesByManager := make(map[string][]string)
+	for _, pkg := range rule.Packages {
+		manager := pkg.PackageManager
+		if manager == "" {
+			manager = "default"
+		}
+		packagesByManager[manager] = append(packagesByManager[manager], pkg.Name)
 	}
 
-	// On Linux, package managers require sudo
-	cmd := fmt.Sprintf("apt-get remove -y %s", pkgNames)
-	if h.shouldAddSudo() {
-		cmd = fmt.Sprintf("sudo %s", cmd)
+	// Build uninstall commands for each package manager
+	var commands []string
+	for manager, pkgList := range packagesByManager {
+		cmd := h.buildUninstallCommandForManager(manager, pkgList, targetOS)
+		if cmd != "" {
+			commands = append(commands, cmd)
+		}
 	}
-	return cmd
+
+	// If multiple package managers, join with && to run sequentially
+	if len(commands) > 1 {
+		return strings.Join(commands, " && ")
+	} else if len(commands) == 1 {
+		return commands[0]
+	}
+	return ""
+}
+
+// buildUninstallCommandForManager builds uninstall command for a specific package manager
+func (h *InstallHandler) buildUninstallCommandForManager(manager string, pkgNames []string, targetOS string) string {
+	if len(pkgNames) == 0 {
+		return ""
+	}
+
+	pkgStr := strings.Join(pkgNames, " ")
+
+	// Handle specific package managers
+	switch manager {
+	case "snap":
+		// snap remove command
+		if targetOS == "linux" {
+			if len(pkgNames) == 1 {
+				// Single package: simple snap remove
+				cmd := fmt.Sprintf("snap remove %s", pkgNames[0])
+				if h.shouldAddSudo() {
+					cmd = fmt.Sprintf("sudo %s", cmd)
+				}
+				return cmd
+			}
+			// Multiple packages: chain them with && in a single shell invocation
+			// This way sudo only prompts once
+			var snapCmds []string
+			for _, pkg := range pkgNames {
+				snapCmds = append(snapCmds, fmt.Sprintf("snap remove %s", pkg))
+			}
+			chainedCmd := strings.Join(snapCmds, " && ")
+			if h.shouldAddSudo() {
+				// Wrap in sudo so we only authenticate once
+				return fmt.Sprintf("sudo %s", chainedCmd)
+			}
+			return chainedCmd
+		}
+		return ""
+
+	case "homebrew", "brew":
+		// Homebrew uninstall
+		return fmt.Sprintf("brew uninstall -y %s", pkgStr)
+
+	case "apt", "apt-get", "default":
+		// apt-get (Linux default)
+		if targetOS == "mac" {
+			// Fallback to brew on macOS if apt is specified
+			return fmt.Sprintf("brew uninstall -y %s", pkgStr)
+		}
+
+		cmd := fmt.Sprintf("apt-get remove -y %s", pkgStr)
+		if h.shouldAddSudo() {
+			cmd = fmt.Sprintf("sudo %s", cmd)
+		}
+		return cmd
+
+	default:
+		// Unknown package manager, try to use it directly
+		cmd := fmt.Sprintf("%s remove %s", manager, pkgStr)
+		if h.shouldAddSudo() {
+			cmd = fmt.Sprintf("sudo %s", cmd)
+		}
+		return cmd
+	}
 }
 
 // getOSName returns the current operating system name

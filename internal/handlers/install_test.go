@@ -127,6 +127,11 @@ func TestInstallHandlerNeedsSudo(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "snap command needs sudo",
+			cmd:      "snap install vim",
+			expected: true,
+		},
+		{
 			name:     "random command doesn't need sudo",
 			cmd:      "echo hello",
 			expected: false,
