@@ -426,18 +426,6 @@ func removeGPGKeyStatus(gpgKeys []GPGKeyStatus, keyring string, blueprint string
 	return result
 }
 
-// removeHomebrewStatus removes a homebrew formula from the status brews list
-func removeHomebrewStatus(brews []HomebrewStatus, formula string, blueprint string, osName string) []HomebrewStatus {
-	var result []HomebrewStatus
-	normalizedBlueprint := normalizePath(blueprint)
-	for _, brew := range brews {
-		normalizedStoredBlueprint := normalizePath(brew.Blueprint)
-		if brew.Formula != formula || normalizedStoredBlueprint != normalizedBlueprint || brew.OS != osName {
-			result = append(result, brew)
-		}
-	}
-	return result
-}
 
 // abbreviateBlueprintPath shortens blueprint paths for display
 // Shows relative paths for blueprints in the repo, full paths for external ones

@@ -340,6 +340,19 @@ func (h *HomebrewHandler) FindUninstallRules(status *Status, currentRules []pars
 	return rules
 }
 
+// removeHomebrewStatus removes a homebrew formula from the status brews list
+func removeHomebrewStatus(brews []HomebrewStatus, formula string, blueprint string, osName string) []HomebrewStatus {
+	var result []HomebrewStatus
+	normalizedBlueprint := normalizePath(blueprint)
+	for _, brew := range brews {
+		normalizedStoredBlueprint := normalizePath(brew.Blueprint)
+		if brew.Formula != formula || normalizedStoredBlueprint != normalizedBlueprint || brew.OS != osName {
+			result = append(result, brew)
+		}
+	}
+	return result
+}
+
 // getOSNameForAction returns the current operating system name for action
 func getOSNameForAction() string {
 	switch runtime.GOOS {
