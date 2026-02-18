@@ -112,6 +112,17 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 		return records
 	}
 
+	// Write initial process state and ensure cleanup
+	psState := ProcessState{
+		PID:           os.Getpid(),
+		BlueprintFile: blueprint,
+		OS:            osName,
+		TotalRules:    len(sortedRules),
+		StartedAt:     time.Now().Format(time.RFC3339),
+	}
+	_ = writePSState(psState)
+	defer clearPSState()
+
 	for i, rule := range sortedRules {
 		isUninstall := rule.Action == "uninstall"
 		fmt.Printf("[%d/%d] %s", i+1, len(sortedRules), ui.FormatHighlight(rule.Action))
@@ -123,6 +134,19 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 
 		// Create handler for this rule
 		handler = handlerskg.NewHandler(rule, basePath, passwordCache)
+
+		// Update process state for current rule
+		detail := ""
+		if handler != nil {
+			if dp, ok := handler.(handlerskg.DisplayProvider); ok {
+				detail = dp.GetDisplayDetails(isUninstall)
+			}
+		}
+		psState.CurrentRule = i + 1
+		psState.CurrentAction = rule.Action
+		psState.CurrentDetail = detail
+		psState.RuleStartedAt = time.Now().Format(time.RFC3339)
+		_ = writePSState(psState)
 
 		if handler != nil {
 			// Get display details from handler if it implements DisplayProvider
