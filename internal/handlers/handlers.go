@@ -92,6 +92,14 @@ type HomebrewStatus struct {
 	OS          string `json:"os"`
 }
 
+// OllamaStatus tracks installed ollama models
+type OllamaStatus struct {
+	Model       string `json:"model"`
+	InstalledAt string `json:"installed_at"`
+	Blueprint   string `json:"blueprint"`
+	OS          string `json:"os"`
+}
+
 // Status represents the current blueprint state
 type Status struct {
 	Packages   []PackageStatus    `json:"packages"`
@@ -102,6 +110,7 @@ type Status struct {
 	GPGKeys    []GPGKeyStatus     `json:"gpg_keys"`
 	Asdfs      []AsdfStatus       `json:"asdfs"`
 	Brews      []HomebrewStatus   `json:"brews"`
+	Ollamas    []OllamaStatus     `json:"ollamas"`
 }
 
 // Handler is the interface that all command handlers must implement
@@ -229,6 +238,9 @@ func DetectRuleType(rule parser.Rule) string {
 	if len(rule.HomebrewPackages) > 0 {
 		return "homebrew"
 	}
+	if len(rule.OllamaModels) > 0 {
+		return "ollama"
+	}
 	if rule.KnownHosts != "" {
 		return "known_hosts"
 	}
@@ -264,6 +276,8 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 		return NewAsdfHandler(rule, basePath)
 	case "homebrew":
 		return NewHomebrewHandler(rule, basePath)
+	case "ollama":
+		return NewOllamaHandler(rule, basePath)
 	case "known_hosts":
 		return NewKnownHostsHandler(rule, basePath)
 	case "gpg-key":
@@ -298,6 +312,9 @@ func GetHandlerFactory(action string) HandlerFactory {
 		"homebrew": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
 			return NewHomebrewHandler(rule, basePath)
 		},
+		"ollama": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
+			return NewOllamaHandler(rule, basePath)
+		},
 		"known_hosts": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
 			return NewKnownHostsHandler(rule, basePath)
 		},
@@ -319,6 +336,7 @@ func GetStatusProviderHandlers() []Handler {
 		NewDecryptHandler(parser.Rule{}, "", nil),
 		NewAsdfHandler(parser.Rule{}, ""),
 		NewHomebrewHandler(parser.Rule{}, ""),
+		NewOllamaHandler(parser.Rule{}, ""),
 		NewMkdirHandler(parser.Rule{}, ""),
 		NewKnownHostsHandler(parser.Rule{}, ""),
 		NewGPGKeyHandler(parser.Rule{}, ""),

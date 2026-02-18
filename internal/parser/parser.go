@@ -15,7 +15,7 @@ type Package struct {
 
 type Rule struct {
 	ID       string // Unique identifier for this rule
-	Action   string // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "homebrew", "known_hosts", or "gpg-key"
+	Action   string // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "homebrew", "ollama", "known_hosts", or "gpg-key"
 	Packages []Package
 	OSList   []string
 	After    []string // List of IDs or package names this rule depends on
@@ -49,6 +49,9 @@ type Rule struct {
 
 	// Homebrew-specific fields
 	HomebrewPackages []string // List of "formula[@version]" for homebrew (e.g., "node@20", "git")
+
+	// Ollama-specific fields
+	OllamaModels []string // List of model names for ollama (e.g., "llama3", "codellama")
 }
 
 // Parse parses content without include support
@@ -135,6 +138,12 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 		} else if strings.HasPrefix(line, "homebrew") {
 			// Parse format: homebrew [formula[@version] ...] [id: <id>] [after: <deps>] on: [<platforms>]
 			rule := parseHomebrewRule(line)
+			if rule != nil {
+				rules = append(rules, *rule)
+			}
+		} else if strings.HasPrefix(line, "ollama") {
+			// Parse format: ollama [model ...] [id: <id>] [after: <deps>] on: [<platforms>]
+			rule := parseOllamaRule(line)
 			if rule != nil {
 				rules = append(rules, *rule)
 			}
@@ -620,6 +629,98 @@ func parseHomebrewRule(line string) *Rule {
 		OSList:           osList,
 		After:            dependencies,
 		HomebrewPackages: homebrewPackages,
+	}
+}
+
+func parseOllamaRule(line string) *Rule {
+	// Remove "ollama" prefix
+	line = strings.TrimPrefix(line, "ollama")
+	line = strings.TrimSpace(line)
+
+	// Split by "on:" to get OS list (on: is optional)
+	parts := strings.Split(line, "on:")
+	var osListStr string
+	var rulePart string
+
+	if len(parts) == 2 {
+		osListStr = strings.TrimSpace(parts[1])
+		rulePart = strings.TrimSpace(parts[0])
+	} else if len(parts) == 1 {
+		rulePart = strings.TrimSpace(parts[0])
+		osListStr = ""
+	} else {
+		return nil
+	}
+
+	// Parse OS list [linux, mac, windows]
+	var osList []string
+	if osListStr != "" {
+		osListStr = strings.Trim(osListStr, "[]")
+		osList = strings.Split(osListStr, ",")
+		for i := range osList {
+			osList[i] = strings.TrimSpace(osList[i])
+		}
+	}
+
+	var id string
+	var dependencies []string
+	var ollamaModels []string
+
+	// Extract id: value first
+	if strings.Contains(rulePart, "id:") {
+		idParts := strings.Split(rulePart, "id:")
+		if len(idParts) >= 2 {
+			idValue := strings.TrimSpace(idParts[1])
+			idFields := strings.Fields(idValue)
+			if len(idFields) > 0 {
+				id = idFields[0]
+				rulePart = idParts[0] + " " + strings.Join(idFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract after: value
+	if strings.Contains(rulePart, "after:") {
+		afterParts := strings.Split(rulePart, "after:")
+		if len(afterParts) >= 2 {
+			afterValue := strings.TrimSpace(afterParts[1])
+			deps := strings.Split(afterValue, ",")
+			for _, dep := range deps {
+				dep = strings.TrimSpace(dep)
+				if dep != "" {
+					dependencies = append(dependencies, dep)
+				}
+			}
+			rulePart = afterParts[0]
+		}
+	}
+
+	// Extract model names (remaining tokens)
+	rulePart = strings.TrimSpace(rulePart)
+	if rulePart != "" {
+		fields := strings.Fields(rulePart)
+		for _, field := range fields {
+			if !strings.Contains(field, ":") {
+				ollamaModels = append(ollamaModels, field)
+			}
+		}
+	}
+
+	// Auto-generate ID based on first model
+	if id == "" {
+		if len(ollamaModels) > 0 {
+			id = fmt.Sprintf("ollama-%s", ollamaModels[0])
+		} else {
+			id = "ollama"
+		}
+	}
+
+	return &Rule{
+		ID:           id,
+		Action:       "ollama",
+		OSList:       osList,
+		After:        dependencies,
+		OllamaModels: ollamaModels,
 	}
 }
 
