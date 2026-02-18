@@ -24,7 +24,7 @@ func parseSkipFlags(args []string) (string, string) {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: blueprint <plan|apply|encrypt|status|history> [<file|run_number>]")
+		fmt.Println("Usage: blueprint <plan|apply|encrypt|status|history|ps> [<file|run_number>]")
 		os.Exit(1)
 	}
 
@@ -74,6 +74,8 @@ func main() {
 		engine.EncryptFile(file, passwordID)
 	case "status":
 		engine.PrintStatus()
+	case "ps":
+		engine.PrintPS()
 	default:
 		// Short mode: blueprint setup.bp
 		engine.Run(mode, false)

@@ -117,6 +117,10 @@ func TestKeyProviderInterface(t *testing.T) {
 			name:    "GPGKeyHandler implements KeyProvider",
 			handler: NewGPGKeyHandler(parser.Rule{GPGKeyring: "key"}, ""),
 		},
+		{
+			name:    "OllamaHandler implements KeyProvider",
+			handler: NewOllamaHandler(parser.Rule{OllamaModels: []string{"llama3"}}, ""),
+		},
 	}
 
 	for _, tt := range tests {
@@ -186,6 +190,12 @@ func TestDisplayProviderInterface(t *testing.T) {
 			expectedFormatted: "ubuntu-keyring",
 			isUninstall:       false,
 		},
+		{
+			name:              "OllamaHandler provides model display",
+			handler:           NewOllamaHandler(parser.Rule{OllamaModels: []string{"llama3", "codellama"}}, ""),
+			expectedFormatted: "llama3, codellama",
+			isUninstall:       false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -252,6 +262,12 @@ func TestStatusProviderInterface(t *testing.T) {
 		{
 			name:              "GPGKeyHandler implements StatusProvider",
 			handler:           NewGPGKeyHandler(parser.Rule{GPGKeyring: "ubuntu"}, ""),
+			currentRules:      []parser.Rule{},
+			expectedRuleCount: 0,
+		},
+		{
+			name:              "OllamaHandler implements StatusProvider",
+			handler:           NewOllamaHandler(parser.Rule{OllamaModels: []string{"llama3"}}, ""),
 			currentRules:      []parser.Rule{},
 			expectedRuleCount: 0,
 		},
