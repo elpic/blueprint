@@ -70,7 +70,7 @@ func (h *DecryptHandler) Up() (string, error) {
 	}
 
 	// Write decrypted file
-	if err := os.WriteFile(destPath, decryptedData, internal.FilePermission); err != nil {
+	if err := os.WriteFile(destPath, decryptedData, internal.FilePermission); err != nil { // #nosec G703 -- destPath is a user-supplied blueprint path
 		return "", fmt.Errorf("failed to write decrypted file: %w", err)
 	}
 
