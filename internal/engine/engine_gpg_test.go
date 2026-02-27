@@ -5,12 +5,13 @@ import (
 	"testing"
 	"time"
 
+	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
 )
 
-// TestGPGKeyStatusStructure tests the GPGKeyStatus structure
+// TestGPGKeyStatusStructure tests the handlerskg.GPGKeyStatus structure
 func TestGPGKeyStatusStructure(t *testing.T) {
-	gpgKey := GPGKeyStatus{
+	gpgKey := handlerskg.GPGKeyStatus{
 		Keyring:   "test-repo",
 		URL:       "https://example.com/gpg.key",
 		DebURL:    "https://example.com/apt",
@@ -42,7 +43,7 @@ func TestGPGKeyStatusStructure(t *testing.T) {
 
 // TestGPGKeyStatusJSON tests JSON marshaling/unmarshaling of GPG key status
 func TestGPGKeyStatusJSON(t *testing.T) {
-	gpgKey := GPGKeyStatus{
+	gpgKey := handlerskg.GPGKeyStatus{
 		Keyring:   "test-repo",
 		URL:       "https://example.com/gpg.key",
 		DebURL:    "https://example.com/apt",
@@ -58,7 +59,7 @@ func TestGPGKeyStatusJSON(t *testing.T) {
 	}
 
 	// Unmarshal back
-	var restored GPGKeyStatus
+	var restored handlerskg.GPGKeyStatus
 	if err := json.Unmarshal(data, &restored); err != nil {
 		t.Fatalf("Failed to unmarshal GPG key: %v", err)
 	}
@@ -97,8 +98,8 @@ func TestGPGKeyStatusJSON(t *testing.T) {
 
 // TestStatusWithGPGKeys tests that Status struct includes GPG keys
 func TestStatusWithGPGKeys(t *testing.T) {
-	status := Status{
-		GPGKeys: []GPGKeyStatus{
+	status := handlerskg.Status{
+		GPGKeys: []handlerskg.GPGKeyStatus{
 			{
 				Keyring:   "repo1",
 				URL:       "https://example.com/key1",
@@ -133,11 +134,11 @@ func TestStatusWithGPGKeys(t *testing.T) {
 func TestGPGKeyStatusFieldConversion(t *testing.T) {
 	tests := []struct {
 		name  string
-		input GPGKeyStatus
+		input handlerskg.GPGKeyStatus
 	}{
 		{
 			name: "basic gpg key status",
-			input: GPGKeyStatus{
+			input: handlerskg.GPGKeyStatus{
 				Keyring:   "test-repo",
 				URL:       "https://example.com/gpg.key",
 				DebURL:    "https://example.com/apt",
@@ -148,7 +149,7 @@ func TestGPGKeyStatusFieldConversion(t *testing.T) {
 		},
 		{
 			name: "gpg key with complex keyring name",
-			input: GPGKeyStatus{
+			input: handlerskg.GPGKeyStatus{
 				Keyring:   "my-repo-2024-v1",
 				URL:       "https://example.com/gpg.key",
 				DebURL:    "https://example.com/apt",
@@ -183,7 +184,7 @@ func TestGPGKeyStatusFieldConversion(t *testing.T) {
 
 // TestGPGKeyStatusFilter tests filtering GPG keys by blueprint and OS
 func TestGPGKeyStatusFilter(t *testing.T) {
-	gpgKeys := []GPGKeyStatus{
+	gpgKeys := []handlerskg.GPGKeyStatus{
 		{
 			Keyring:   "wezterm",
 			Blueprint: "/test/blueprint1.bp",
@@ -207,7 +208,7 @@ func TestGPGKeyStatusFilter(t *testing.T) {
 	}
 
 	// Filter for blueprint1.bp on linux
-	var filtered []GPGKeyStatus
+	var filtered []handlerskg.GPGKeyStatus
 	for _, gpg := range gpgKeys {
 		if gpg.Blueprint == "/test/blueprint1.bp" && gpg.OS == "linux" {
 			filtered = append(filtered, gpg)
@@ -296,8 +297,8 @@ func TestExecutionRecordForGPGKey(t *testing.T) {
 // TestGPGKeyStatusPersistence tests that GPG key status can be marshaled and unmarshaled
 func TestGPGKeyStatusPersistence(t *testing.T) {
 	// Create a status with GPG keys
-	originalStatus := Status{
-		GPGKeys: []GPGKeyStatus{
+	originalStatus := handlerskg.Status{
+		GPGKeys: []handlerskg.GPGKeyStatus{
 			{
 				Keyring:   "wezterm-fury",
 				URL:       "https://apt.fury.io/wez/gpg.key",
@@ -324,7 +325,7 @@ func TestGPGKeyStatusPersistence(t *testing.T) {
 	}
 
 	// Unmarshal back
-	var restoredStatus Status
+	var restoredStatus handlerskg.Status
 	if err := json.Unmarshal(data, &restoredStatus); err != nil {
 		t.Fatalf("Failed to unmarshal status: %v", err)
 	}
@@ -345,8 +346,8 @@ func TestGPGKeyStatusPersistence(t *testing.T) {
 
 // TestGPGKeyStatusMultipleBlueprints tests GPG keys from multiple blueprints
 func TestGPGKeyStatusMultipleBlueprints(t *testing.T) {
-	status := Status{
-		GPGKeys: []GPGKeyStatus{
+	status := handlerskg.Status{
+		GPGKeys: []handlerskg.GPGKeyStatus{
 			{
 				Keyring:   "wezterm",
 				Blueprint: "/test/blueprint1.bp",
@@ -389,8 +390,8 @@ func TestGPGKeyStatusMultipleBlueprints(t *testing.T) {
 
 // TestGPGKeyStatusRemoval tests filtering out specific GPG keys
 func TestGPGKeyStatusRemoval(t *testing.T) {
-	status := Status{
-		GPGKeys: []GPGKeyStatus{
+	status := handlerskg.Status{
+		GPGKeys: []handlerskg.GPGKeyStatus{
 			{
 				Keyring:   "repo1",
 				Blueprint: "/test/blueprint.bp",
@@ -410,7 +411,7 @@ func TestGPGKeyStatusRemoval(t *testing.T) {
 	}
 
 	// Remove repo1 from linux
-	var filtered []GPGKeyStatus
+	var filtered []handlerskg.GPGKeyStatus
 	for _, gpg := range status.GPGKeys {
 		if gpg.Keyring != "repo1" || gpg.Blueprint != "/test/blueprint.bp" || gpg.OS != "linux" {
 			filtered = append(filtered, gpg)
@@ -431,7 +432,7 @@ func TestGPGKeyStatusRemoval(t *testing.T) {
 
 // TestGPGKeyConversionRoundtrip tests that GPG key data survives conversion
 func TestGPGKeyConversionRoundtrip(t *testing.T) {
-	original := GPGKeyStatus{
+	original := handlerskg.GPGKeyStatus{
 		Keyring:   "test-keyring",
 		URL:       "https://example.com/key.gpg",
 		DebURL:    "https://example.com/repo",
@@ -442,7 +443,7 @@ func TestGPGKeyConversionRoundtrip(t *testing.T) {
 
 	// Convert to map (simulating JSON encoding)
 	data, _ := json.Marshal(original)
-	var decoded GPGKeyStatus
+	var decoded handlerskg.GPGKeyStatus
 	_ = json.Unmarshal(data, &decoded)
 
 	// Verify no data loss

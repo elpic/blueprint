@@ -232,6 +232,15 @@ func (h *DecryptHandler) GetDisplayDetails(isUninstall bool) string {
 	return h.Rule.DecryptPath
 }
 
+// GetState returns handler-specific state as key-value pairs
+func (h *DecryptHandler) GetState(isUninstall bool) map[string]string {
+	return map[string]string{
+		"summary": h.GetDisplayDetails(isUninstall),
+		"source":  h.Rule.DecryptFile,
+		"dest":    h.Rule.DecryptPath,
+	}
+}
+
 // FindUninstallRules compares decrypt status against current rules and returns uninstall rules
 func (h *DecryptHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizePath(blueprintFile)

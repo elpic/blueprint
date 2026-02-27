@@ -215,6 +215,105 @@ func TestDisplayProviderInterface(t *testing.T) {
 	}
 }
 
+// TestStateProviderInterface verifies that all handlers implement StateProvider
+func TestStateProviderInterface(t *testing.T) {
+	tests := []struct {
+		name            string
+		handler         Handler
+		expectedSummary string
+		isUninstall     bool
+		expectedKeys    []string
+	}{
+		{
+			name:            "InstallHandler provides package state",
+			handler:         NewInstallHandler(parser.Rule{Packages: []parser.Package{{Name: "vim"}, {Name: "curl"}}}, ""),
+			expectedSummary: "vim, curl",
+			isUninstall:     false,
+			expectedKeys:    []string{"summary", "packages"},
+		},
+		{
+			name:            "CloneHandler provides clone state",
+			handler:         NewCloneHandler(parser.Rule{ClonePath: "~/my-repo", CloneURL: "https://github.com/user/repo"}, ""),
+			expectedSummary: "~/my-repo",
+			isUninstall:     false,
+			expectedKeys:    []string{"summary", "url", "path"},
+		},
+		{
+			name:            "DecryptHandler provides decrypt state",
+			handler:         NewDecryptHandler(parser.Rule{DecryptPath: "~/.ssh/config", DecryptFile: "config.enc"}, "", nil),
+			expectedSummary: "~/.ssh/config",
+			isUninstall:     true,
+			expectedKeys:    []string{"summary", "source", "dest"},
+		},
+		{
+			name:            "AsdfHandler provides asdf state",
+			handler:         NewAsdfHandler(parser.Rule{AsdfPackages: []string{"node@18", "python@3.11"}}, ""),
+			expectedSummary: "node@18, python@3.11",
+			isUninstall:     false,
+			expectedKeys:    []string{"summary", "plugins"},
+		},
+		{
+			name:            "MkdirHandler provides mkdir state",
+			handler:         NewMkdirHandler(parser.Rule{Mkdir: "~/projects"}, ""),
+			expectedSummary: "~/projects",
+			isUninstall:     false,
+			expectedKeys:    []string{"summary", "path"},
+		},
+		{
+			name:            "KnownHostsHandler provides known_hosts state",
+			handler:         NewKnownHostsHandler(parser.Rule{KnownHosts: "github.com"}, ""),
+			expectedSummary: "github.com",
+			isUninstall:     false,
+			expectedKeys:    []string{"summary", "host"},
+		},
+		{
+			name:            "GPGKeyHandler provides gpg state",
+			handler:         NewGPGKeyHandler(parser.Rule{GPGKeyring: "ubuntu-keyring"}, ""),
+			expectedSummary: "ubuntu-keyring",
+			isUninstall:     false,
+			expectedKeys:    []string{"summary", "keyring"},
+		},
+		{
+			name:            "HomebrewHandler provides homebrew state",
+			handler:         NewHomebrewHandler(parser.Rule{HomebrewPackages: []string{"wget", "jq"}}, ""),
+			expectedSummary: "wget, jq",
+			isUninstall:     false,
+			expectedKeys:    []string{"summary", "formulas"},
+		},
+		{
+			name:            "OllamaHandler provides ollama state",
+			handler:         NewOllamaHandler(parser.Rule{OllamaModels: []string{"llama3", "codellama"}}, ""),
+			expectedSummary: "llama3, codellama",
+			isUninstall:     false,
+			expectedKeys:    []string{"summary", "models"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Check that handler implements StateProvider
+			psProvider, ok := tt.handler.(StateProvider)
+			if !ok {
+				t.Errorf("Handler does not implement StateProvider interface")
+				return
+			}
+
+			// Verify GetState returns expected summary
+			state := psProvider.GetState(tt.isUninstall)
+			if state["summary"] != tt.expectedSummary {
+				t.Errorf("GetState(%v)[\"summary\"] = %q, want %q", tt.isUninstall, state["summary"], tt.expectedSummary)
+			}
+
+			// Verify all expected keys are present
+			for _, key := range tt.expectedKeys {
+				if _, exists := state[key]; !exists {
+					t.Errorf("GetState(%v) missing expected key %q", tt.isUninstall, key)
+				}
+			}
+		})
+	}
+}
+
 // TestStatusProviderInterface verifies that all handlers implement StatusProvider
 func TestStatusProviderInterface(t *testing.T) {
 	tests := []struct {

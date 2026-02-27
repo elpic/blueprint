@@ -169,6 +169,15 @@ type DisplayProvider interface {
 	GetDisplayDetails(isUninstall bool) string
 }
 
+// StateProvider is an optional interface that handlers can implement
+// to expose handler-specific state as key-value pairs.
+// The "summary" key is required and used as the display line in blueprint ps.
+type StateProvider interface {
+	// GetState returns the handler's state as key-value pairs.
+	// The "summary" key is required and used for display purposes.
+	GetState(isUninstall bool) map[string]string
+}
+
 // StatusProvider is an optional interface that handlers can implement
 // to specify how to manage status records for auto-uninstall.
 // This eliminates ALL hardcoded action type checks by allowing each handler

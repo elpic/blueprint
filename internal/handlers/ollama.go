@@ -218,6 +218,15 @@ func (h *OllamaHandler) DisplayStatus(ollamas []OllamaStatus) {
 	}
 }
 
+// GetState returns handler-specific state as key-value pairs
+func (h *OllamaHandler) GetState(isUninstall bool) map[string]string {
+	models := h.GetDisplayDetails(isUninstall)
+	return map[string]string{
+		"summary": models,
+		"models":  models,
+	}
+}
+
 // FindUninstallRules compares ollama status against current rules and returns uninstall rules
 func (h *OllamaHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizePath(blueprintFile)

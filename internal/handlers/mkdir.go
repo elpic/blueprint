@@ -264,6 +264,14 @@ func (h *MkdirHandler) GetDisplayDetails(isUninstall bool) string {
 	return h.Rule.Mkdir
 }
 
+// GetState returns handler-specific state as key-value pairs
+func (h *MkdirHandler) GetState(isUninstall bool) map[string]string {
+	return map[string]string{
+		"summary": h.GetDisplayDetails(isUninstall),
+		"path":    h.Rule.Mkdir,
+	}
+}
+
 // FindUninstallRules compares mkdir status against current rules and returns uninstall rules
 func (h *MkdirHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizePath(blueprintFile)

@@ -3,7 +3,6 @@ package engine
 import (
 	"fmt"
 	gitpkg "github.com/elpic/blueprint/internal/git"
-	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
 	"os"
@@ -19,17 +18,6 @@ type ExecutionRecord struct {
 	Output    string `json:"output,omitempty"`
 	Error     string `json:"error,omitempty"`
 }
-
-// Re-export handler types for backward compatibility
-type (
-	PackageStatus    = handlerskg.PackageStatus
-	CloneStatus      = handlerskg.CloneStatus
-	DecryptStatus    = handlerskg.DecryptStatus
-	MkdirStatus      = handlerskg.MkdirStatus
-	KnownHostsStatus = handlerskg.KnownHostsStatus
-	GPGKeyStatus     = handlerskg.GPGKeyStatus
-	Status           = handlerskg.Status
-)
 
 // passwordCache stores decryption passwords by password-id to avoid re-prompting
 var passwordCache = make(map[string]string)

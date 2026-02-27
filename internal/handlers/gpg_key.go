@@ -206,6 +206,14 @@ func (h *GPGKeyHandler) GetDisplayDetails(isUninstall bool) string {
 	return h.Rule.GPGKeyring
 }
 
+// GetState returns handler-specific state as key-value pairs
+func (h *GPGKeyHandler) GetState(isUninstall bool) map[string]string {
+	return map[string]string{
+		"summary": h.GetDisplayDetails(isUninstall),
+		"keyring": h.Rule.GPGKeyring,
+	}
+}
+
 // FindUninstallRules compares GPG key status against current rules and returns uninstall rules
 func (h *GPGKeyHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizePath(blueprintFile)
