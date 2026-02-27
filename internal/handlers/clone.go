@@ -225,6 +225,19 @@ func (h *CloneHandler) GetDisplayDetails(isUninstall bool) string {
 	return h.Rule.ClonePath
 }
 
+// GetState returns handler-specific state as key-value pairs
+func (h *CloneHandler) GetState(isUninstall bool) map[string]string {
+	state := map[string]string{
+		"summary": h.GetDisplayDetails(isUninstall),
+		"url":     h.Rule.CloneURL,
+		"path":    h.Rule.ClonePath,
+	}
+	if h.Rule.Branch != "" {
+		state["branch"] = h.Rule.Branch
+	}
+	return state
+}
+
 // FindUninstallRules compares clone status against current rules and returns uninstall rules
 func (h *CloneHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizePath(blueprintFile)

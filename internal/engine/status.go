@@ -126,7 +126,7 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 	blueprint = normalizePath(blueprint)
 
 	// Load existing status
-	var status Status
+	var status handlerskg.Status
 	if data, err := readBlueprintFile(statusPath); err == nil {
 		_ = json.Unmarshal(data, &status)
 	}
@@ -232,7 +232,7 @@ func PrintStatus() {
 	}
 
 	// Parse status
-	var status Status
+	var status handlerskg.Status
 	if err := json.Unmarshal(data, &status); err != nil {
 		fmt.Printf("%s\n", ui.FormatError("Error parsing status file"))
 		return

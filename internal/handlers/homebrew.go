@@ -301,6 +301,15 @@ func (h *HomebrewHandler) DisplayStatus(brews []HomebrewStatus) {
 	}
 }
 
+// GetState returns handler-specific state as key-value pairs
+func (h *HomebrewHandler) GetState(isUninstall bool) map[string]string {
+	formulas := h.GetDisplayDetails(isUninstall)
+	return map[string]string{
+		"summary":  formulas,
+		"formulas": formulas,
+	}
+}
+
 // FindUninstallRules compares homebrew status against current rules and returns uninstall rules
 func (h *HomebrewHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizePath(blueprintFile)

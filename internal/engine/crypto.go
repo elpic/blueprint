@@ -46,7 +46,7 @@ func EncryptFile(filePath string, passwordID string) {
 
 	// Write encrypted file with .enc extension
 	encryptedPath := filePath + ".enc"
-	if err := os.WriteFile(encryptedPath, encryptedData, internal.FilePermission); err != nil {
+	if err := os.WriteFile(encryptedPath, encryptedData, internal.FilePermission); err != nil { // #nosec G703 -- encryptedPath is derived from a user-supplied file path
 		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Failed to write encrypted file: %v", err)))
 		os.Exit(1)
 	}

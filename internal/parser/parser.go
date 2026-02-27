@@ -180,7 +180,7 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 // loadInclude loads and parses an included file
 func loadInclude(filePath string, loadedFiles map[string]bool) ([]Rule, error) {
 	// Check if file exists
-	if _, err := os.Stat(filePath); err != nil {
+	if _, err := os.Stat(filePath); err != nil { // #nosec G703 -- filePath is a user-supplied blueprint path
 		return nil, fmt.Errorf("file not found: %s", filePath)
 	}
 
@@ -188,7 +188,7 @@ func loadInclude(filePath string, loadedFiles map[string]bool) ([]Rule, error) {
 	loadedFiles[filePath] = true
 
 	// Read file
-	content, err := os.ReadFile(filePath)
+	content, err := os.ReadFile(filePath) // #nosec G703 -- filePath is a user-supplied blueprint path
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}

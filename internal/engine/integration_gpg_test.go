@@ -38,8 +38,8 @@ func TestGPGKeyStatusPersistenceFlow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create status with GPG key
-			status := Status{
-				GPGKeys: []GPGKeyStatus{
+			status := handlerskg.Status{
+				GPGKeys: []handlerskg.GPGKeyStatus{
 					{
 						Keyring:   tt.keyring,
 						URL:       tt.url,
@@ -79,8 +79,8 @@ func TestGPGKeyStatusPersistenceFlow(t *testing.T) {
 // TestGPGKeyAutoUninstallDetection tests that removed GPG keys are detected for uninstall
 func TestGPGKeyAutoUninstallDetection(t *testing.T) {
 	// Create status with existing GPG keys
-	status := Status{
-		GPGKeys: []GPGKeyStatus{
+	status := handlerskg.Status{
+		GPGKeys: []handlerskg.GPGKeyStatus{
 			{
 				Keyring:   "wezterm-fury",
 				URL:       "https://apt.fury.io/wez/gpg.key",
@@ -143,28 +143,3 @@ func TestGPGKeyAutoUninstallDetection(t *testing.T) {
 	}
 }
 
-// TestGPGKeyStatusEquivalence tests that engine and handler GPGKeyStatus types are equivalent
-func TestGPGKeyStatusEquivalence(t *testing.T) {
-	// Create a GPGKeyStatus
-	gpgKey := GPGKeyStatus{
-		Keyring:   "test-repo",
-		URL:       "https://example.com/gpg.key",
-		DebURL:    "https://example.com/apt",
-		AddedAt:   "2025-12-16T10:00:00Z",
-		Blueprint: "/test/blueprint.bp",
-		OS:        "linux",
-	}
-
-	// Verify it's the same as handler type
-	handlerKey := handlerskg.GPGKeyStatus(gpgKey)
-	if handlerKey.Keyring != gpgKey.Keyring {
-		t.Errorf("Keyring mismatch: got %q, want %q", handlerKey.Keyring, gpgKey.Keyring)
-	}
-
-	// Verify all fields match
-	if handlerKey.URL != gpgKey.URL || handlerKey.DebURL != gpgKey.DebURL ||
-		handlerKey.AddedAt != gpgKey.AddedAt || handlerKey.Blueprint != gpgKey.Blueprint ||
-		handlerKey.OS != gpgKey.OS {
-		t.Error("GPGKeyStatus fields don't match between engine and handler types")
-	}
-}

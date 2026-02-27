@@ -136,15 +136,14 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 		handler = handlerskg.NewHandler(rule, basePath, passwordCache)
 
 		// Update process state for current rule
-		detail := ""
-		if handler != nil {
-			if dp, ok := handler.(handlerskg.DisplayProvider); ok {
-				detail = dp.GetDisplayDetails(isUninstall)
-			}
-		}
 		psState.CurrentRule = i + 1
 		psState.CurrentAction = rule.Action
-		psState.CurrentDetail = detail
+		psState.HandlerState = nil
+		if handler != nil {
+			if sp, ok := handler.(handlerskg.StateProvider); ok {
+				psState.HandlerState = sp.GetState(isUninstall)
+			}
+		}
 		psState.RuleStartedAt = time.Now().Format(time.RFC3339)
 		_ = writePSState(psState)
 

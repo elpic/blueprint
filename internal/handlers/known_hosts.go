@@ -292,6 +292,14 @@ func (h *KnownHostsHandler) GetDisplayDetails(isUninstall bool) string {
 	return h.Rule.KnownHosts
 }
 
+// GetState returns handler-specific state as key-value pairs
+func (h *KnownHostsHandler) GetState(isUninstall bool) map[string]string {
+	return map[string]string{
+		"summary": h.GetDisplayDetails(isUninstall),
+		"host":    h.Rule.KnownHosts,
+	}
+}
+
 // FindUninstallRules compares known hosts status against current rules and returns uninstall rules
 func (h *KnownHostsHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizePath(blueprintFile)

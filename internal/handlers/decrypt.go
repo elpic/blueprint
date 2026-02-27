@@ -70,7 +70,7 @@ func (h *DecryptHandler) Up() (string, error) {
 	}
 
 	// Write decrypted file
-	if err := os.WriteFile(destPath, decryptedData, internal.FilePermission); err != nil {
+	if err := os.WriteFile(destPath, decryptedData, internal.FilePermission); err != nil { // #nosec G703 -- destPath is a user-supplied blueprint path
 		return "", fmt.Errorf("failed to write decrypted file: %w", err)
 	}
 
@@ -230,6 +230,15 @@ func (h *DecryptHandler) GetDependencyKey() string {
 // GetDisplayDetails returns the decrypt path to display during execution
 func (h *DecryptHandler) GetDisplayDetails(isUninstall bool) string {
 	return h.Rule.DecryptPath
+}
+
+// GetState returns handler-specific state as key-value pairs
+func (h *DecryptHandler) GetState(isUninstall bool) map[string]string {
+	return map[string]string{
+		"summary": h.GetDisplayDetails(isUninstall),
+		"source":  h.Rule.DecryptFile,
+		"dest":    h.Rule.DecryptPath,
+	}
 }
 
 // FindUninstallRules compares decrypt status against current rules and returns uninstall rules

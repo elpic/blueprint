@@ -438,6 +438,15 @@ func (h *InstallHandler) GetDisplayDetails(isUninstall bool) string {
 	return packages
 }
 
+// GetState returns handler-specific state as key-value pairs
+func (h *InstallHandler) GetState(isUninstall bool) map[string]string {
+	packages := h.GetDisplayDetails(isUninstall)
+	return map[string]string{
+		"summary":  packages,
+		"packages": packages,
+	}
+}
+
 // FindUninstallRules compares package status against current rules and returns uninstall rules
 func (h *InstallHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizePath(blueprintFile)

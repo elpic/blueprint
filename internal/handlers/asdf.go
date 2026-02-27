@@ -569,6 +569,15 @@ func (h *AsdfHandler) GetDisplayDetails(isUninstall bool) string {
 	return "asdf"
 }
 
+// GetState returns handler-specific state as key-value pairs
+func (h *AsdfHandler) GetState(isUninstall bool) map[string]string {
+	summary := h.GetDisplayDetails(isUninstall)
+	return map[string]string{
+		"summary": summary,
+		"plugins": strings.Join(h.Rule.AsdfPackages, ", "),
+	}
+}
+
 // FindUninstallRules compares asdf status against current rules and returns uninstall rules
 func (h *AsdfHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizePath(blueprintFile)

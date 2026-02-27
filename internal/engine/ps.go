@@ -19,8 +19,8 @@ type ProcessState struct {
 	OS            string `json:"os"`
 	TotalRules    int    `json:"total_rules"`
 	CurrentRule   int    `json:"current_rule"`
-	CurrentAction string `json:"current_action"`
-	CurrentDetail string `json:"current_detail"`
+	CurrentAction string            `json:"current_action"`
+	HandlerState  map[string]string `json:"handler_state,omitempty"`
 	StartedAt     string `json:"started_at"`
 	RuleStartedAt string `json:"rule_started_at"`
 }
@@ -141,8 +141,8 @@ func PrintPS() {
 	// Show current rule progress
 	if state.CurrentRule > 0 {
 		detail := state.CurrentAction
-		if state.CurrentDetail != "" {
-			detail += " " + state.CurrentDetail
+		if summary, ok := state.HandlerState["summary"]; ok && summary != "" {
+			detail += " " + summary
 		}
 
 		ruleStartedAt, err := time.Parse(time.RFC3339, state.RuleStartedAt)
