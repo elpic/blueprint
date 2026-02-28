@@ -29,7 +29,7 @@ func NewHomebrewHandler(rule parser.Rule, basePath string) *HomebrewHandler {
 	}
 }
 
-// Up installs the homebrew formulas and ensures homebrew is installed
+// Up installs the homebrew formulas/casks and ensures homebrew is installed
 func (h *HomebrewHandler) Up() (string, error) {
 	// Homebrew only works on macOS and Linux
 	targetOS := getOSName()
@@ -71,34 +71,25 @@ func (h *HomebrewHandler) GetCommand() string {
 	return h.buildCommand()
 }
 
-// UpdateStatus updates the status after installing or uninstalling formulas
+// UpdateStatus updates the status after installing or uninstalling formulas/casks
 func (h *HomebrewHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
-	// Normalize blueprint path for consistent storage and comparison
 	blueprint = normalizePath(blueprint)
 
 	switch h.Rule.Action {
 	case "install":
-		// Check if this rule's command was executed successfully
 		cmd := h.buildCommand()
 		_, commandExecuted := commandSuccessfullyExecuted(cmd, records)
 
 		if commandExecuted {
-			// Add or update formula status
+			// Update formula status
 			for _, formulaStr := range h.Rule.HomebrewPackages {
-				// Parse formula@version or just formula
 				parts := strings.Split(formulaStr, "@")
 				formula := parts[0]
-
-				// Remove existing entry if present
 				status.Brews = removeHomebrewStatus(status.Brews, formula, blueprint, osName)
-
-				// Get installed version
 				version := "latest"
 				if versionStr, err := h.getInstalledFormulaVersion(formula); err == nil && versionStr != "" {
 					version = versionStr
 				}
-
-				// Add new entry
 				status.Brews = append(status.Brews, HomebrewStatus{
 					Formula:     formula,
 					Version:     version,
@@ -107,22 +98,40 @@ func (h *HomebrewHandler) UpdateStatus(status *Status, records []ExecutionRecord
 					OS:          osName,
 				})
 			}
+
+			// Update cask status
+			for _, cask := range h.Rule.HomebrewCasks {
+				status.Brews = removeHomebrewStatus(status.Brews, caskKey(cask), blueprint, osName)
+				status.Brews = append(status.Brews, HomebrewStatus{
+					Formula:     caskKey(cask),
+					Version:     "cask",
+					InstalledAt: time.Now().Format(time.RFC3339),
+					Blueprint:   blueprint,
+					OS:          osName,
+				})
+			}
 		}
 	case "uninstall":
-		// Remove uninstalled formulas from status
 		for _, formulaStr := range h.Rule.HomebrewPackages {
 			parts := strings.Split(formulaStr, "@")
-			formula := parts[0]
-			status.Brews = removeHomebrewStatus(status.Brews, formula, blueprint, osName)
+			status.Brews = removeHomebrewStatus(status.Brews, parts[0], blueprint, osName)
+		}
+		for _, cask := range h.Rule.HomebrewCasks {
+			status.Brews = removeHomebrewStatus(status.Brews, caskKey(cask), blueprint, osName)
 		}
 	}
 
 	return nil
 }
 
+// caskKey returns a storage key that distinguishes casks from formulas with the same name
+func caskKey(name string) string {
+	return "cask:" + name
+}
+
 // getInstalledFormulaVersion gets the installed version of a formula
 func (h *HomebrewHandler) getInstalledFormulaVersion(formula string) (string, error) {
-	cmd := exec.Command("brew", "list", "--versions", formula)
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("%s list --versions %s", brewCmd(), formula))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", err
@@ -172,8 +181,7 @@ func (h *HomebrewHandler) ensureHomebrewInstalled() error {
 
 // isHomebrewInstalled checks if homebrew is installed
 func (h *HomebrewHandler) isHomebrewInstalled() bool {
-	cmd := exec.Command("which", "brew")
-	return cmd.Run() == nil
+	return exec.Command("which", "brew").Run() == nil
 }
 
 // installHomebrewMacOS installs homebrew on macOS using the official script
@@ -209,31 +217,58 @@ func (h *HomebrewHandler) installHomebrewLinux() error {
 	return nil
 }
 
-// buildCommand builds the install command based on formula list
-func (h *HomebrewHandler) buildCommand() string {
-	if len(h.Rule.HomebrewPackages) == 0 {
-		return ""
+// brewCmd returns the correct brew invocation for the current environment.
+// On Apple Silicon macs, if the current process is running under Rosetta 2,
+// sysctl.proc_translated returns 1. In that case we force ARM64 execution
+// via /usr/bin/arch -arm64 with the full path to brew so it always runs
+// natively regardless of the parent process architecture.
+func brewCmd() string {
+	if getOSName() != "mac" {
+		return "brew"
 	}
 
-	formulaNames := strings.Join(h.Rule.HomebrewPackages, " ")
-	return fmt.Sprintf("brew install %s", formulaNames)
+	// sysctl.proc_translated == "1" means this process is running under Rosetta
+	out, err := exec.Command("sysctl", "-n", "sysctl.proc_translated").Output()
+	if err == nil && strings.TrimSpace(string(out)) == "1" {
+		return "/usr/bin/arch -arm64 /opt/homebrew/bin/brew"
+	}
+
+	return "brew"
 }
 
-// buildUninstallCommand builds the uninstall command based on formula list
+// buildCommand builds the install command for formulas and/or casks
+func (h *HomebrewHandler) buildCommand() string {
+	brew := brewCmd()
+	var cmds []string
+
+	if len(h.Rule.HomebrewPackages) > 0 {
+		cmds = append(cmds, fmt.Sprintf("%s install %s", brew, strings.Join(h.Rule.HomebrewPackages, " ")))
+	}
+	if len(h.Rule.HomebrewCasks) > 0 {
+		cmds = append(cmds, fmt.Sprintf("%s install --cask %s", brew, strings.Join(h.Rule.HomebrewCasks, " ")))
+	}
+
+	return strings.Join(cmds, " && ")
+}
+
+// buildUninstallCommand builds the uninstall command for formulas and/or casks
 func (h *HomebrewHandler) buildUninstallCommand() string {
-	if len(h.Rule.HomebrewPackages) == 0 {
-		return ""
+	brew := brewCmd()
+	var cmds []string
+
+	if len(h.Rule.HomebrewPackages) > 0 {
+		var formulas []string
+		for _, formulaStr := range h.Rule.HomebrewPackages {
+			parts := strings.Split(formulaStr, "@")
+			formulas = append(formulas, parts[0])
+		}
+		cmds = append(cmds, fmt.Sprintf("%s uninstall -y %s", brew, strings.Join(formulas, " ")))
+	}
+	if len(h.Rule.HomebrewCasks) > 0 {
+		cmds = append(cmds, fmt.Sprintf("%s uninstall --cask -y %s", brew, strings.Join(h.Rule.HomebrewCasks, " ")))
 	}
 
-	// Extract just the formula names (without versions) for uninstall
-	var formulas []string
-	for _, formulaStr := range h.Rule.HomebrewPackages {
-		parts := strings.Split(formulaStr, "@")
-		formulas = append(formulas, parts[0])
-	}
-
-	formulaNames := strings.Join(formulas, " ")
-	return fmt.Sprintf("brew uninstall -y %s", formulaNames)
+	return strings.Join(cmds, " && ")
 }
 
 // NeedsSudo returns true if homebrew installation requires sudo privileges
@@ -252,17 +287,29 @@ func (h *HomebrewHandler) GetDependencyKey() string {
 	return getDependencyKey(h.Rule, fallback)
 }
 
-// GetDisplayDetails returns the formulas to display during execution
+// GetDisplayDetails returns the formulas/casks to display during execution
 func (h *HomebrewHandler) GetDisplayDetails(isUninstall bool) string {
-	return strings.Join(h.Rule.HomebrewPackages, ", ")
+	var parts []string
+	if len(h.Rule.HomebrewPackages) > 0 {
+		parts = append(parts, strings.Join(h.Rule.HomebrewPackages, ", "))
+	}
+	if len(h.Rule.HomebrewCasks) > 0 {
+		parts = append(parts, "cask: "+strings.Join(h.Rule.HomebrewCasks, ", "))
+	}
+	return strings.Join(parts, " | ")
 }
 
 // DisplayInfo displays handler-specific information
 func (h *HomebrewHandler) DisplayInfo() {
+	formatFunc := ui.FormatInfo
 	if h.Rule.Action == "uninstall" {
-		fmt.Printf("  %s\n", ui.FormatDim(fmt.Sprintf("Formulas: [%s]", strings.Join(h.Rule.HomebrewPackages, ", "))))
-	} else {
-		fmt.Printf("  %s\n", ui.FormatInfo(fmt.Sprintf("Formulas: [%s]", strings.Join(h.Rule.HomebrewPackages, ", "))))
+		formatFunc = ui.FormatDim
+	}
+	if len(h.Rule.HomebrewPackages) > 0 {
+		fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("Formulas: [%s]", strings.Join(h.Rule.HomebrewPackages, ", "))))
+	}
+	if len(h.Rule.HomebrewCasks) > 0 {
+		fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("Casks: [%s]", strings.Join(h.Rule.HomebrewCasks, ", "))))
 	}
 }
 
@@ -303,45 +350,59 @@ func (h *HomebrewHandler) DisplayStatus(brews []HomebrewStatus) {
 
 // GetState returns handler-specific state as key-value pairs
 func (h *HomebrewHandler) GetState(isUninstall bool) map[string]string {
-	formulas := h.GetDisplayDetails(isUninstall)
-	return map[string]string{
-		"summary":  formulas,
-		"formulas": formulas,
+	summary := h.GetDisplayDetails(isUninstall)
+	state := map[string]string{
+		"summary": summary,
 	}
+	if len(h.Rule.HomebrewPackages) > 0 {
+		state["formulas"] = strings.Join(h.Rule.HomebrewPackages, ", ")
+	}
+	if len(h.Rule.HomebrewCasks) > 0 {
+		state["casks"] = strings.Join(h.Rule.HomebrewCasks, ", ")
+	}
+	return state
 }
 
 // FindUninstallRules compares homebrew status against current rules and returns uninstall rules
 func (h *HomebrewHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizePath(blueprintFile)
 
-	// Build set of current formula names from homebrew rules
-	currentFormulas := make(map[string]bool)
+	// Build set of current formula and cask keys
+	currentKeys := make(map[string]bool)
 	for _, rule := range currentRules {
 		if rule.Action == "homebrew" {
 			for _, formulaStr := range rule.HomebrewPackages {
 				parts := strings.Split(formulaStr, "@")
-				currentFormulas[parts[0]] = true
+				currentKeys[parts[0]] = true
+			}
+			for _, cask := range rule.HomebrewCasks {
+				currentKeys[caskKey(cask)] = true
 			}
 		}
 	}
 
-	// Find formulas to uninstall (in status but not in current rules)
+	// Find formulas and casks to uninstall
 	var formulasToUninstall []string
+	var casksToUninstall []string
 	if status.Brews != nil {
 		for _, brew := range status.Brews {
 			normalizedStatusBlueprint := normalizePath(brew.Blueprint)
-			if normalizedStatusBlueprint == normalizedBlueprint && brew.OS == osName && !currentFormulas[brew.Formula] {
-				formulasToUninstall = append(formulasToUninstall, brew.Formula)
+			if normalizedStatusBlueprint == normalizedBlueprint && brew.OS == osName && !currentKeys[brew.Formula] {
+				if strings.HasPrefix(brew.Formula, "cask:") {
+					casksToUninstall = append(casksToUninstall, strings.TrimPrefix(brew.Formula, "cask:"))
+				} else {
+					formulasToUninstall = append(formulasToUninstall, brew.Formula)
+				}
 			}
 		}
 	}
 
-	// Return uninstall rule if there are formulas to uninstall
 	var rules []parser.Rule
-	if len(formulasToUninstall) > 0 {
+	if len(formulasToUninstall) > 0 || len(casksToUninstall) > 0 {
 		rules = append(rules, parser.Rule{
 			Action:           "uninstall",
 			HomebrewPackages: formulasToUninstall,
+			HomebrewCasks:    casksToUninstall,
 			OSList:           []string{osName},
 		})
 	}

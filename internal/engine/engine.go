@@ -22,7 +22,7 @@ type ExecutionRecord struct {
 // passwordCache stores decryption passwords by password-id to avoid re-prompting
 var passwordCache = make(map[string]string)
 
-func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
+func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID string) {
 	var setupPath string
 	var err error
 	var runNumber int
@@ -67,14 +67,19 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 		return
 	}
 
-	// Filter rules by skip group and id
+	// Filter rules by skip/only flags
 	var filteredRules []parser.Rule
 	for _, rule := range rules {
-		// Skip if matches skip-group
+		if onlyID != "" {
+			// --only: keep only the rule with this ID
+			if rule.ID == onlyID {
+				filteredRules = append(filteredRules, rule)
+			}
+			continue
+		}
 		if skipGroup != "" && rule.Group == skipGroup {
 			continue
 		}
-		// Skip if matches skip-id
 		if skipID != "" && rule.ID == skipID {
 			continue
 		}
@@ -82,19 +87,26 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string) {
 	}
 	rules = filteredRules
 
+	if onlyID != "" && len(rules) == 0 {
+		fmt.Printf("No rule found with id: %s\n", onlyID)
+		return
+	}
+
 	// Filter rules by current OS
 	filteredRules = filterRulesByOS(rules)
 	currentOS := getOSName()
 
 	// Check history and add auto-uninstall rules for removed packages
-	// Handlers will manage cleanup via Down() and status updates via UpdateStatus()
-	autoUninstallRules := getAutoUninstallRules(filteredRules, file, currentOS)
+	// Skip auto-uninstall when --only is set (we're targeting one specific rule)
+	var autoUninstallRules []parser.Rule
+	if onlyID == "" {
+		autoUninstallRules = getAutoUninstallRules(filteredRules, file, currentOS)
+	}
 	allRules := append(filteredRules, autoUninstallRules...)
 
-	// Count cleanup operations only when not using skip options
+	// Count cleanup operations only when not using skip/only options
 	var numCleanups int
-	if skipGroup == "" && skipID == "" {
-		// All auto-uninstall rules have action "uninstall" (packages, clones, decrypts)
+	if skipGroup == "" && skipID == "" && onlyID == "" {
 		numCleanups = len(autoUninstallRules)
 	}
 

@@ -7,19 +7,28 @@ import (
 	"github.com/elpic/blueprint/internal/engine"
 )
 
-// parseSkipFlags extracts --skip-group and --skip-id flags from arguments
-func parseSkipFlags(args []string) (string, string) {
-	var skipGroup, skipID string
+// parseFlags extracts --skip-group, --skip-id, and --only flags from arguments
+func parseFlags(args []string) (skipGroup, skipID, onlyID string) {
 	for i := 0; i < len(args); i++ {
-		if args[i] == "--skip-group" && i+1 < len(args) {
-			skipGroup = args[i+1]
-			i++ // Skip next arg
-		} else if args[i] == "--skip-id" && i+1 < len(args) {
-			skipID = args[i+1]
-			i++ // Skip next arg
+		switch args[i] {
+		case "--skip-group":
+			if i+1 < len(args) {
+				skipGroup = args[i+1]
+				i++
+			}
+		case "--skip-id":
+			if i+1 < len(args) {
+				skipID = args[i+1]
+				i++
+			}
+		case "--only":
+			if i+1 < len(args) {
+				onlyID = args[i+1]
+				i++
+			}
 		}
 	}
-	return skipGroup, skipID
+	return
 }
 
 func main() {
@@ -43,20 +52,20 @@ func main() {
 		engine.PrintHistory(runNumber, stepNumber)
 	case "plan":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint plan <file.bp> [--skip-group <name>] [--skip-id <name>]")
+			fmt.Println("Usage: blueprint plan <file.bp> [--skip-group <name>] [--skip-id <name>] [--only <id>]")
 			os.Exit(1)
 		}
 		file := os.Args[2]
-		skipGroup, skipID := parseSkipFlags(os.Args[3:])
-		engine.RunWithSkip(file, true, skipGroup, skipID) // dry-run
+		skipGroup, skipID, onlyID := parseFlags(os.Args[3:])
+		engine.RunWithSkip(file, true, skipGroup, skipID, onlyID) // dry-run
 	case "apply":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint apply <file.bp> [--skip-group <name>] [--skip-id <name>]")
+			fmt.Println("Usage: blueprint apply <file.bp> [--skip-group <name>] [--skip-id <name>] [--only <id>]")
 			os.Exit(1)
 		}
 		file := os.Args[2]
-		skipGroup, skipID := parseSkipFlags(os.Args[3:])
-		engine.RunWithSkip(file, false, skipGroup, skipID)
+		skipGroup, skipID, onlyID := parseFlags(os.Args[3:])
+		engine.RunWithSkip(file, false, skipGroup, skipID, onlyID)
 	case "encrypt":
 		if len(os.Args) < 3 {
 			fmt.Println("Usage: blueprint encrypt <file> [--password-id <id>]")
