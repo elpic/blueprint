@@ -51,7 +51,7 @@ func (h *DownloadHandler) Up() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to download %s: %w", h.Rule.DownloadURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("download failed with status %d: %s", resp.StatusCode, h.Rule.DownloadURL)
@@ -65,7 +65,9 @@ func (h *DownloadHandler) Up() (string, error) {
 	}
 
 	_, err = io.Copy(tmpFile, resp.Body)
-	tmpFile.Close()
+	if closeErr := tmpFile.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
 	if err != nil {
 		_ = os.Remove(tmpPath)
 		return "", fmt.Errorf("failed to write download to %s: %w", tmpPath, err)
