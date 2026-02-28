@@ -1,0 +1,2 @@
+run-sh https://download.calibre-ebook.com/linux-installer.sh unless: calibre --version sudo: true on: [linux]
+run-sh https://example.com/install.sh unless: some-tool --version undo: some-tool uninstall id: install-tool on: [linux]

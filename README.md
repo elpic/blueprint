@@ -33,6 +33,7 @@ Or download the latest binary from [releases](https://github.com/elpic/blueprint
 │   │   ├── homebrew.go     # Homebrew package manager setup
 │   │   ├── mkdir.go        # Directory creation
 │   │   ├── download.go     # File download from URLs
+│   │   ├── run.go          # Run shell commands and remote scripts
 │   │   ├── known_hosts.go  # SSH known_hosts management
 │   │   ├── gpg_key.go      # GPG key & repository setup
 │   │   └── handlers_test.go# Handler tests
@@ -868,6 +869,104 @@ download https://example.com/tool to: ~/bin/tool permissions: 0755
 - Use `permissions: 0600` for private files (tokens, credentials)
 - Downloaded files are written atomically via a `.tmp` file to avoid partial writes
 
+### Run Rules
+
+Execute arbitrary shell commands as part of your machine setup:
+
+```
+run <command> [unless: <check>] [sudo: true|false] [undo: <command>] [id: <rule-id>] [after: <dependency>] on: [platform1, platform2, ...]
+```
+
+**What is this used for?**
+Run any shell command that doesn't fit a dedicated action — custom init scripts, symlinking dotfiles, setting defaults, or anything else not expressible via `install`, `clone`, etc.
+
+**Options:**
+- `unless: <check>` - Skip the command if this check exits 0 (idempotency). Re-runs are safe (optional)
+- `sudo: true` - Prepend `sudo` to the command (optional, default false)
+- `undo: <command>` - Command to run when this rule is removed from the blueprint (optional)
+- `id: <rule-id>` - Give this rule a unique identifier (optional)
+- `after: <dependency>` - Execute after another rule (optional)
+- `on: [platforms]` - Target specific platforms (optional)
+
+**How it works:**
+1. If `unless:` is set, runs the check command. If it exits 0, skips execution (already done)
+2. Runs the command via `sh -c`. If `sudo: true`, prepends `sudo`
+3. Tracks the command in status so it can be undone when removed from the blueprint
+4. On removal, runs the `undo:` command if one was specified
+
+**Examples:**
+
+```blueprint
+# Idempotent setup with undo
+run touch ~/.hello-done unless: test -f ~/.hello-done undo: rm -f ~/.hello-done on: [mac, linux]
+
+# Run with sudo
+run sysctl -w vm.max_map_count=262144 unless: test "$(sysctl -n vm.max_map_count)" = "262144" sudo: true on: [linux]
+
+# With ID and dependency
+run ln -sf ~/dotfiles/.zshrc ~/.zshrc unless: test -L ~/.zshrc undo: rm -f ~/.zshrc id: link-zshrc after: clone-dotfiles on: [mac, linux]
+```
+
+**Auto-Uninstall Example:**
+When you remove a `run` rule that has an `undo:` command, the undo runs automatically:
+
+```blueprint
+# Before (old setup.bp)
+run touch ~/.hello-done unless: test -f ~/.hello-done undo: rm -f ~/.hello-done on: [mac]
+
+# After (new setup.bp) — rule removed
+
+# When you run: blueprint apply setup.bp
+# Result: rm -f ~/.hello-done is automatically executed
+```
+
+> **Note:** Only rules with an `undo:` command trigger auto-cleanup. Rules without `undo:` are silently removed from tracking with no side effects.
+
+---
+
+### Run-sh Rules
+
+Download a shell script from a URL and execute it:
+
+```
+run-sh <url> [unless: <check>] [sudo: true|false] [undo: <command>] [id: <rule-id>] [after: <dependency>] on: [platform1, platform2, ...]
+```
+
+**What is this used for?**
+Install tools whose official method is a piped curl+sh pattern (e.g. Calibre, Homebrew, Rust). Using `run-sh` is cleaner than embedding a long pipe chain in a `run` command — Blueprint downloads the script to a temp file and runs it with `sh`, so piping directly into a shell is not needed.
+
+**Options:**
+- `unless: <check>` - Skip if this check exits 0 (idempotency) (optional)
+- `sudo: true` - Run the script with `sudo sh` instead of `sh` (optional, default false)
+- `undo: <command>` - Command to run when this rule is removed from the blueprint (optional)
+- `id: <rule-id>` - Give this rule a unique identifier (optional)
+- `after: <dependency>` - Execute after another rule (optional)
+- `on: [platforms]` - Target specific platforms (optional)
+
+**How it works:**
+1. If `unless:` is set, runs the check. If it exits 0, skips
+2. Downloads the script from the URL to a secure temp file
+3. Executes it with `sh` (or `sudo sh` if `sudo: true`)
+4. Removes the temp file after execution
+5. Tracks the URL in status for undo when removed from blueprint
+
+**Examples:**
+
+```blueprint
+# Install Calibre (Linux official installer)
+run-sh https://download.calibre-ebook.com/linux-installer.sh unless: calibre --version sudo: true on: [linux]
+
+# Install a tool with undo
+run-sh https://example.com/install.sh unless: some-tool --version undo: some-tool uninstall id: install-tool on: [linux]
+```
+
+**Security notes:**
+- Always use HTTPS URLs to avoid man-in-the-middle attacks
+- Prefer `unless:` checks so the script only runs once
+- Review scripts before adding them to your blueprint
+
+---
+
 ### GPG Key Rules
 
 Add GPG keys and configure Debian repositories with signature verification:
@@ -1140,6 +1239,7 @@ The status file tracks:
 - **Homebrew Formulas:** Formula name, version, installation timestamp, blueprint source, OS
 - **Cloned repositories:** URL, path, commit SHA, clone timestamp, blueprint source, OS
 - **Downloaded files:** URL, destination path, download timestamp, blueprint source, OS
+- **Run commands:** Command or script URL, undo command, execution timestamp, blueprint source, OS
 
 This information is useful for:
 - Understanding what your current system setup includes

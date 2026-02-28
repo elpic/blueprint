@@ -58,6 +58,15 @@ type Rule struct {
 	DownloadPath      string // Destination path
 	DownloadOverwrite bool   // If true, always re-download
 	DownloadPerms     string // Optional octal permissions (e.g. "0755")
+
+	// Run-specific fields
+	RunCommand string // Shell command to execute
+	RunUnless  string // Skip if this command exits 0 (idempotency check)
+	RunUndo    string // Execute when rule is removed from blueprint
+	RunSudo    bool   // If true, prepend sudo to the command
+
+	// Run-sh-specific fields
+	RunShURL string // URL to the script to download and execute
 }
 
 // Parse parses content without include support
@@ -180,6 +189,18 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 		} else if strings.HasPrefix(line, "download ") {
 			// Parse format: download <url> to: <path> [overwrite: <true|false>] [permissions: <octal>] [id: <id>] [after: <deps>] on: [<platforms>]
 			rule := parseDownloadRule(line)
+			if rule != nil {
+				rules = append(rules, *rule)
+			}
+		} else if strings.HasPrefix(line, "run-sh ") {
+			// Parse format: run-sh <url> [unless: <check>] [sudo: <true|false>] [undo: <cmd>] [id: <id>] [after: <deps>] on: [<platforms>]
+			rule := parseRunShRule(line)
+			if rule != nil {
+				rules = append(rules, *rule)
+			}
+		} else if strings.HasPrefix(line, "run ") {
+			// Parse format: run <cmd> [unless: <check>] [sudo: <true|false>] [undo: <cmd>] [id: <id>] [after: <deps>] on: [<platforms>]
+			rule := parseRunRule(line)
 			if rule != nil {
 				rules = append(rules, *rule)
 			}
@@ -1334,5 +1355,166 @@ func parseDownloadRule(line string) *Rule {
 		DownloadPerms:     permissions,
 		OSList:            osList,
 		After:             dependencies,
+	}
+}
+
+// extractRunKeywords extracts keyword-delimited fields from a run rule line.
+// Keywords: unless:, undo:, sudo:, id:, after:
+// Returns the remaining text (the command/URL) after extraction.
+func extractRunKeywords(rulePart string) (runUnless, runUndo string, runSudo bool, id string, dependencies []string, remaining string) {
+	// Known keyword list — order matters for multi-word values
+	keywords := []string{"unless:", "undo:", "sudo:", "id:", "after:"}
+
+	// Extract each keyword value by finding its position and taking text until the next keyword
+	extractValue := func(text, keyword string) (value, rest string) {
+		idx := strings.Index(text, keyword)
+		if idx == -1 {
+			return "", text
+		}
+		// Text before the keyword
+		before := text[:idx]
+		// Text after keyword prefix
+		after := strings.TrimSpace(text[idx+len(keyword):])
+
+		// Find where the value ends (at the next keyword)
+		endIdx := len(after)
+		for _, kw := range keywords {
+			if kw == keyword {
+				continue
+			}
+			if i := strings.Index(after, kw); i != -1 && i < endIdx {
+				endIdx = i
+			}
+		}
+		value = strings.TrimSpace(after[:endIdx])
+		// Reassemble remaining text (before + what comes after this keyword's value)
+		rest = before + " " + after[endIdx:]
+		return value, rest
+	}
+
+	remaining = rulePart
+
+	if strings.Contains(remaining, "unless:") {
+		runUnless, remaining = extractValue(remaining, "unless:")
+	}
+	if strings.Contains(remaining, "undo:") {
+		runUndo, remaining = extractValue(remaining, "undo:")
+	}
+	if strings.Contains(remaining, "sudo:") {
+		var sudoStr string
+		sudoStr, remaining = extractValue(remaining, "sudo:")
+		runSudo = sudoStr == "true"
+	}
+	if strings.Contains(remaining, "id:") {
+		var idRaw string
+		idRaw, remaining = extractValue(remaining, "id:")
+		// id is a single word
+		fields := strings.Fields(idRaw)
+		if len(fields) > 0 {
+			id = fields[0]
+		}
+	}
+	if strings.Contains(remaining, "after:") {
+		var afterRaw string
+		afterRaw, remaining = extractValue(remaining, "after:")
+		deps := strings.Split(afterRaw, ",")
+		for _, dep := range deps {
+			dep = strings.TrimSpace(dep)
+			if dep != "" {
+				dependencies = append(dependencies, dep)
+			}
+		}
+	}
+
+	remaining = strings.TrimSpace(remaining)
+	return
+}
+
+func parseRunRule(line string) *Rule {
+	// Remove "run " prefix
+	line = strings.TrimPrefix(line, "run ")
+
+	// Split by "on:" first (rightmost split to handle URLs with on: in them)
+	parts := strings.SplitN(line, " on:", 2)
+	var osListStr, rulePart string
+	if len(parts) == 2 {
+		osListStr = strings.TrimSpace(parts[1])
+		rulePart = strings.TrimSpace(parts[0])
+	} else {
+		rulePart = strings.TrimSpace(parts[0])
+	}
+
+	// Parse OS list
+	var osList []string
+	if osListStr != "" {
+		osListStr = strings.Trim(osListStr, "[]")
+		for _, os := range strings.Split(osListStr, ",") {
+			if s := strings.TrimSpace(os); s != "" {
+				osList = append(osList, s)
+			}
+		}
+	}
+
+	runUnless, runUndo, runSudo, id, dependencies, runCommand := extractRunKeywords(rulePart)
+
+	if runCommand == "" {
+		return nil
+	}
+
+	return &Rule{
+		ID:         id,
+		Action:     "run",
+		RunCommand: runCommand,
+		RunUnless:  runUnless,
+		RunUndo:    runUndo,
+		RunSudo:    runSudo,
+		OSList:     osList,
+		After:      dependencies,
+	}
+}
+
+func parseRunShRule(line string) *Rule {
+	// Remove "run-sh " prefix
+	line = strings.TrimPrefix(line, "run-sh ")
+
+	// Split by "on:" first
+	parts := strings.SplitN(line, " on:", 2)
+	var osListStr, rulePart string
+	if len(parts) == 2 {
+		osListStr = strings.TrimSpace(parts[1])
+		rulePart = strings.TrimSpace(parts[0])
+	} else {
+		rulePart = strings.TrimSpace(parts[0])
+	}
+
+	// Parse OS list
+	var osList []string
+	if osListStr != "" {
+		osListStr = strings.Trim(osListStr, "[]")
+		for _, os := range strings.Split(osListStr, ",") {
+			if s := strings.TrimSpace(os); s != "" {
+				osList = append(osList, s)
+			}
+		}
+	}
+
+	runUnless, runUndo, runSudo, id, dependencies, remaining := extractRunKeywords(rulePart)
+
+	// First token of remaining is the URL
+	fields := strings.Fields(remaining)
+	if len(fields) == 0 {
+		return nil
+	}
+	scriptURL := fields[0]
+
+	return &Rule{
+		ID:        id,
+		Action:    "run-sh",
+		RunShURL:  scriptURL,
+		RunUnless: runUnless,
+		RunUndo:   runUndo,
+		RunSudo:   runSudo,
+		OSList:    osList,
+		After:     dependencies,
 	}
 }
