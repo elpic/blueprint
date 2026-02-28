@@ -49,6 +49,7 @@ type Rule struct {
 
 	// Homebrew-specific fields
 	HomebrewPackages []string // List of "formula[@version]" for homebrew (e.g., "node@20", "git")
+	HomebrewCasks    []string // List of cask names for brew install --cask (e.g., "visual-studio-code")
 
 	// Ollama-specific fields
 	OllamaModels []string // List of model names for ollama (e.g., "llama3", "codellama")
@@ -591,21 +592,20 @@ func parseHomebrewRule(line string) *Rule {
 		}
 	}
 
-	// Parse rule part: extract formulas first, then id: and after: clauses
+	// Parse rule part: extract formulas, casks, id:, and after: clauses
 	var id string
 	var dependencies []string
 	var homebrewPackages []string
+	var homebrewCasks []string
 
 	// Extract id: value first
 	if strings.Contains(rulePart, "id:") {
 		idParts := strings.Split(rulePart, "id:")
 		if len(idParts) >= 2 {
 			idValue := strings.TrimSpace(idParts[1])
-			// Get the ID (first word after id:)
 			idFields := strings.Fields(idValue)
 			if len(idFields) > 0 {
 				id = idFields[0]
-				// Reconstruct rulePart without the id: part
 				rulePart = idParts[0] + " " + strings.Join(idFields[1:], " ")
 			}
 		}
@@ -616,7 +616,6 @@ func parseHomebrewRule(line string) *Rule {
 		afterParts := strings.Split(rulePart, "after:")
 		if len(afterParts) >= 2 {
 			afterValue := strings.TrimSpace(afterParts[1])
-			// Parse comma-separated dependencies
 			deps := strings.Split(afterValue, ",")
 			for _, dep := range deps {
 				dep = strings.TrimSpace(dep)
@@ -624,34 +623,37 @@ func parseHomebrewRule(line string) *Rule {
 					dependencies = append(dependencies, dep)
 				}
 			}
-			// Reconstruct rulePart without the after: part
 			rulePart = afterParts[0]
 		}
 	}
 
-	// Extract homebrew formulas (formula or formula@version format)
-	// Remaining text in rulePart should be space-separated formula pairs
-	rulePart = strings.TrimSpace(rulePart)
-	if rulePart != "" {
-		// Split by spaces and keep only valid formula names
-		fields := strings.Fields(rulePart)
-		for _, field := range fields {
-			// Valid homebrew formula format: name or name@version
-			if !strings.Contains(field, ":") {
-				homebrewPackages = append(homebrewPackages, field)
-			}
+	// Extract cask: — the single cask name immediately following the keyword
+	if strings.Contains(rulePart, "cask:") {
+		caskParts := strings.SplitN(rulePart, "cask:", 2)
+		caskValue := strings.TrimSpace(caskParts[1])
+		rulePart = strings.TrimSpace(caskParts[0])
+		fields := strings.Fields(caskValue)
+		if len(fields) > 0 {
+			homebrewCasks = append(homebrewCasks, fields[0])
 		}
 	}
 
-	// If no ID is provided, generate a unique ID based on the first formula
+	// Remaining first token is the formula (formula or formula@version); one per rule
+	rulePart = strings.TrimSpace(rulePart)
+	if rulePart != "" {
+		fields := strings.Fields(rulePart)
+		if len(fields) > 0 && !strings.Contains(fields[0], ":") {
+			homebrewPackages = append(homebrewPackages, fields[0])
+		}
+	}
+
+	// If no ID is provided, generate one based on the formula or cask
 	if id == "" {
 		if len(homebrewPackages) > 0 {
-			// Use the first formula name to ensure uniqueness
-			// e.g., "node@18" becomes "homebrew-node@18"
-			firstPkg := homebrewPackages[0]
-			id = fmt.Sprintf("homebrew-%s", firstPkg)
+			id = fmt.Sprintf("homebrew-%s", homebrewPackages[0])
+		} else if len(homebrewCasks) > 0 {
+			id = fmt.Sprintf("homebrew-cask-%s", homebrewCasks[0])
 		} else {
-			// Fallback if no packages (shouldn't happen)
 			id = "homebrew"
 		}
 	}
@@ -662,6 +664,7 @@ func parseHomebrewRule(line string) *Rule {
 		OSList:           osList,
 		After:            dependencies,
 		HomebrewPackages: homebrewPackages,
+		HomebrewCasks:    homebrewCasks,
 	}
 }
 

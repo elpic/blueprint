@@ -618,17 +618,21 @@ asdf global nodejs 21.4.0
 Install and maintain packages using Homebrew package manager:
 
 ```
-homebrew [formula[@version] ...] [id: <rule-id>] [after: <dependency>] on: [platform1, platform2, ...]
+homebrew <formula[@version]> [id: <rule-id>] [after: <dependency>] on: [platform1, platform2, ...]
+homebrew cask: <cask-name> [id: <rule-id>] [after: <dependency>] on: [platform1, platform2, ...]
 ```
 
 **What is Homebrew?**
 Homebrew is a package manager for macOS and Linux that simplifies software installation and management. Learn more at https://brew.sh/
 
+**One package per rule** — each `homebrew` line installs exactly one formula or one cask. This keeps IDs, dependency tracking, and status unambiguous.
+
 **Formula Syntax:**
-- `formula` - Install a formula (e.g., `git`, `node`, `python@3.11`)
-- `formula@version` - Install a specific version of a formula (e.g., `node@18`, `python@3.11`)
-- Multiple formulas can be specified in a single rule
-- Supports versioned formulas like `formula@major.minor`
+- `homebrew <formula>` - Install a formula (e.g., `git`, `wget`)
+- `homebrew <formula@version>` - Install a specific version (e.g., `node@18`, `python@3.11`)
+
+**Cask Syntax:**
+- `homebrew cask: <name>` - Install a Homebrew Cask (macOS GUI apps, fonts, drivers) using `brew install --cask`
 
 **Options:**
 - `id: <rule-id>` - Give this rule a unique identifier (optional)
@@ -640,53 +644,47 @@ Homebrew is a package manager for macOS and Linux that simplifies software insta
   - On macOS: Uses official Homebrew installation script
   - On Linux: Installs dependencies (git, curl, build-essential) then runs official script
 - Thread-safe installation prevents concurrent conflicts
-- Tracks installed packages with version information
-- Auto-uninstalls packages if removed from blueprint (like asdf)
-- Supports installation on both macOS and Linux
+- Tracks installed packages and casks with version information
+- Auto-uninstalls packages and casks if removed from blueprint
+- Supports installation on both macOS and Linux (casks are macOS-only)
 
 **Examples:**
 
 ```blueprint
-# Simple homebrew installation
+# Formulas
 homebrew git on: [mac]
+homebrew node@18 on: [mac]
+homebrew python@3.11 on: [mac, linux]
 
-# Multiple packages
-homebrew git curl wget on: [mac, linux]
-
-# With specific versions
-homebrew node@18 python@3.11 on: [mac]
+# Casks (macOS GUI apps)
+homebrew cask: visual-studio-code on: [mac]
+homebrew cask: 1password on: [mac]
+homebrew cask: font-jetbrains-mono on: [mac]
 
 # With ID for dependencies
-homebrew git id: setup-git on: [mac]
-
-# After another rule
-homebrew build-essential after: setup-git on: [linux]
-
-# Complete example with dependencies
-asdf nodejs@18.19.0 id: version-manager on: [mac, linux]
-homebrew git curl after: version-manager on: [mac, linux]
-install typescript on: [mac, linux] after: version-manager
+homebrew git id: brew-git on: [mac]
+homebrew node@18 after: brew-git on: [mac]
 ```
 
 **Auto-Uninstall Example:**
-When you remove a homebrew rule from your blueprint, the packages are automatically uninstalled:
+When you remove a homebrew rule from your blueprint, the package or cask is automatically uninstalled:
 
 ```blueprint
 # Before (old setup.bp)
-homebrew git curl node on: [mac]
-install npm-tools on: [mac]
+homebrew curl on: [mac]
+homebrew cask: visual-studio-code on: [mac]
 
-# After (new setup.bp)
+# After (new setup.bp) — both rules removed
 homebrew git on: [mac]
-install npm-tools on: [mac]
 
-# When you run: ./blueprint apply setup.bp
-# Result: curl and node are automatically uninstalled with: brew uninstall -y curl node
+# When you run: blueprint apply setup.bp
+# Result: brew uninstall -y curl
+#         brew uninstall --cask -y visual-studio-code
 ```
 
 **Platform Support:**
-- **macOS**: Full support via Homebrew
-- **Linux**: Full support via Linuxbrew (Homebrew for Linux)
+- **macOS**: Full support via Homebrew — formulas and casks
+- **Linux**: Formulas only via Linuxbrew (casks are not supported on Linux)
 - **Windows**: Not supported
 
 **Security Notes:**
@@ -1182,12 +1180,13 @@ Blueprint automatically generates the correct package manager commands for both 
 
 ### macOS
 - Install rules → `brew install <packages>` (for `install` action)
-- Homebrew rules → `brew install <formulas>` (for `homebrew` action)
-- Auto-cleanup (removed packages) → `brew uninstall -y <packages>`
+- Homebrew formula rules → `brew install <formula>` (for `homebrew` action)
+- Homebrew cask rules → `brew install --cask <cask>` (for `homebrew cask:` action)
+- Auto-cleanup (removed packages) → `brew uninstall -y <formula>` or `brew uninstall --cask -y <cask>`
 
 ### Linux
 - Install rules → `apt-get install -y <packages>` (for `install` action)
-- Homebrew rules → `brew install <formulas>` (for `homebrew` action via Linuxbrew)
+- Homebrew formula rules → `brew install <formula>` (for `homebrew` action via Linuxbrew)
 - Auto-cleanup (removed packages) → `apt-get remove -y <packages>`
 
 The system also automatically adds `sudo` when needed on Linux (if not running as root). Homebrew installation automatically handles dependencies and permissions on both platforms.
