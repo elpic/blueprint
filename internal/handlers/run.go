@@ -111,6 +111,7 @@ func (h *RunHandler) UpdateStatus(status *Status, records []ExecutionRecord, blu
 				Action:    "run",
 				Command:   h.Rule.RunCommand,
 				UndoCmd:   h.Rule.RunUndo,
+				Sudo:      h.Rule.RunSudo,
 				RanAt:     time.Now().Format(time.RFC3339),
 				Blueprint: blueprint,
 				OS:        osName,
@@ -197,6 +198,7 @@ func (h *RunHandler) FindUninstallRules(status *Status, currentRules []parser.Ru
 						Action:     "uninstall",
 						RunCommand: r.Command,
 						RunUndo:    r.UndoCmd,
+						RunSudo:    r.Sudo,
 						OSList:     []string{osName},
 					})
 				}
@@ -364,6 +366,7 @@ func (h *RunShHandler) UpdateStatus(status *Status, records []ExecutionRecord, b
 				Action:    "run-sh",
 				Command:   h.Rule.RunShURL,
 				UndoCmd:   h.Rule.RunUndo,
+				Sudo:      h.Rule.RunSudo,
 				RanAt:     time.Now().Format(time.RFC3339),
 				Blueprint: blueprint,
 				OS:        osName,
@@ -441,6 +444,7 @@ func (h *RunShHandler) FindUninstallRules(status *Status, currentRules []parser.
 						Action:   "uninstall",
 						RunShURL: r.Command,
 						RunUndo:  r.UndoCmd,
+						RunSudo:  r.Sudo,
 						OSList:   []string{osName},
 					})
 				}

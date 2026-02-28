@@ -111,9 +111,10 @@ type DownloadStatus struct {
 
 // RunStatus tracks an executed run/run-sh command
 type RunStatus struct {
-	Action    string `json:"action"`            // "run" or "run-sh"
-	Command   string `json:"command"`            // The run command or script URL
+	Action    string `json:"action"`             // "run" or "run-sh"
+	Command   string `json:"command"`             // The run command or script URL
 	UndoCmd   string `json:"undo_cmd,omitempty"`
+	Sudo      bool   `json:"sudo,omitempty"`      // Whether sudo was used
 	RanAt     string `json:"ran_at"`
 	Blueprint string `json:"blueprint"`
 	OS        string `json:"os"`
