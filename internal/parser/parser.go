@@ -52,6 +52,12 @@ type Rule struct {
 
 	// Ollama-specific fields
 	OllamaModels []string // List of model names for ollama (e.g., "llama3", "codellama")
+
+	// Download-specific fields
+	DownloadURL       string // Source URL
+	DownloadPath      string // Destination path
+	DownloadOverwrite bool   // If true, always re-download
+	DownloadPerms     string // Optional octal permissions (e.g. "0755")
 }
 
 // Parse parses content without include support
@@ -168,6 +174,12 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 		} else if strings.HasPrefix(line, "gpg-key ") {
 			// Parse format: gpg-key <url> keyring: <name> deb-url: <url> [id: <id>] [after: <deps>] on: [<platforms>]
 			rule := parseGPGKeyRule(line)
+			if rule != nil {
+				rules = append(rules, *rule)
+			}
+		} else if strings.HasPrefix(line, "download ") {
+			// Parse format: download <url> to: <path> [overwrite: <true|false>] [permissions: <octal>] [id: <id>] [after: <deps>] on: [<platforms>]
+			rule := parseDownloadRule(line)
 			if rule != nil {
 				rules = append(rules, *rule)
 			}
@@ -1194,5 +1206,133 @@ func parseGPGKeyRule(line string) *Rule {
 		GPGDebURL:  debURL,
 		OSList:     osList,
 		After:      dependencies,
+	}
+}
+
+func parseDownloadRule(line string) *Rule {
+	// Remove "download " prefix
+	line = strings.TrimPrefix(line, "download ")
+
+	// Split by "on:" to get OS list (on: is optional)
+	parts := strings.Split(line, "on:")
+	var osListStr string
+	var rulePart string
+
+	if len(parts) == 2 {
+		osListStr = strings.TrimSpace(parts[1])
+		rulePart = strings.TrimSpace(parts[0])
+	} else if len(parts) == 1 {
+		rulePart = strings.TrimSpace(parts[0])
+		osListStr = ""
+	} else {
+		return nil
+	}
+
+	// Parse OS list [linux, mac, windows]
+	var osList []string
+	if osListStr != "" {
+		osListStr = strings.Trim(osListStr, "[]")
+		osList = strings.Split(osListStr, ",")
+		for i := range osList {
+			osList[i] = strings.TrimSpace(osList[i])
+		}
+	}
+
+	// Parse rule part: extract URL, to:, overwrite:, permissions:, id:, and after: clauses
+	var downloadURL string
+	var downloadPath string
+	var overwrite bool
+	var permissions string
+	var id string
+	var dependencies []string
+
+	// Extract URL (first token)
+	fields := strings.Fields(rulePart)
+	if len(fields) == 0 {
+		return nil
+	}
+	downloadURL = fields[0]
+	rulePart = strings.Join(fields[1:], " ")
+
+	// Extract to: value
+	if strings.Contains(rulePart, "to:") {
+		toParts := strings.Split(rulePart, "to:")
+		if len(toParts) >= 2 {
+			toValue := strings.TrimSpace(toParts[1])
+			toFields := strings.Fields(toValue)
+			if len(toFields) > 0 {
+				downloadPath = toFields[0]
+				rulePart = toParts[0] + " " + strings.Join(toFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract overwrite: value
+	if strings.Contains(rulePart, "overwrite:") {
+		owParts := strings.Split(rulePart, "overwrite:")
+		if len(owParts) >= 2 {
+			owValue := strings.TrimSpace(owParts[1])
+			owFields := strings.Fields(owValue)
+			if len(owFields) > 0 {
+				overwrite = owFields[0] == "true"
+				rulePart = owParts[0] + " " + strings.Join(owFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract permissions: value
+	if strings.Contains(rulePart, "permissions:") {
+		permParts := strings.Split(rulePart, "permissions:")
+		if len(permParts) >= 2 {
+			permValue := strings.TrimSpace(permParts[1])
+			permFields := strings.Fields(permValue)
+			if len(permFields) > 0 {
+				permissions = permFields[0]
+				rulePart = permParts[0] + " " + strings.Join(permFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract id: value
+	if strings.Contains(rulePart, "id:") {
+		idParts := strings.Split(rulePart, "id:")
+		if len(idParts) >= 2 {
+			idValue := strings.TrimSpace(idParts[1])
+			idFields := strings.Fields(idValue)
+			if len(idFields) > 0 {
+				id = idFields[0]
+				rulePart = idParts[0] + " " + strings.Join(idFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract after: value
+	if strings.Contains(rulePart, "after:") {
+		afterParts := strings.Split(rulePart, "after:")
+		if len(afterParts) >= 2 {
+			afterValue := strings.TrimSpace(afterParts[1])
+			deps := strings.Split(afterValue, ",")
+			for _, dep := range deps {
+				dep = strings.TrimSpace(dep)
+				if dep != "" {
+					dependencies = append(dependencies, dep)
+				}
+			}
+		}
+	}
+
+	if downloadURL == "" || downloadPath == "" {
+		return nil
+	}
+
+	return &Rule{
+		ID:                id,
+		Action:            "download",
+		DownloadURL:       downloadURL,
+		DownloadPath:      downloadPath,
+		DownloadOverwrite: overwrite,
+		DownloadPerms:     permissions,
+		OSList:            osList,
+		After:             dependencies,
 	}
 }
