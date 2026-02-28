@@ -109,6 +109,16 @@ type DownloadStatus struct {
 	OS           string `json:"os"`
 }
 
+// RunStatus tracks an executed run/run-sh command
+type RunStatus struct {
+	Action    string `json:"action"`            // "run" or "run-sh"
+	Command   string `json:"command"`            // The run command or script URL
+	UndoCmd   string `json:"undo_cmd,omitempty"`
+	RanAt     string `json:"ran_at"`
+	Blueprint string `json:"blueprint"`
+	OS        string `json:"os"`
+}
+
 // Status represents the current blueprint state
 type Status struct {
 	Packages   []PackageStatus    `json:"packages"`
@@ -121,6 +131,7 @@ type Status struct {
 	Brews      []HomebrewStatus   `json:"brews"`
 	Ollamas    []OllamaStatus     `json:"ollamas"`
 	Downloads  []DownloadStatus   `json:"downloads"`
+	Runs       []RunStatus        `json:"runs"`
 }
 
 // Handler is the interface that all command handlers must implement
@@ -269,6 +280,12 @@ func DetectRuleType(rule parser.Rule) string {
 	if rule.DownloadURL != "" {
 		return "download"
 	}
+	if rule.RunCommand != "" {
+		return "run"
+	}
+	if rule.RunShURL != "" {
+		return "run-sh"
+	}
 	return ""
 }
 
@@ -306,6 +323,10 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 		return NewGPGKeyHandler(rule, basePath)
 	case "download":
 		return NewDownloadHandler(rule, basePath)
+	case "run":
+		return NewRunHandler(rule, basePath)
+	case "run-sh":
+		return NewRunShHandler(rule, basePath)
 	default:
 		return nil
 	}
@@ -348,6 +369,12 @@ func GetHandlerFactory(action string) HandlerFactory {
 		"download": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
 			return NewDownloadHandler(rule, basePath)
 		},
+		"run": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
+			return NewRunHandler(rule, basePath)
+		},
+		"run-sh": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
+			return NewRunShHandler(rule, basePath)
+		},
 	}
 
 	return factories[action]
@@ -368,6 +395,8 @@ func GetStatusProviderHandlers() []Handler {
 		NewKnownHostsHandler(parser.Rule{}, ""),
 		NewGPGKeyHandler(parser.Rule{}, ""),
 		NewDownloadHandler(parser.Rule{}, ""),
+		NewRunHandler(parser.Rule{}, ""),
+		NewRunShHandler(parser.Rule{}, ""),
 	}
 }
 
@@ -472,6 +501,19 @@ func removeGPGKeyStatus(gpgKeys []GPGKeyStatus, keyring string, blueprint string
 	return result
 }
 
+
+// removeRunStatus removes a run entry from the status runs list by command key
+func removeRunStatus(runs []RunStatus, command string, blueprint string, osName string) []RunStatus {
+	var result []RunStatus
+	normalizedBlueprint := normalizePath(blueprint)
+	for _, r := range runs {
+		normalizedStoredBlueprint := normalizePath(r.Blueprint)
+		if r.Command != command || normalizedStoredBlueprint != normalizedBlueprint || r.OS != osName {
+			result = append(result, r)
+		}
+	}
+	return result
+}
 
 // removeDownloadStatus removes a download from the status downloads list
 func removeDownloadStatus(downloads []DownloadStatus, path string, blueprint string, osName string) []DownloadStatus {

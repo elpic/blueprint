@@ -1,0 +1,3 @@
+run echo hello unless: test -f ~/.hello-done undo: rm -f ~/.hello-done on: [mac, linux]
+run touch /tmp/bp-test unless: test -f /tmp/bp-test undo: rm /tmp/bp-test id: bp-test on: [mac, linux]
+run some-setup-script.sh sudo: true unless: some-tool --version on: [linux]

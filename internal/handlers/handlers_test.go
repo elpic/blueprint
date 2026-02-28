@@ -125,6 +125,14 @@ func TestKeyProviderInterface(t *testing.T) {
 			name:    "DownloadHandler implements KeyProvider",
 			handler: NewDownloadHandler(parser.Rule{DownloadURL: "https://example.com/file.sh", DownloadPath: "~/bin/file.sh"}, ""),
 		},
+		{
+			name:    "RunHandler implements KeyProvider",
+			handler: NewRunHandler(parser.Rule{RunCommand: "echo hello"}, ""),
+		},
+		{
+			name:    "RunShHandler implements KeyProvider",
+			handler: NewRunShHandler(parser.Rule{RunShURL: "https://example.com/install.sh"}, ""),
+		},
 	}
 
 	for _, tt := range tests {
@@ -204,6 +212,18 @@ func TestDisplayProviderInterface(t *testing.T) {
 			name:              "DownloadHandler provides path display",
 			handler:           NewDownloadHandler(parser.Rule{DownloadURL: "https://example.com/file.sh", DownloadPath: "~/bin/file.sh"}, ""),
 			expectedFormatted: "~/bin/file.sh",
+			isUninstall:       false,
+		},
+		{
+			name:              "RunHandler provides command display",
+			handler:           NewRunHandler(parser.Rule{RunCommand: "echo hello"}, ""),
+			expectedFormatted: "echo hello",
+			isUninstall:       false,
+		},
+		{
+			name:              "RunShHandler provides URL display",
+			handler:           NewRunShHandler(parser.Rule{RunShURL: "https://example.com/install.sh"}, ""),
+			expectedFormatted: "https://example.com/install.sh",
 			isUninstall:       false,
 		},
 	}
@@ -304,6 +324,20 @@ func TestStateProviderInterface(t *testing.T) {
 			isUninstall:     false,
 			expectedKeys:    []string{"summary", "url", "path"},
 		},
+		{
+			name:            "RunHandler provides run state",
+			handler:         NewRunHandler(parser.Rule{RunCommand: "echo hello"}, ""),
+			expectedSummary: "echo hello",
+			isUninstall:     false,
+			expectedKeys:    []string{"summary", "command"},
+		},
+		{
+			name:            "RunShHandler provides run-sh state",
+			handler:         NewRunShHandler(parser.Rule{RunShURL: "https://example.com/install.sh"}, ""),
+			expectedSummary: "https://example.com/install.sh",
+			isUninstall:     false,
+			expectedKeys:    []string{"summary", "url"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -390,6 +424,18 @@ func TestStatusProviderInterface(t *testing.T) {
 		{
 			name:              "DownloadHandler implements StatusProvider",
 			handler:           NewDownloadHandler(parser.Rule{DownloadURL: "https://example.com/file.sh", DownloadPath: "~/bin/file.sh"}, ""),
+			currentRules:      []parser.Rule{},
+			expectedRuleCount: 0,
+		},
+		{
+			name:              "RunHandler implements StatusProvider",
+			handler:           NewRunHandler(parser.Rule{RunCommand: "echo hello"}, ""),
+			currentRules:      []parser.Rule{},
+			expectedRuleCount: 0,
+		},
+		{
+			name:              "RunShHandler implements StatusProvider",
+			handler:           NewRunShHandler(parser.Rule{RunShURL: "https://example.com/install.sh"}, ""),
 			currentRules:      []parser.Rule{},
 			expectedRuleCount: 0,
 		},
