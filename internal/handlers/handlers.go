@@ -100,6 +100,15 @@ type OllamaStatus struct {
 	OS          string `json:"os"`
 }
 
+// DownloadStatus tracks a downloaded file
+type DownloadStatus struct {
+	URL          string `json:"url"`
+	Path         string `json:"path"`
+	DownloadedAt string `json:"downloaded_at"`
+	Blueprint    string `json:"blueprint"`
+	OS           string `json:"os"`
+}
+
 // Status represents the current blueprint state
 type Status struct {
 	Packages   []PackageStatus    `json:"packages"`
@@ -111,6 +120,7 @@ type Status struct {
 	Asdfs      []AsdfStatus       `json:"asdfs"`
 	Brews      []HomebrewStatus   `json:"brews"`
 	Ollamas    []OllamaStatus     `json:"ollamas"`
+	Downloads  []DownloadStatus   `json:"downloads"`
 }
 
 // Handler is the interface that all command handlers must implement
@@ -256,6 +266,9 @@ func DetectRuleType(rule parser.Rule) string {
 	if rule.GPGKeyring != "" {
 		return "gpg-key"
 	}
+	if rule.DownloadURL != "" {
+		return "download"
+	}
 	return ""
 }
 
@@ -291,6 +304,8 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 		return NewKnownHostsHandler(rule, basePath)
 	case "gpg-key":
 		return NewGPGKeyHandler(rule, basePath)
+	case "download":
+		return NewDownloadHandler(rule, basePath)
 	default:
 		return nil
 	}
@@ -330,6 +345,9 @@ func GetHandlerFactory(action string) HandlerFactory {
 		"gpg-key": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
 			return NewGPGKeyHandler(rule, basePath)
 		},
+		"download": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
+			return NewDownloadHandler(rule, basePath)
+		},
 	}
 
 	return factories[action]
@@ -349,6 +367,7 @@ func GetStatusProviderHandlers() []Handler {
 		NewMkdirHandler(parser.Rule{}, ""),
 		NewKnownHostsHandler(parser.Rule{}, ""),
 		NewGPGKeyHandler(parser.Rule{}, ""),
+		NewDownloadHandler(parser.Rule{}, ""),
 	}
 }
 
@@ -453,6 +472,19 @@ func removeGPGKeyStatus(gpgKeys []GPGKeyStatus, keyring string, blueprint string
 	return result
 }
 
+
+// removeDownloadStatus removes a download from the status downloads list
+func removeDownloadStatus(downloads []DownloadStatus, path string, blueprint string, osName string) []DownloadStatus {
+	var result []DownloadStatus
+	normalizedBlueprint := normalizePath(blueprint)
+	for _, dl := range downloads {
+		normalizedStoredBlueprint := normalizePath(dl.Blueprint)
+		if dl.Path != path || normalizedStoredBlueprint != normalizedBlueprint || dl.OS != osName {
+			result = append(result, dl)
+		}
+	}
+	return result
+}
 
 // abbreviateBlueprintPath shortens blueprint paths for display
 // Shows relative paths for blueprints in the repo, full paths for external ones

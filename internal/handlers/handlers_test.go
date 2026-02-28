@@ -121,6 +121,10 @@ func TestKeyProviderInterface(t *testing.T) {
 			name:    "OllamaHandler implements KeyProvider",
 			handler: NewOllamaHandler(parser.Rule{OllamaModels: []string{"llama3"}}, ""),
 		},
+		{
+			name:    "DownloadHandler implements KeyProvider",
+			handler: NewDownloadHandler(parser.Rule{DownloadURL: "https://example.com/file.sh", DownloadPath: "~/bin/file.sh"}, ""),
+		},
 	}
 
 	for _, tt := range tests {
@@ -194,6 +198,12 @@ func TestDisplayProviderInterface(t *testing.T) {
 			name:              "OllamaHandler provides model display",
 			handler:           NewOllamaHandler(parser.Rule{OllamaModels: []string{"llama3", "codellama"}}, ""),
 			expectedFormatted: "llama3, codellama",
+			isUninstall:       false,
+		},
+		{
+			name:              "DownloadHandler provides path display",
+			handler:           NewDownloadHandler(parser.Rule{DownloadURL: "https://example.com/file.sh", DownloadPath: "~/bin/file.sh"}, ""),
+			expectedFormatted: "~/bin/file.sh",
 			isUninstall:       false,
 		},
 	}
@@ -287,6 +297,13 @@ func TestStateProviderInterface(t *testing.T) {
 			isUninstall:     false,
 			expectedKeys:    []string{"summary", "models"},
 		},
+		{
+			name:            "DownloadHandler provides download state",
+			handler:         NewDownloadHandler(parser.Rule{DownloadURL: "https://example.com/file.sh", DownloadPath: "~/bin/file.sh"}, ""),
+			expectedSummary: "~/bin/file.sh",
+			isUninstall:     false,
+			expectedKeys:    []string{"summary", "url", "path"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -367,6 +384,12 @@ func TestStatusProviderInterface(t *testing.T) {
 		{
 			name:              "OllamaHandler implements StatusProvider",
 			handler:           NewOllamaHandler(parser.Rule{OllamaModels: []string{"llama3"}}, ""),
+			currentRules:      []parser.Rule{},
+			expectedRuleCount: 0,
+		},
+		{
+			name:              "DownloadHandler implements StatusProvider",
+			handler:           NewDownloadHandler(parser.Rule{DownloadURL: "https://example.com/file.sh", DownloadPath: "~/bin/file.sh"}, ""),
 			currentRules:      []parser.Rule{},
 			expectedRuleCount: 0,
 		},
