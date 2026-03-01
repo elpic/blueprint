@@ -133,6 +133,10 @@ func TestKeyProviderInterface(t *testing.T) {
 			name:    "RunShHandler implements KeyProvider",
 			handler: NewRunShHandler(parser.Rule{RunShURL: "https://example.com/install.sh"}, ""),
 		},
+		{
+			name:    "DotfilesHandler implements KeyProvider",
+			handler: NewDotfilesHandler(parser.Rule{DotfilesURL: "https://github.com/user/dotfiles", DotfilesPath: "~/.blueprint/dotfiles/dotfiles"}, ""),
+		},
 	}
 
 	for _, tt := range tests {
@@ -224,6 +228,12 @@ func TestDisplayProviderInterface(t *testing.T) {
 			name:              "RunShHandler provides URL display",
 			handler:           NewRunShHandler(parser.Rule{RunShURL: "https://example.com/install.sh"}, ""),
 			expectedFormatted: "https://example.com/install.sh",
+			isUninstall:       false,
+		},
+		{
+			name:              "DotfilesHandler provides URL display",
+			handler:           NewDotfilesHandler(parser.Rule{DotfilesURL: "https://github.com/user/dotfiles", DotfilesPath: "~/.blueprint/dotfiles/dotfiles"}, ""),
+			expectedFormatted: "https://github.com/user/dotfiles",
 			isUninstall:       false,
 		},
 	}
@@ -338,6 +348,13 @@ func TestStateProviderInterface(t *testing.T) {
 			isUninstall:     false,
 			expectedKeys:    []string{"summary", "url"},
 		},
+		{
+			name:            "DotfilesHandler provides dotfiles state",
+			handler:         NewDotfilesHandler(parser.Rule{DotfilesURL: "https://github.com/user/dotfiles", DotfilesPath: "~/.blueprint/dotfiles/dotfiles"}, ""),
+			expectedSummary: "https://github.com/user/dotfiles",
+			isUninstall:     false,
+			expectedKeys:    []string{"summary", "url", "path"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -436,6 +453,12 @@ func TestStatusProviderInterface(t *testing.T) {
 		{
 			name:              "RunShHandler implements StatusProvider",
 			handler:           NewRunShHandler(parser.Rule{RunShURL: "https://example.com/install.sh"}, ""),
+			currentRules:      []parser.Rule{},
+			expectedRuleCount: 0,
+		},
+		{
+			name:              "DotfilesHandler implements StatusProvider",
+			handler:           NewDotfilesHandler(parser.Rule{DotfilesURL: "https://github.com/user/dotfiles", DotfilesPath: "~/.blueprint/dotfiles/dotfiles"}, ""),
 			currentRules:      []parser.Rule{},
 			expectedRuleCount: 0,
 		},

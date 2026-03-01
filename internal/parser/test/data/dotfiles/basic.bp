@@ -1,0 +1,5 @@
+#!/usr/bin/env blueprint
+
+# Test dotfiles repository management
+dotfiles https://github.com/user/dotfiles on: [mac, linux]
+dotfiles https://github.com/user/dotfiles branch: main id: my-dotfiles on: [mac]

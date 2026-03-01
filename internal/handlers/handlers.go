@@ -111,13 +111,24 @@ type DownloadStatus struct {
 
 // RunStatus tracks an executed run/run-sh command
 type RunStatus struct {
-	Action    string `json:"action"`             // "run" or "run-sh"
-	Command   string `json:"command"`             // The run command or script URL
+	Action    string `json:"action"`        // "run" or "run-sh"
+	Command   string `json:"command"`       // The run command or script URL
 	UndoCmd   string `json:"undo_cmd,omitempty"`
-	Sudo      bool   `json:"sudo,omitempty"`      // Whether sudo was used
+	Sudo      bool   `json:"sudo,omitempty"` // Whether sudo was used
 	RanAt     string `json:"ran_at"`
 	Blueprint string `json:"blueprint"`
 	OS        string `json:"os"`
+}
+
+// DotfilesStatus tracks a managed dotfiles repository
+type DotfilesStatus struct {
+	URL       string   `json:"url"`
+	Path      string   `json:"path"`
+	Branch    string   `json:"branch,omitempty"`
+	Links     []string `json:"links"` // symlink targets created (e.g. ["/home/user/.zshrc"])
+	ClonedAt  string   `json:"cloned_at"`
+	Blueprint string   `json:"blueprint"`
+	OS        string   `json:"os"`
 }
 
 // Status represents the current blueprint state
@@ -133,6 +144,7 @@ type Status struct {
 	Ollamas    []OllamaStatus     `json:"ollamas"`
 	Downloads  []DownloadStatus   `json:"downloads"`
 	Runs       []RunStatus        `json:"runs"`
+	Dotfiles   []DotfilesStatus   `json:"dotfiles"`
 }
 
 // Handler is the interface that all command handlers must implement
@@ -287,6 +299,9 @@ func DetectRuleType(rule parser.Rule) string {
 	if rule.RunShURL != "" {
 		return "run-sh"
 	}
+	if rule.DotfilesURL != "" {
+		return "dotfiles"
+	}
 	return ""
 }
 
@@ -328,6 +343,8 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 		return NewRunHandler(rule, basePath)
 	case "run-sh":
 		return NewRunShHandler(rule, basePath)
+	case "dotfiles":
+		return NewDotfilesHandler(rule, basePath)
 	default:
 		return nil
 	}
@@ -376,6 +393,9 @@ func GetHandlerFactory(action string) HandlerFactory {
 		"run-sh": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
 			return NewRunShHandler(rule, basePath)
 		},
+		"dotfiles": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
+			return NewDotfilesHandler(rule, basePath)
+		},
 	}
 
 	return factories[action]
@@ -398,6 +418,7 @@ func GetStatusProviderHandlers() []Handler {
 		NewDownloadHandler(parser.Rule{}, ""),
 		NewRunHandler(parser.Rule{}, ""),
 		NewRunShHandler(parser.Rule{}, ""),
+		NewDotfilesHandler(parser.Rule{}, ""),
 	}
 }
 
@@ -511,6 +532,19 @@ func removeRunStatus(runs []RunStatus, command string, blueprint string, osName 
 		normalizedStoredBlueprint := normalizePath(r.Blueprint)
 		if r.Command != command || normalizedStoredBlueprint != normalizedBlueprint || r.OS != osName {
 			result = append(result, r)
+		}
+	}
+	return result
+}
+
+// removeDotfilesStatus removes a dotfiles entry from the status dotfiles list
+func removeDotfilesStatus(dotfiles []DotfilesStatus, url, blueprint, osName string) []DotfilesStatus {
+	var result []DotfilesStatus
+	normalizedBlueprint := normalizePath(blueprint)
+	for _, d := range dotfiles {
+		normalizedStoredBlueprint := normalizePath(d.Blueprint)
+		if d.URL != url || normalizedStoredBlueprint != normalizedBlueprint || d.OS != osName {
+			result = append(result, d)
 		}
 	}
 	return result

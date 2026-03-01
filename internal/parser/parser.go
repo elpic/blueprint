@@ -51,6 +51,12 @@ type Rule struct {
 	HomebrewPackages []string // List of "formula[@version]" for homebrew (e.g., "node@20", "git")
 	HomebrewCasks    []string // List of cask names for brew install --cask (e.g., "visual-studio-code")
 
+	// Dotfiles-specific fields
+	DotfilesURL    string   // Git repository URL for dotfiles
+	DotfilesBranch string   // Optional branch to checkout
+	DotfilesPath   string   // Local clone path (auto-derived: ~/.blueprint/dotfiles/<repo-name>)
+	DotfilesSkip   []string // Top-level entries to skip (in addition to built-ins)
+
 	// Ollama-specific fields
 	OllamaModels []string // List of model names for ollama (e.g., "llama3", "codellama")
 
@@ -202,6 +208,12 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 		} else if strings.HasPrefix(line, "run ") {
 			// Parse format: run <cmd> [unless: <check>] [sudo: <true|false>] [undo: <cmd>] [id: <id>] [after: <deps>] on: [<platforms>]
 			rule := parseRunRule(line)
+			if rule != nil {
+				rules = append(rules, *rule)
+			}
+		} else if strings.HasPrefix(line, "dotfiles ") {
+			// Parse format: dotfiles <url> [branch: <branch>] [id: <id>] [after: <deps>] on: [<platforms>]
+			rule := parseDotfilesRule(line)
 			if rule != nil {
 				rules = append(rules, *rule)
 			}
@@ -1519,5 +1531,119 @@ func parseRunShRule(line string) *Rule {
 		RunSudo:   runSudo,
 		OSList:    osList,
 		After:     dependencies,
+	}
+}
+
+func parseDotfilesRule(line string) *Rule {
+	// Remove "dotfiles " prefix
+	line = strings.TrimPrefix(line, "dotfiles ")
+
+	// Split by " on:" to extract OS list
+	parts := strings.SplitN(line, " on:", 2)
+	var osListStr, rulePart string
+	if len(parts) == 2 {
+		osListStr = strings.TrimSpace(parts[1])
+		rulePart = strings.TrimSpace(parts[0])
+	} else {
+		rulePart = strings.TrimSpace(parts[0])
+	}
+
+	// Parse OS list
+	var osList []string
+	if osListStr != "" {
+		osListStr = strings.Trim(osListStr, "[]")
+		for _, o := range strings.Split(osListStr, ",") {
+			if s := strings.TrimSpace(o); s != "" {
+				osList = append(osList, s)
+			}
+		}
+	}
+
+	// First token is the URL
+	fields := strings.Fields(rulePart)
+	if len(fields) == 0 {
+		return nil
+	}
+	dotfilesURL := fields[0]
+	rulePart = strings.Join(fields[1:], " ")
+
+	// Extract branch: value
+	var branch string
+	if strings.Contains(rulePart, "branch:") {
+		branchParts := strings.SplitN(rulePart, "branch:", 2)
+		branchValue := strings.TrimSpace(branchParts[1])
+		branchFields := strings.Fields(branchValue)
+		if len(branchFields) > 0 {
+			branch = branchFields[0]
+			rulePart = branchParts[0] + " " + strings.Join(branchFields[1:], " ")
+		}
+	}
+
+	// Extract id: value
+	var id string
+	if strings.Contains(rulePart, "id:") {
+		idParts := strings.SplitN(rulePart, "id:", 2)
+		idValue := strings.TrimSpace(idParts[1])
+		idFields := strings.Fields(idValue)
+		if len(idFields) > 0 {
+			id = idFields[0]
+			rulePart = idParts[0] + " " + strings.Join(idFields[1:], " ")
+		}
+	}
+
+	// Extract after: value
+	var dependencies []string
+	if strings.Contains(rulePart, "after:") {
+		afterParts := strings.SplitN(rulePart, "after:", 2)
+		afterValue := strings.TrimSpace(afterParts[1])
+		for _, dep := range strings.Split(afterValue, ",") {
+			if d := strings.TrimSpace(dep); d != "" {
+				dependencies = append(dependencies, d)
+			}
+		}
+	}
+
+	// Extract skip: [a, b, c] value
+	var skipList []string
+	if strings.Contains(rulePart, "skip:") {
+		skipParts := strings.SplitN(rulePart, "skip:", 2)
+		skipValue := strings.TrimSpace(skipParts[1])
+		// Extract content inside [ ]
+		if strings.HasPrefix(skipValue, "[") {
+			if end := strings.Index(skipValue, "]"); end >= 0 {
+				inner := skipValue[1:end]
+				for _, s := range strings.Split(inner, ",") {
+					if v := strings.TrimSpace(s); v != "" {
+						skipList = append(skipList, v)
+					}
+				}
+			}
+		}
+	}
+
+	// Auto-derive repo name from URL (strip .git suffix, take last path segment)
+	repoName := dotfilesURL
+	repoName = strings.TrimSuffix(repoName, ".git")
+	if idx := strings.LastIndex(repoName, "/"); idx >= 0 {
+		repoName = repoName[idx+1:]
+	}
+
+	// Auto-derive clone path
+	dotfilesPath := fmt.Sprintf("~/.blueprint/dotfiles/%s", repoName)
+
+	// Auto-generate ID if not provided
+	if id == "" {
+		id = fmt.Sprintf("dotfiles-%s", repoName)
+	}
+
+	return &Rule{
+		ID:             id,
+		Action:         "dotfiles",
+		DotfilesURL:    dotfilesURL,
+		DotfilesBranch: branch,
+		DotfilesPath:   dotfilesPath,
+		DotfilesSkip:   skipList,
+		OSList:         osList,
+		After:          dependencies,
 	}
 }
