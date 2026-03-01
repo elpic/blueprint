@@ -1,9 +1,11 @@
 package git
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -11,6 +13,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	gossh "golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 // GitURLParams holds parsed git URL information
@@ -172,16 +176,73 @@ func tryClone(tmpDir, url, branch string, verbose bool) error {
 			}
 		}
 	} else if strings.HasPrefix(url, "git@") {
-		// SSH authentication via SSH agent
-		publicKeys, err := ssh.NewSSHAgentAuth("git")
-		if err == nil {
-			cloneOpts.Auth = publicKeys
+		if auth, authErr := sshAuth(); authErr == nil {
+			cloneOpts.Auth = auth
 		}
 	}
 
 	// Clone the repository
 	_, err := git.PlainClone(tmpDir, false, cloneOpts)
 	return err
+}
+
+// hostKeyCallback returns a HostKeyCallback backed by ~/.ssh/known_hosts.
+// If the file doesn't exist or can't be parsed, returns InsecureIgnoreHostKey with a warning.
+func hostKeyCallback() gossh.HostKeyCallback {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return gossh.InsecureIgnoreHostKey() // #nosec G106
+	}
+	knownHostsPath := filepath.Join(homeDir, ".ssh", "known_hosts")
+	if _, statErr := os.Stat(knownHostsPath); statErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: ~/.ssh/known_hosts not found, skipping host key verification\n")
+		return gossh.InsecureIgnoreHostKey() // #nosec G106
+	}
+	cb, parseErr := knownhosts.New(knownHostsPath)
+	if parseErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not parse ~/.ssh/known_hosts (%v), skipping host key verification\n", parseErr)
+		return gossh.InsecureIgnoreHostKey() // #nosec G106
+	}
+	return cb
+}
+
+// sshAuth returns SSH auth, trying the SSH agent first then falling back to key files.
+// Candidate key files are tried in order: id_ed25519, id_ecdsa, id_rsa.
+// All auth methods use the user's ~/.ssh/known_hosts for host key verification.
+func sshAuth() (ssh.AuthMethod, error) {
+	hkc := hostKeyCallback()
+
+	// Try SSH agent first
+	agentAuth, err := ssh.NewSSHAgentAuth("git")
+	if err == nil {
+		agentAuth.HostKeyCallback = hkc
+		return agentAuth, nil
+	}
+
+	// Fall back to key files
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("SSH agent unavailable and could not determine home directory: %w", err)
+	}
+
+	candidates := []string{
+		filepath.Join(homeDir, ".ssh", "id_ed25519"),
+		filepath.Join(homeDir, ".ssh", "id_ecdsa"),
+		filepath.Join(homeDir, ".ssh", "id_rsa"),
+	}
+
+	for _, keyPath := range candidates {
+		if _, statErr := os.Stat(keyPath); statErr != nil {
+			continue
+		}
+		publicKeys, keyErr := ssh.NewPublicKeysFromFile("git", keyPath, "")
+		if keyErr == nil {
+			publicKeys.HostKeyCallback = hkc
+			return publicKeys, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no usable SSH authentication: SSH agent unavailable and no key files found in ~/.ssh")
 }
 
 // convertSSHToHTTPS converts an SSH git URL to HTTPS
@@ -220,7 +281,18 @@ func CleanupRepository(path string) error {
 	return os.RemoveAll(path)
 }
 
-// CloneOrUpdateRepository clones a repository to a specific path or updates it if already exists
+// gitSHA reads the HEAD SHA of a repository at the given path using the system git binary.
+func gitSHA(path string) string {
+	out, err := exec.Command("git", "-C", path, "rev-parse", "HEAD").Output() // #nosec G204
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// CloneOrUpdateRepository clones a repository to a specific path or updates it if already exists.
+// Uses the system git binary so that ~/.ssh/config, SSH agent, and host key verification work
+// exactly as they do when running git manually.
 // Returns: (oldSHA, newSHA, status_message, error)
 // status_message can be: "Cloned", "Updated", "Already up to date"
 func CloneOrUpdateRepository(url, path, branch string) (string, string, string, error) {
@@ -233,119 +305,58 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 		path = filepath.Join(homeDir, path[2:])
 	}
 
-	// Check if directory already exists
+	// Ensure parent directory exists
+	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
+		return "", "", "", fmt.Errorf("failed to create parent directory: %w", err)
+	}
+
 	info, err := os.Stat(path)
 	pathExists := err == nil && info.IsDir()
 
-	var oldSHA string
-	var newSHA string
-
 	if pathExists {
-		// Repository already exists - get current SHA
-		repo, err := git.PlainOpen(path)
-		if err != nil {
-			return "", "", "", fmt.Errorf("failed to open repository: %w", err)
+		oldSHA := gitSHA(path)
+
+		// Fetch and reset to origin HEAD
+		var stderr bytes.Buffer
+		fetchCmd := exec.Command("git", "-C", path, "fetch", "--quiet", "origin") // #nosec G204
+		fetchCmd.Stderr = &stderr
+		if err := fetchCmd.Run(); err != nil {
+			return oldSHA, "", "", fmt.Errorf("failed to fetch: %w\n%s", err, stderr.String())
 		}
 
-		// Get current HEAD
-		ref, err := repo.Head()
-		if err != nil {
-			return "", "", "", fmt.Errorf("failed to get HEAD: %w", err)
+		// Determine the remote tracking branch to reset to
+		resetTarget := "FETCH_HEAD"
+		if branch != "" {
+			resetTarget = "origin/" + branch
 		}
-		oldSHA = ref.Hash().String()
-
-		// Fetch latest from all branches
-		err = repo.Fetch(&git.FetchOptions{})
-		if err != nil && err != git.NoErrAlreadyUpToDate {
-			return oldSHA, "", "", fmt.Errorf("failed to fetch latest: %w", err)
-		}
-
-		// Get the current branch
-		tree, err := repo.Worktree()
-		if err != nil {
-			return oldSHA, "", "", fmt.Errorf("failed to get worktree: %w", err)
+		stderr.Reset()
+		resetCmd := exec.Command("git", "-C", path, "reset", "--hard", resetTarget) // #nosec G204
+		resetCmd.Stderr = &stderr
+		if err := resetCmd.Run(); err != nil {
+			return oldSHA, "", "", fmt.Errorf("failed to reset to %s: %w\n%s", resetTarget, err, stderr.String())
 		}
 
-		// Reset to latest from origin (for current branch)
-		// This is more reliable than Pull for our use case
-		remote, err := repo.Remote("origin")
-		if err == nil {
-			// Get the remote HEAD reference
-			refs, err := remote.List(&git.ListOptions{})
-			if err == nil {
-				// Find HEAD
-				for _, ref := range refs {
-					if ref.Name() == "HEAD" {
-						// Reset working directory to fetch origin
-						resetErr := tree.Reset(&git.ResetOptions{
-							Mode:   git.HardReset,
-							Commit: ref.Hash(),
-						})
-						if resetErr == nil {
-							// Successfully reset
-							break
-						}
-					}
-				}
-			}
-		}
-
-		// Get new SHA
-		ref, err = repo.Head()
-		if err != nil {
-			return oldSHA, "", "", fmt.Errorf("failed to get new HEAD: %w", err)
-		}
-		newSHA = ref.Hash().String()
-
-		// Determine status
+		newSHA := gitSHA(path)
 		if oldSHA != newSHA {
 			return oldSHA, newSHA, "Updated", nil
-		} else {
-			return oldSHA, newSHA, "Already up to date", nil
 		}
-	} else {
-		// Clone the repository
-		cloneOpts := &git.CloneOptions{
-			URL:      url,
-			Progress: io.Discard, // Don't show output, caller will display status
-		}
-
-		// Set branch if specified
-		if branch != "" {
-			cloneOpts.ReferenceName = plumbing.ReferenceName("refs/heads/" + branch)
-			cloneOpts.SingleBranch = true
-		}
-
-		// Add authentication
-		if strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://") {
-			if username := os.Getenv("GITHUB_USER"); username != "" {
-				if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-					cloneOpts.Auth = &http.BasicAuth{
-						Username: username,
-						Password: token,
-					}
-				}
-			}
-		} else if strings.HasPrefix(url, "git@") {
-			publicKeys, err := ssh.NewSSHAgentAuth("git")
-			if err == nil {
-				cloneOpts.Auth = publicKeys
-			}
-		}
-
-		// Clone the repository
-		repo, err := git.PlainClone(path, false, cloneOpts)
-		if err != nil {
-			return "", "", "", fmt.Errorf("failed to clone: %w", err)
-		}
-
-		// Get SHA of cloned repository
-		ref, err := repo.Head()
-		if err != nil {
-			return "", "", "", fmt.Errorf("failed to get HEAD: %w", err)
-		}
-		newSHA = ref.Hash().String()
-
-		return "", newSHA, "Cloned", nil
+		return oldSHA, newSHA, "Already up to date", nil
 	}
+
+	// Clone
+	args := []string{"clone", "--quiet"}
+	if branch != "" {
+		args = append(args, "--branch", branch)
+	}
+	args = append(args, url, path)
+
+	var stderr bytes.Buffer
+	cloneCmd := exec.Command("git", args...) // #nosec G204
+	cloneCmd.Stderr = &stderr
+	if err := cloneCmd.Run(); err != nil {
+		return "", "", "", fmt.Errorf("failed to clone: %w\n%s", err, stderr.String())
+	}
+
+	newSHA := gitSHA(path)
+	return "", newSHA, "Cloned", nil
 }
