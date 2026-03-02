@@ -640,7 +640,7 @@ mise (mise-en-place) is a modern polyglot tool version manager. It is faster tha
 
 Without `path:`, tools are installed globally (`mise use -g`), writing to `~/.config/mise/config.toml` and making them available system-wide.
 
-With `path:`, tools are installed locally (`mise use`) in the given directory. mise writes a `.mise.toml` file inside that folder, pinning the tools to that project only. The directory is created if it does not exist.
+With `path:`, tools are installed locally (`mise use`) in the given directory. mise writes a `mise.toml` file inside that folder, pinning the tools to that project only. The directory is created if it does not exist.
 
 **Shell activation:**
 Blueprint does not modify your shell rc files. To make globally installed tools available in interactive shells, add one of the following to your `.zshrc` / `.bashrc`:
