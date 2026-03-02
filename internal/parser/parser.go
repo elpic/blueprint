@@ -15,7 +15,7 @@ type Package struct {
 
 type Rule struct {
 	ID       string // Unique identifier for this rule
-	Action   string // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "homebrew", "ollama", "known_hosts", or "gpg-key"
+	Action   string // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "mise", "homebrew", "ollama", "known_hosts", or "gpg-key"
 	Packages []Package
 	OSList   []string
 	After    []string // List of IDs or package names this rule depends on
@@ -28,6 +28,10 @@ type Rule struct {
 
 	// ASDF-specific fields
 	AsdfPackages []string // List of "plugin@version" for asdf (e.g., "nodejs@21.4.0")
+
+	// Mise-specific fields
+	MisePackages []string // List of "tool@version" for mise (e.g., "node@20", "python@3.11")
+	MisePath     string   // Optional project directory for local (non-global) install
 
 	// Decrypt-specific fields
 	DecryptFile       string // Source encrypted file
@@ -148,6 +152,12 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 		} else if strings.HasPrefix(line, "clone ") {
 			// Parse format: clone <url> to: <path> [branch: <branch>] [id: <id>] on: [<platforms>]
 			rule := parseCloneRule(line)
+			if rule != nil {
+				rules = append(rules, *rule)
+			}
+		} else if strings.HasPrefix(line, "mise") {
+			// Parse format: mise [tool@version ...] [id: <id>] [after: <deps>] on: [<platforms>]
+			rule := parseMiseRule(line)
 			if rule != nil {
 				rules = append(rules, *rule)
 			}
@@ -1645,5 +1655,114 @@ func parseDotfilesRule(line string) *Rule {
 		DotfilesSkip:   skipList,
 		OSList:         osList,
 		After:          dependencies,
+	}
+}
+
+func parseMiseRule(line string) *Rule {
+	// Remove "mise" prefix
+	line = strings.TrimPrefix(line, "mise")
+	line = strings.TrimSpace(line)
+
+	// Split by "on:" to get OS list (on: is optional)
+	parts := strings.Split(line, "on:")
+	var osListStr string
+	var rulePart string
+
+	if len(parts) == 2 {
+		osListStr = strings.TrimSpace(parts[1])
+		rulePart = strings.TrimSpace(parts[0])
+	} else if len(parts) == 1 {
+		rulePart = strings.TrimSpace(parts[0])
+		osListStr = ""
+	} else {
+		return nil
+	}
+
+	// Parse OS list [linux, mac, windows]
+	var osList []string
+	if osListStr != "" {
+		osListStr = strings.Trim(osListStr, "[]")
+		osList = strings.Split(osListStr, ",")
+		for i := range osList {
+			osList[i] = strings.TrimSpace(osList[i])
+		}
+	}
+
+	// Parse rule part: extract packages first, then id:, after:, and path: clauses
+	var id string
+	var dependencies []string
+	var misePackages []string
+	var misePath string
+
+	// Extract id: value first
+	if strings.Contains(rulePart, "id:") {
+		idParts := strings.Split(rulePart, "id:")
+		if len(idParts) >= 2 {
+			idValue := strings.TrimSpace(idParts[1])
+			idFields := strings.Fields(idValue)
+			if len(idFields) > 0 {
+				id = idFields[0]
+				rulePart = idParts[0] + " " + strings.Join(idFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract after: value
+	if strings.Contains(rulePart, "after:") {
+		afterParts := strings.Split(rulePart, "after:")
+		if len(afterParts) >= 2 {
+			afterValue := strings.TrimSpace(afterParts[1])
+			deps := strings.Split(afterValue, ",")
+			for _, dep := range deps {
+				dep = strings.TrimSpace(dep)
+				if dep != "" {
+					dependencies = append(dependencies, dep)
+				}
+			}
+			rulePart = afterParts[0]
+		}
+	}
+
+	// Extract path: value (project directory for local install)
+	if strings.Contains(rulePart, "path:") {
+		pathParts := strings.Split(rulePart, "path:")
+		if len(pathParts) >= 2 {
+			pathValue := strings.TrimSpace(pathParts[1])
+			pathFields := strings.Fields(pathValue)
+			if len(pathFields) > 0 {
+				misePath = pathFields[0]
+				rulePart = pathParts[0] + " " + strings.Join(pathFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract mise packages (tool@version format)
+	rulePart = strings.TrimSpace(rulePart)
+	if rulePart != "" {
+		fields := strings.Fields(rulePart)
+		for _, field := range fields {
+			// Valid mise package format: name@version or just name
+			if strings.Contains(field, "@") || !strings.Contains(field, ":") {
+				misePackages = append(misePackages, field)
+			}
+		}
+	}
+
+	// Auto-generate ID if not provided
+	if id == "" {
+		if len(misePackages) > 0 {
+			id = fmt.Sprintf("mise-%s", misePackages[0])
+		} else {
+			id = "mise"
+		}
+	}
+
+	return &Rule{
+		ID:           id,
+		Action:       "mise",
+		OSList:       osList,
+		After:        dependencies,
+		MisePackages: misePackages,
+		MisePath:     misePath,
 	}
 }

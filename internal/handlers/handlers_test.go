@@ -137,6 +137,10 @@ func TestKeyProviderInterface(t *testing.T) {
 			name:    "DotfilesHandler implements KeyProvider",
 			handler: NewDotfilesHandler(parser.Rule{DotfilesURL: "https://github.com/user/dotfiles", DotfilesPath: "~/.blueprint/dotfiles/dotfiles"}, ""),
 		},
+		{
+			name:    "MiseHandler implements KeyProvider",
+			handler: NewMiseHandler(parser.Rule{Action: "mise"}, ""),
+		},
 	}
 
 	for _, tt := range tests {
@@ -234,6 +238,12 @@ func TestDisplayProviderInterface(t *testing.T) {
 			name:              "DotfilesHandler provides URL display",
 			handler:           NewDotfilesHandler(parser.Rule{DotfilesURL: "https://github.com/user/dotfiles", DotfilesPath: "~/.blueprint/dotfiles/dotfiles"}, ""),
 			expectedFormatted: "https://github.com/user/dotfiles",
+			isUninstall:       false,
+		},
+		{
+			name:              "MiseHandler provides tools display",
+			handler:           NewMiseHandler(parser.Rule{Action: "mise", MisePackages: []string{"node@20", "python@3.11"}}, ""),
+			expectedFormatted: "node@20, python@3.11",
 			isUninstall:       false,
 		},
 	}
@@ -355,6 +365,13 @@ func TestStateProviderInterface(t *testing.T) {
 			isUninstall:     false,
 			expectedKeys:    []string{"summary", "url", "path"},
 		},
+		{
+			name:            "MiseHandler provides mise state",
+			handler:         NewMiseHandler(parser.Rule{MisePackages: []string{"node@20", "python@3.11"}}, ""),
+			expectedSummary: "node@20, python@3.11",
+			isUninstall:     false,
+			expectedKeys:    []string{"summary", "tools"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -459,6 +476,12 @@ func TestStatusProviderInterface(t *testing.T) {
 		{
 			name:              "DotfilesHandler implements StatusProvider",
 			handler:           NewDotfilesHandler(parser.Rule{DotfilesURL: "https://github.com/user/dotfiles", DotfilesPath: "~/.blueprint/dotfiles/dotfiles"}, ""),
+			currentRules:      []parser.Rule{},
+			expectedRuleCount: 0,
+		},
+		{
+			name:              "MiseHandler implements StatusProvider",
+			handler:           NewMiseHandler(parser.Rule{Action: "mise"}, ""),
 			currentRules:      []parser.Rule{},
 			expectedRuleCount: 0,
 		},
