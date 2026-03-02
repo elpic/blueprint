@@ -1,0 +1,2 @@
+mise node@20 python@3.11 on: [mac, linux]
+mise node@20 id: my-node after: base-setup on: [mac]

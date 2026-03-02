@@ -83,6 +83,15 @@ type AsdfStatus struct {
 	OS          string `json:"os"`
 }
 
+// MiseStatus tracks installed mise tools/versions
+type MiseStatus struct {
+	Tool        string `json:"tool"`
+	Version     string `json:"version"`
+	InstalledAt string `json:"installed_at"`
+	Blueprint   string `json:"blueprint"`
+	OS          string `json:"os"`
+}
+
 // HomebrewStatus tracks installed homebrew formulas
 type HomebrewStatus struct {
 	Formula     string `json:"formula"`
@@ -140,6 +149,7 @@ type Status struct {
 	KnownHosts []KnownHostsStatus `json:"known_hosts"`
 	GPGKeys    []GPGKeyStatus     `json:"gpg_keys"`
 	Asdfs      []AsdfStatus       `json:"asdfs"`
+	Mises      []MiseStatus       `json:"mises"`
 	Brews      []HomebrewStatus   `json:"brews"`
 	Ollamas    []OllamaStatus     `json:"ollamas"`
 	Downloads  []DownloadStatus   `json:"downloads"`
@@ -278,6 +288,9 @@ func DetectRuleType(rule parser.Rule) string {
 	if len(rule.AsdfPackages) > 0 {
 		return "asdf"
 	}
+	if len(rule.MisePackages) > 0 {
+		return "mise"
+	}
 	if len(rule.HomebrewPackages) > 0 {
 		return "homebrew"
 	}
@@ -329,6 +342,8 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 		return NewMkdirHandler(rule, basePath)
 	case "asdf":
 		return NewAsdfHandler(rule, basePath)
+	case "mise":
+		return NewMiseHandler(rule, basePath)
 	case "homebrew":
 		return NewHomebrewHandler(rule, basePath)
 	case "ollama":
@@ -372,6 +387,9 @@ func GetHandlerFactory(action string) HandlerFactory {
 		"asdf": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
 			return NewAsdfHandler(rule, basePath)
 		},
+		"mise": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
+			return NewMiseHandler(rule, basePath)
+		},
 		"homebrew": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
 			return NewHomebrewHandler(rule, basePath)
 		},
@@ -410,6 +428,7 @@ func GetStatusProviderHandlers() []Handler {
 		NewCloneHandler(parser.Rule{}, ""),
 		NewDecryptHandler(parser.Rule{}, "", nil),
 		NewAsdfHandler(parser.Rule{}, ""),
+		NewMiseHandler(parser.Rule{}, ""),
 		NewHomebrewHandler(parser.Rule{}, ""),
 		NewOllamaHandler(parser.Rule{}, ""),
 		NewMkdirHandler(parser.Rule{}, ""),
