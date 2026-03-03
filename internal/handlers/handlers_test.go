@@ -141,6 +141,10 @@ func TestKeyProviderInterface(t *testing.T) {
 			name:    "MiseHandler implements KeyProvider",
 			handler: NewMiseHandler(parser.Rule{Action: "mise"}, ""),
 		},
+		{
+			name:    "SudoersHandler implements KeyProvider",
+			handler: NewSudoersHandler(parser.Rule{Action: "sudoers", SudoersUser: "alice"}, ""),
+		},
 	}
 
 	for _, tt := range tests {
@@ -244,6 +248,12 @@ func TestDisplayProviderInterface(t *testing.T) {
 			name:              "MiseHandler provides tools display",
 			handler:           NewMiseHandler(parser.Rule{Action: "mise", MisePackages: []string{"node@20", "python@3.11"}}, ""),
 			expectedFormatted: "node@20, python@3.11",
+			isUninstall:       false,
+		},
+		{
+			name:              "SudoersHandler provides user display",
+			handler:           NewSudoersHandler(parser.Rule{Action: "sudoers", SudoersUser: "alice"}, ""),
+			expectedFormatted: "/etc/sudoers.d/alice",
 			isUninstall:       false,
 		},
 	}
@@ -372,6 +382,13 @@ func TestStateProviderInterface(t *testing.T) {
 			isUninstall:     false,
 			expectedKeys:    []string{"summary", "tools"},
 		},
+		{
+			name:            "SudoersHandler provides sudoers state",
+			handler:         NewSudoersHandler(parser.Rule{Action: "sudoers", SudoersUser: "alice"}, ""),
+			expectedSummary: "/etc/sudoers.d/alice",
+			isUninstall:     false,
+			expectedKeys:    []string{"summary", "user"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -482,6 +499,12 @@ func TestStatusProviderInterface(t *testing.T) {
 		{
 			name:              "MiseHandler implements StatusProvider",
 			handler:           NewMiseHandler(parser.Rule{Action: "mise"}, ""),
+			currentRules:      []parser.Rule{},
+			expectedRuleCount: 0,
+		},
+		{
+			name:              "SudoersHandler implements StatusProvider",
+			handler:           NewSudoersHandler(parser.Rule{Action: "sudoers", SudoersUser: "alice"}, ""),
 			currentRules:      []parser.Rule{},
 			expectedRuleCount: 0,
 		},

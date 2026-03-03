@@ -92,6 +92,14 @@ type MiseStatus struct {
 	OS          string `json:"os"`
 }
 
+// SudoersStatus tracks a sudoers entry added for a user
+type SudoersStatus struct {
+	User      string `json:"user"`
+	AddedAt   string `json:"added_at"`
+	Blueprint string `json:"blueprint"`
+	OS        string `json:"os"`
+}
+
 // HomebrewStatus tracks installed homebrew formulas
 type HomebrewStatus struct {
 	Formula     string `json:"formula"`
@@ -150,6 +158,7 @@ type Status struct {
 	GPGKeys    []GPGKeyStatus     `json:"gpg_keys"`
 	Asdfs      []AsdfStatus       `json:"asdfs"`
 	Mises      []MiseStatus       `json:"mises"`
+	Sudoers    []SudoersStatus    `json:"sudoers"`
 	Brews      []HomebrewStatus   `json:"brews"`
 	Ollamas    []OllamaStatus     `json:"ollamas"`
 	Downloads  []DownloadStatus   `json:"downloads"`
@@ -315,6 +324,9 @@ func DetectRuleType(rule parser.Rule) string {
 	if rule.DotfilesURL != "" {
 		return "dotfiles"
 	}
+	if rule.SudoersUser != "" {
+		return "sudoers"
+	}
 	return ""
 }
 
@@ -360,6 +372,8 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 		return NewRunShHandler(rule, basePath)
 	case "dotfiles":
 		return NewDotfilesHandler(rule, basePath)
+	case "sudoers":
+		return NewSudoersHandler(rule, basePath)
 	default:
 		return nil
 	}
@@ -414,6 +428,9 @@ func GetHandlerFactory(action string) HandlerFactory {
 		"dotfiles": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
 			return NewDotfilesHandler(rule, basePath)
 		},
+		"sudoers": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
+			return NewSudoersHandler(rule, basePath)
+		},
 	}
 
 	return factories[action]
@@ -438,6 +455,7 @@ func GetStatusProviderHandlers() []Handler {
 		NewRunHandler(parser.Rule{}, ""),
 		NewRunShHandler(parser.Rule{}, ""),
 		NewDotfilesHandler(parser.Rule{}, ""),
+		NewSudoersHandler(parser.Rule{}, ""),
 	}
 }
 
