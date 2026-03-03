@@ -304,14 +304,9 @@ func (h *MiseHandler) UpdateStatus(status *Status, records []ExecutionRecord, bl
 	blueprint = normalizePath(blueprint)
 
 	if h.Rule.Action == "mise" {
-		// Check if mise use was executed successfully
-		commandExecuted := false
-		for _, record := range records {
-			if record.Status == "success" && strings.Contains(record.Command, "mise use") {
-				commandExecuted = true
-				break
-			}
-		}
+		// Check if mise use was executed successfully by matching the recorded command
+		expectedCmd := h.GetCommand()
+		_, commandExecuted := commandSuccessfullyExecuted(expectedCmd, records)
 
 		if commandExecuted {
 			for _, pkg := range h.Rule.MisePackages {

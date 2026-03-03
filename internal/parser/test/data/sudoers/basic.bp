@@ -1,0 +1,2 @@
+sudoers on: [linux]
+sudoers user: deploy id: sudoers-deploy after: base-setup on: [linux]

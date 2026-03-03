@@ -15,7 +15,7 @@ type Package struct {
 
 type Rule struct {
 	ID       string // Unique identifier for this rule
-	Action   string // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "mise", "homebrew", "ollama", "known_hosts", or "gpg-key"
+	Action   string // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "mise", "homebrew", "ollama", "known_hosts", "gpg-key", or "sudoers"
 	Packages []Package
 	OSList   []string
 	After    []string // List of IDs or package names this rule depends on
@@ -32,6 +32,9 @@ type Rule struct {
 	// Mise-specific fields
 	MisePackages []string // List of "tool@version" for mise (e.g., "node@20", "python@3.11")
 	MisePath     string   // Optional project directory for local (non-global) install
+
+	// Sudoers-specific fields
+	SudoersUser string // User to grant passwordless sudo (resolved at runtime if empty)
 
 	// Decrypt-specific fields
 	DecryptFile       string // Source encrypted file
@@ -224,6 +227,12 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 		} else if strings.HasPrefix(line, "dotfiles ") {
 			// Parse format: dotfiles <url> [branch: <branch>] [id: <id>] [after: <deps>] on: [<platforms>]
 			rule := parseDotfilesRule(line)
+			if rule != nil {
+				rules = append(rules, *rule)
+			}
+		} else if strings.HasPrefix(line, "sudoers") {
+			// Parse format: sudoers [user: <username>] [id: <id>] [after: <deps>] on: [<platforms>]
+			rule := parseSudoersRule(line)
 			if rule != nil {
 				rules = append(rules, *rule)
 			}
@@ -1764,5 +1773,85 @@ func parseMiseRule(line string) *Rule {
 		After:        dependencies,
 		MisePackages: misePackages,
 		MisePath:     misePath,
+	}
+}
+
+func parseSudoersRule(line string) *Rule {
+	// Remove "sudoers" prefix
+	line = strings.TrimPrefix(line, "sudoers")
+	line = strings.TrimSpace(line)
+
+	// Split by "on:" to get OS list (on: is optional)
+	parts := strings.Split(line, "on:")
+	var osListStr, rulePart string
+	if len(parts) == 2 {
+		osListStr = strings.TrimSpace(parts[1])
+		rulePart = strings.TrimSpace(parts[0])
+	} else if len(parts) == 1 {
+		rulePart = strings.TrimSpace(parts[0])
+	} else {
+		return nil
+	}
+
+	// Parse OS list
+	var osList []string
+	if osListStr != "" {
+		osListStr = strings.Trim(osListStr, "[]")
+		for _, o := range strings.Split(osListStr, ",") {
+			if s := strings.TrimSpace(o); s != "" {
+				osList = append(osList, s)
+			}
+		}
+	}
+
+	var id, user string
+	var dependencies []string
+
+	// Extract id:
+	if strings.Contains(rulePart, "id:") {
+		idParts := strings.Split(rulePart, "id:")
+		if len(idParts) >= 2 {
+			idFields := strings.Fields(strings.TrimSpace(idParts[1]))
+			if len(idFields) > 0 {
+				id = idFields[0]
+				rulePart = idParts[0] + " " + strings.Join(idFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract after:
+	if strings.Contains(rulePart, "after:") {
+		afterParts := strings.Split(rulePart, "after:")
+		if len(afterParts) >= 2 {
+			for _, dep := range strings.Split(strings.TrimSpace(afterParts[1]), ",") {
+				if d := strings.TrimSpace(dep); d != "" {
+					dependencies = append(dependencies, d)
+				}
+			}
+			rulePart = afterParts[0]
+		}
+	}
+
+	// Extract user:
+	if strings.Contains(rulePart, "user:") {
+		userParts := strings.Split(rulePart, "user:")
+		if len(userParts) >= 2 {
+			userFields := strings.Fields(strings.TrimSpace(userParts[1]))
+			if len(userFields) > 0 {
+				user = userFields[0]
+			}
+		}
+	}
+
+	if id == "" {
+		id = "sudoers"
+	}
+
+	return &Rule{
+		ID:          id,
+		Action:      "sudoers",
+		OSList:      osList,
+		After:       dependencies,
+		SudoersUser: user,
 	}
 }
