@@ -100,6 +100,15 @@ type SudoersStatus struct {
 	OS        string `json:"os"`
 }
 
+// ScheduleStatus tracks a crontab schedule entry
+type ScheduleStatus struct {
+	CronExpr    string `json:"cron_expr"`
+	Source      string `json:"source"`
+	InstalledAt string `json:"installed_at"`
+	Blueprint   string `json:"blueprint"`
+	OS          string `json:"os"`
+}
+
 // HomebrewStatus tracks installed homebrew formulas
 type HomebrewStatus struct {
 	Formula     string `json:"formula"`
@@ -128,8 +137,8 @@ type DownloadStatus struct {
 
 // RunStatus tracks an executed run/run-sh command
 type RunStatus struct {
-	Action    string `json:"action"`        // "run" or "run-sh"
-	Command   string `json:"command"`       // The run command or script URL
+	Action    string `json:"action"`  // "run" or "run-sh"
+	Command   string `json:"command"` // The run command or script URL
 	UndoCmd   string `json:"undo_cmd,omitempty"`
 	Sudo      bool   `json:"sudo,omitempty"` // Whether sudo was used
 	RanAt     string `json:"ran_at"`
@@ -164,6 +173,7 @@ type Status struct {
 	Downloads  []DownloadStatus   `json:"downloads"`
 	Runs       []RunStatus        `json:"runs"`
 	Dotfiles   []DotfilesStatus   `json:"dotfiles"`
+	Schedules  []ScheduleStatus   `json:"schedules"`
 }
 
 // Handler is the interface that all command handlers must implement
@@ -327,6 +337,9 @@ func DetectRuleType(rule parser.Rule) string {
 	if rule.SudoersUser != "" {
 		return "sudoers"
 	}
+	if rule.ScheduleSource != "" {
+		return "schedule"
+	}
 	return ""
 }
 
@@ -374,6 +387,8 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 		return NewDotfilesHandler(rule, basePath)
 	case "sudoers":
 		return NewSudoersHandler(rule, basePath)
+	case "schedule":
+		return NewScheduleHandler(rule, basePath)
 	default:
 		return nil
 	}
@@ -431,6 +446,9 @@ func GetHandlerFactory(action string) HandlerFactory {
 		"sudoers": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
 			return NewSudoersHandler(rule, basePath)
 		},
+		"schedule": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
+			return NewScheduleHandler(rule, basePath)
+		},
 	}
 
 	return factories[action]
@@ -456,6 +474,7 @@ func GetStatusProviderHandlers() []Handler {
 		NewRunShHandler(parser.Rule{}, ""),
 		NewDotfilesHandler(parser.Rule{}, ""),
 		NewSudoersHandler(parser.Rule{}, ""),
+		NewScheduleHandler(parser.Rule{}, ""),
 	}
 }
 
@@ -559,7 +578,6 @@ func removeGPGKeyStatus(gpgKeys []GPGKeyStatus, keyring string, blueprint string
 	}
 	return result
 }
-
 
 // removeRunStatus removes a run entry from the status runs list by command key
 func removeRunStatus(runs []RunStatus, command string, blueprint string, osName string) []RunStatus {

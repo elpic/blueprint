@@ -935,6 +935,117 @@ known_hosts gitlab.example.com key: rsa id: gitlab-hosts on: [linux, mac]
 }
 
 // TestParseFromFile tests parsing blueprint rules from actual blueprint files
+func TestParseScheduleRule(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		wantNil    bool
+		wantPreset string
+		wantCron   string
+		wantSource string
+		wantID     string
+		wantOS     []string
+	}{
+		{
+			name:       "daily preset with source file",
+			input:      "schedule daily source: setup.bp on: [mac, linux]",
+			wantPreset: "daily",
+			wantSource: "setup.bp",
+			wantID:     "schedule-daily",
+			wantOS:     []string{"mac", "linux"},
+		},
+		{
+			name:       "weekly preset",
+			input:      "schedule weekly source: ~/dotfiles on: [mac]",
+			wantPreset: "weekly",
+			wantSource: "~/dotfiles",
+			wantID:     "schedule-weekly",
+			wantOS:     []string{"mac"},
+		},
+		{
+			name:       "hourly preset",
+			input:      "schedule hourly source: /etc/setup.bp",
+			wantPreset: "hourly",
+			wantSource: "/etc/setup.bp",
+			wantID:     "schedule-hourly",
+		},
+		{
+			name:       "custom cron expression",
+			input:      `schedule cron: "0 9 * * *" source: ~/setup.bp id: morning-sync on: [mac]`,
+			wantCron:   "0 9 * * *",
+			wantSource: "~/setup.bp",
+			wantID:     "morning-sync",
+			wantOS:     []string{"mac"},
+		},
+		{
+			name:       "custom cron auto-generates id",
+			input:      `schedule cron: "30 6 * * 1" source: setup.bp on: [linux]`,
+			wantCron:   "30 6 * * 1",
+			wantSource: "setup.bp",
+			wantID:     "schedule-custom",
+			wantOS:     []string{"linux"},
+		},
+		{
+			name:       "explicit id overrides auto-generated",
+			input:      "schedule daily source: setup.bp id: my-schedule on: [mac]",
+			wantPreset: "daily",
+			wantSource: "setup.bp",
+			wantID:     "my-schedule",
+			wantOS:     []string{"mac"},
+		},
+		{
+			name:       "no os filter",
+			input:      "schedule daily source: setup.bp",
+			wantPreset: "daily",
+			wantSource: "setup.bp",
+			wantID:     "schedule-daily",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseScheduleRule(tt.input)
+
+			if tt.wantNil {
+				if got != nil {
+					t.Errorf("parseScheduleRule() = %v, want nil", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("parseScheduleRule() returned nil, want valid rule")
+			}
+
+			if got.Action != "schedule" {
+				t.Errorf("Action: got %q, want %q", got.Action, "schedule")
+			}
+			if got.SchedulePreset != tt.wantPreset {
+				t.Errorf("SchedulePreset: got %q, want %q", got.SchedulePreset, tt.wantPreset)
+			}
+			if got.ScheduleCron != tt.wantCron {
+				t.Errorf("ScheduleCron: got %q, want %q", got.ScheduleCron, tt.wantCron)
+			}
+			if got.ScheduleSource != tt.wantSource {
+				t.Errorf("ScheduleSource: got %q, want %q", got.ScheduleSource, tt.wantSource)
+			}
+			if got.ID != tt.wantID {
+				t.Errorf("ID: got %q, want %q", got.ID, tt.wantID)
+			}
+			if len(tt.wantOS) > 0 {
+				if len(got.OSList) != len(tt.wantOS) {
+					t.Errorf("OSList length: got %d, want %d", len(got.OSList), len(tt.wantOS))
+				} else {
+					for i, os := range tt.wantOS {
+						if got.OSList[i] != os {
+							t.Errorf("OSList[%d]: got %q, want %q", i, got.OSList[i], os)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestParseFromFile(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -1035,6 +1146,20 @@ func TestParseFromFile(t *testing.T) {
 				}
 				if rule.GPGDebURL == "" {
 					t.Error("gpg-key deb-url is empty")
+				}
+			},
+		},
+		{
+			name:           "parse schedule blueprint file",
+			filepath:       "test/data/schedule/basic.bp",
+			expectedCount:  2,
+			expectedAction: "schedule",
+			validate: func(t *testing.T, rule Rule) {
+				if rule.ScheduleSource == "" {
+					t.Error("schedule source is empty")
+				}
+				if rule.SchedulePreset == "" && rule.ScheduleCron == "" {
+					t.Error("schedule has neither preset nor cron expression")
 				}
 			},
 		},

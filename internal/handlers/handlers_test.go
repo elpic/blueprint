@@ -145,6 +145,10 @@ func TestKeyProviderInterface(t *testing.T) {
 			name:    "SudoersHandler implements KeyProvider",
 			handler: NewSudoersHandler(parser.Rule{Action: "sudoers", SudoersUser: "alice"}, ""),
 		},
+		{
+			name:    "ScheduleHandler implements KeyProvider",
+			handler: NewScheduleHandler(parser.Rule{Action: "schedule", SchedulePreset: "daily", ScheduleSource: "setup.bp"}, ""),
+		},
 	}
 
 	for _, tt := range tests {
@@ -254,6 +258,12 @@ func TestDisplayProviderInterface(t *testing.T) {
 			name:              "SudoersHandler provides user display",
 			handler:           NewSudoersHandler(parser.Rule{Action: "sudoers", SudoersUser: "alice"}, ""),
 			expectedFormatted: "/etc/sudoers.d/alice",
+			isUninstall:       false,
+		},
+		{
+			name:              "ScheduleHandler provides cron+file display",
+			handler:           NewScheduleHandler(parser.Rule{Action: "schedule", SchedulePreset: "daily", ScheduleSource: "setup.bp"}, ""),
+			expectedFormatted: "@daily setup.bp",
 			isUninstall:       false,
 		},
 	}
@@ -389,6 +399,13 @@ func TestStateProviderInterface(t *testing.T) {
 			isUninstall:     false,
 			expectedKeys:    []string{"summary", "user"},
 		},
+		{
+			name:            "ScheduleHandler provides schedule state",
+			handler:         NewScheduleHandler(parser.Rule{Action: "schedule", SchedulePreset: "daily", ScheduleSource: "setup.bp"}, ""),
+			expectedSummary: "@daily setup.bp",
+			isUninstall:     false,
+			expectedKeys:    []string{"summary", "cron", "source"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -505,6 +522,12 @@ func TestStatusProviderInterface(t *testing.T) {
 		{
 			name:              "SudoersHandler implements StatusProvider",
 			handler:           NewSudoersHandler(parser.Rule{Action: "sudoers", SudoersUser: "alice"}, ""),
+			currentRules:      []parser.Rule{},
+			expectedRuleCount: 0,
+		},
+		{
+			name:              "ScheduleHandler implements StatusProvider",
+			handler:           NewScheduleHandler(parser.Rule{Action: "schedule", SchedulePreset: "daily", ScheduleSource: "setup.bp"}, ""),
 			currentRules:      []parser.Rule{},
 			expectedRuleCount: 0,
 		},
