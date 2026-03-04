@@ -7,8 +7,8 @@ import (
 	"github.com/elpic/blueprint/internal/engine"
 )
 
-// parseFlags extracts --skip-group, --skip-id, and --only flags from arguments
-func parseFlags(args []string) (skipGroup, skipID, onlyID string) {
+// parseFlags extracts --skip-group, --skip-id, --skip-decrypt, and --only flags from arguments
+func parseFlags(args []string) (skipGroup, skipID, onlyID string, skipDecrypt bool) {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--skip-group":
@@ -26,6 +26,8 @@ func parseFlags(args []string) (skipGroup, skipID, onlyID string) {
 				onlyID = args[i+1]
 				i++
 			}
+		case "--skip-decrypt":
+			skipDecrypt = true
 		}
 	}
 	return
@@ -52,20 +54,20 @@ func main() {
 		engine.PrintHistory(runNumber, stepNumber)
 	case "plan":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint plan <file.bp> [--skip-group <name>] [--skip-id <name>] [--only <id>]")
+			fmt.Println("Usage: blueprint plan <file.bp> [--skip-group <name>] [--skip-id <name>] [--only <id>] [--skip-decrypt]")
 			os.Exit(1)
 		}
 		file := os.Args[2]
-		skipGroup, skipID, onlyID := parseFlags(os.Args[3:])
-		engine.RunWithSkip(file, true, skipGroup, skipID, onlyID) // dry-run
+		skipGroup, skipID, onlyID, skipDecrypt := parseFlags(os.Args[3:])
+		engine.RunWithSkip(file, true, skipGroup, skipID, onlyID, skipDecrypt) // dry-run
 	case "apply":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint apply <file.bp> [--skip-group <name>] [--skip-id <name>] [--only <id>]")
+			fmt.Println("Usage: blueprint apply <file.bp> [--skip-group <name>] [--skip-id <name>] [--only <id>] [--skip-decrypt]")
 			os.Exit(1)
 		}
 		file := os.Args[2]
-		skipGroup, skipID, onlyID := parseFlags(os.Args[3:])
-		engine.RunWithSkip(file, false, skipGroup, skipID, onlyID)
+		skipGroup, skipID, onlyID, skipDecrypt := parseFlags(os.Args[3:])
+		engine.RunWithSkip(file, false, skipGroup, skipID, onlyID, skipDecrypt)
 	case "encrypt":
 		if len(os.Args) < 3 {
 			fmt.Println("Usage: blueprint encrypt <file> [--password-id <id>]")

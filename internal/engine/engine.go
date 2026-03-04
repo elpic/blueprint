@@ -22,7 +22,7 @@ type ExecutionRecord struct {
 // passwordCache stores decryption passwords by password-id to avoid re-prompting
 var passwordCache = make(map[string]string)
 
-func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID string) {
+func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID string, skipDecrypt bool) {
 	var setupPath string
 	var err error
 	var runNumber int
@@ -81,6 +81,9 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 			continue
 		}
 		if skipID != "" && rule.ID == skipID {
+			continue
+		}
+		if skipDecrypt && rule.Action == "decrypt" {
 			continue
 		}
 		filteredRules = append(filteredRules, rule)
