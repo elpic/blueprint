@@ -1950,7 +1950,6 @@ func parseScheduleRule(line string) *Rule {
 					scheduleCron = fields[0]
 				}
 			}
-			rulePart = cronParts[0]
 		}
 	} else {
 		// Check for preset as first token
