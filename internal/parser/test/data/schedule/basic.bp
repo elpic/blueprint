@@ -1,0 +1,2 @@
+schedule daily source: setup.bp on: [mac, linux]
+schedule cron: "0 9 * * *" source: ~/setup.bp id: morning-sync on: [mac]

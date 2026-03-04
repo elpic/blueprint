@@ -15,7 +15,7 @@ type Package struct {
 
 type Rule struct {
 	ID       string // Unique identifier for this rule
-	Action   string // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "mise", "homebrew", "ollama", "known_hosts", "gpg-key", or "sudoers"
+	Action   string // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "mise", "homebrew", "ollama", "known_hosts", "gpg-key", "sudoers", or "schedule"
 	Packages []Package
 	OSList   []string
 	After    []string // List of IDs or package names this rule depends on
@@ -35,6 +35,11 @@ type Rule struct {
 
 	// Sudoers-specific fields
 	SudoersUser string // User to grant passwordless sudo (resolved at runtime if empty)
+
+	// Schedule-specific fields
+	SchedulePreset  string // "daily", "weekly", "hourly", or ""
+	ScheduleCron    string // raw cron expression (overrides preset)
+	ScheduleSource  string // file path, directory, or repo passed to blueprint apply
 
 	// Decrypt-specific fields
 	DecryptFile       string // Source encrypted file
@@ -233,6 +238,12 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 		} else if strings.HasPrefix(line, "sudoers") {
 			// Parse format: sudoers [user: <username>] [id: <id>] [after: <deps>] on: [<platforms>]
 			rule := parseSudoersRule(line)
+			if rule != nil {
+				rules = append(rules, *rule)
+			}
+		} else if strings.HasPrefix(line, "schedule") {
+			// Parse format: schedule <preset|cron:> source: <path|dir|repo> [id: <id>] [after: <deps>] on: [<platforms>]
+			rule := parseScheduleRule(line)
 			if rule != nil {
 				rules = append(rules, *rule)
 			}
@@ -1853,5 +1864,121 @@ func parseSudoersRule(line string) *Rule {
 		OSList:      osList,
 		After:       dependencies,
 		SudoersUser: user,
+	}
+}
+
+func parseScheduleRule(line string) *Rule {
+	// Remove "schedule" prefix
+	line = strings.TrimPrefix(line, "schedule")
+	line = strings.TrimSpace(line)
+
+	// Split on the last occurrence of " on:" to avoid matching mid-word (e.g. "cron:" contains "on:")
+	var osListStr, rulePart string
+	if idx := strings.LastIndex(line, " on:"); idx >= 0 {
+		osListStr = strings.TrimSpace(line[idx+4:])
+		rulePart = strings.TrimSpace(line[:idx])
+	} else {
+		rulePart = line
+	}
+
+	// Parse OS list
+	var osList []string
+	if osListStr != "" {
+		osListStr = strings.Trim(osListStr, "[]")
+		for _, o := range strings.Split(osListStr, ",") {
+			if s := strings.TrimSpace(o); s != "" {
+				osList = append(osList, s)
+			}
+		}
+	}
+
+	var id, scheduleSource, schedulePreset, scheduleCron string
+	var dependencies []string
+
+	// Extract id:
+	if strings.Contains(rulePart, "id:") {
+		idParts := strings.Split(rulePart, "id:")
+		if len(idParts) >= 2 {
+			idFields := strings.Fields(strings.TrimSpace(idParts[1]))
+			if len(idFields) > 0 {
+				id = idFields[0]
+				rulePart = idParts[0] + " " + strings.Join(idFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract after:
+	if strings.Contains(rulePart, "after:") {
+		afterParts := strings.Split(rulePart, "after:")
+		if len(afterParts) >= 2 {
+			for _, dep := range strings.Split(strings.TrimSpace(afterParts[1]), ",") {
+				if d := strings.TrimSpace(dep); d != "" {
+					dependencies = append(dependencies, d)
+				}
+			}
+			rulePart = afterParts[0]
+		}
+	}
+
+	// Extract source:
+	if strings.Contains(rulePart, "source:") {
+		srcParts := strings.Split(rulePart, "source:")
+		if len(srcParts) >= 2 {
+			srcFields := strings.Fields(strings.TrimSpace(srcParts[1]))
+			if len(srcFields) > 0 {
+				scheduleSource = srcFields[0]
+				rulePart = srcParts[0] + " " + strings.Join(srcFields[1:], " ")
+			}
+		}
+	}
+
+	// Extract cron: (quoted or unquoted)
+	if strings.Contains(rulePart, "cron:") {
+		cronParts := strings.SplitN(rulePart, "cron:", 2)
+		if len(cronParts) == 2 {
+			cronValue := strings.TrimSpace(cronParts[1])
+			// Handle quoted cron expression
+			if strings.HasPrefix(cronValue, `"`) {
+				end := strings.Index(cronValue[1:], `"`)
+				if end >= 0 {
+					scheduleCron = cronValue[1 : end+1]
+				}
+			} else {
+				// Unquoted: take up to next keyword or end
+				fields := strings.Fields(cronValue)
+				if len(fields) > 0 {
+					scheduleCron = fields[0]
+				}
+			}
+			rulePart = cronParts[0]
+		}
+	} else {
+		// Check for preset as first token
+		fields := strings.Fields(strings.TrimSpace(rulePart))
+		if len(fields) > 0 {
+			switch fields[0] {
+			case "daily", "weekly", "hourly":
+				schedulePreset = fields[0]
+			}
+		}
+	}
+
+	// Auto-generate ID
+	if id == "" {
+		if schedulePreset != "" {
+			id = "schedule-" + schedulePreset
+		} else {
+			id = "schedule-custom"
+		}
+	}
+
+	return &Rule{
+		ID:             id,
+		Action:         "schedule",
+		OSList:         osList,
+		After:          dependencies,
+		SchedulePreset: schedulePreset,
+		ScheduleCron:   scheduleCron,
+		ScheduleSource: scheduleSource,
 	}
 }
