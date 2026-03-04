@@ -378,9 +378,12 @@ func PrintHistory(runNumber int, stepNumber int) {
 		return
 	}
 
-	// Sort entries by filename (rule number)
+	// Sort entries by rule number (numeric order, not lexicographic)
 	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Name() < entries[j].Name()
+		a, b := 0, 0
+		_, _ = fmt.Sscanf(strings.TrimSuffix(entries[i].Name(), ".output"), "%d", &a)
+		_, _ = fmt.Sscanf(strings.TrimSuffix(entries[j].Name(), ".output"), "%d", &b)
+		return a < b
 	})
 
 	for _, entry := range entries {

@@ -206,7 +206,7 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 
 		// Save output to history (only if runNumber > 0)
 		if runNumber > 0 {
-			if err := saveRuleOutput(runNumber, i, record.Output, record.Error); err != nil {
+			if err := saveRuleOutput(runNumber, i+1, record.Output, record.Error); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to save rule output to history: %v\n", err)
 			}
 		}
