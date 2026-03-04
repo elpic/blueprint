@@ -22,7 +22,7 @@ type ExecutionRecord struct {
 // passwordCache stores decryption passwords by password-id to avoid re-prompting
 var passwordCache = make(map[string]string)
 
-func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID string) {
+func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID string, skipDecrypt bool) {
 	var setupPath string
 	var err error
 	var runNumber int
@@ -67,9 +67,15 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 		return
 	}
 
+	// Filter rules by current OS first, before applying skip flags.
+	// We keep the full OS-filtered set separately so auto-uninstall comparisons
+	// see the complete blueprint (skipped rules should not trigger uninstalls).
+	currentOS := getOSName()
+	allOSRules := filterRulesByOS(rules)
+
 	// Filter rules by skip/only flags
 	var filteredRules []parser.Rule
-	for _, rule := range rules {
+	for _, rule := range allOSRules {
 		if onlyID != "" {
 			// --only: keep only the rule with this ID
 			if rule.ID == onlyID {
@@ -83,24 +89,24 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 		if skipID != "" && rule.ID == skipID {
 			continue
 		}
+		if skipDecrypt && rule.Action == "decrypt" {
+			continue
+		}
 		filteredRules = append(filteredRules, rule)
 	}
-	rules = filteredRules
 
-	if onlyID != "" && len(rules) == 0 {
+	if onlyID != "" && len(filteredRules) == 0 {
 		fmt.Printf("No rule found with id: %s\n", onlyID)
 		return
 	}
 
-	// Filter rules by current OS
-	filteredRules = filterRulesByOS(rules)
-	currentOS := getOSName()
-
-	// Check history and add auto-uninstall rules for removed packages
-	// Skip auto-uninstall when --only is set (we're targeting one specific rule)
+	// Check history and add auto-uninstall rules for removed packages.
+	// Skip auto-uninstall when --only is set (we're targeting one specific rule).
+	// Use allOSRules (not filteredRules) so that rules excluded by skip flags
+	// are not mistakenly treated as "removed from the blueprint".
 	var autoUninstallRules []parser.Rule
 	if onlyID == "" {
-		autoUninstallRules = getAutoUninstallRules(filteredRules, file, currentOS)
+		autoUninstallRules = getAutoUninstallRules(allOSRules, file, currentOS)
 	}
 	allRules := append(filteredRules, autoUninstallRules...)
 
