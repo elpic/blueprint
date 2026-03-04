@@ -137,8 +137,8 @@ type DownloadStatus struct {
 
 // RunStatus tracks an executed run/run-sh command
 type RunStatus struct {
-	Action    string `json:"action"`        // "run" or "run-sh"
-	Command   string `json:"command"`       // The run command or script URL
+	Action    string `json:"action"`  // "run" or "run-sh"
+	Command   string `json:"command"` // The run command or script URL
 	UndoCmd   string `json:"undo_cmd,omitempty"`
 	Sudo      bool   `json:"sudo,omitempty"` // Whether sudo was used
 	RanAt     string `json:"ran_at"`
@@ -171,9 +171,9 @@ type Status struct {
 	Brews      []HomebrewStatus   `json:"brews"`
 	Ollamas    []OllamaStatus     `json:"ollamas"`
 	Downloads  []DownloadStatus   `json:"downloads"`
-	Runs      []RunStatus      `json:"runs"`
-	Dotfiles  []DotfilesStatus `json:"dotfiles"`
-	Schedules []ScheduleStatus `json:"schedules"`
+	Runs       []RunStatus        `json:"runs"`
+	Dotfiles   []DotfilesStatus   `json:"dotfiles"`
+	Schedules  []ScheduleStatus   `json:"schedules"`
 }
 
 // Handler is the interface that all command handlers must implement
@@ -578,7 +578,6 @@ func removeGPGKeyStatus(gpgKeys []GPGKeyStatus, keyring string, blueprint string
 	}
 	return result
 }
-
 
 // removeRunStatus removes a run entry from the status runs list by command key
 func removeRunStatus(runs []RunStatus, command string, blueprint string, osName string) []RunStatus {

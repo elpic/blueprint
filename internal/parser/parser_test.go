@@ -937,14 +937,14 @@ known_hosts gitlab.example.com key: rsa id: gitlab-hosts on: [linux, mac]
 // TestParseFromFile tests parsing blueprint rules from actual blueprint files
 func TestParseScheduleRule(t *testing.T) {
 	tests := []struct {
-		name           string
-		input          string
-		wantNil        bool
-		wantPreset     string
-		wantCron       string
-		wantSource     string
-		wantID         string
-		wantOS         []string
+		name       string
+		input      string
+		wantNil    bool
+		wantPreset string
+		wantCron   string
+		wantSource string
+		wantID     string
+		wantOS     []string
 	}{
 		{
 			name:       "daily preset with source file",

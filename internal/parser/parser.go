@@ -37,9 +37,9 @@ type Rule struct {
 	SudoersUser string // User to grant passwordless sudo (resolved at runtime if empty)
 
 	// Schedule-specific fields
-	SchedulePreset  string // "daily", "weekly", "hourly", or ""
-	ScheduleCron    string // raw cron expression (overrides preset)
-	ScheduleSource  string // file path, directory, or repo passed to blueprint apply
+	SchedulePreset string // "daily", "weekly", "hourly", or ""
+	ScheduleCron   string // raw cron expression (overrides preset)
+	ScheduleSource string // file path, directory, or repo passed to blueprint apply
 
 	// Decrypt-specific fields
 	DecryptFile       string // Source encrypted file
