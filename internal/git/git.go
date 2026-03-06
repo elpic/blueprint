@@ -283,19 +283,6 @@ func sshAuth() (ssh.AuthMethod, error) {
 	return nil, fmt.Errorf("no usable SSH authentication: SSH agent unavailable and no key files found in ~/.ssh")
 }
 
-// convertSSHToHTTPS converts an SSH git URL to HTTPS
-// Example: git@github.com:user/repo.git -> https://github.com/user/repo.git
-func convertSSHToHTTPS(sshURL string) string {
-	// Remove git@ prefix
-	sshURL = strings.TrimPrefix(sshURL, "git@")
-
-	// Replace : with /
-	httpsURL := strings.Replace(sshURL, ":", "/", 1)
-
-	// Add https:// prefix
-	return "https://" + httpsURL
-}
-
 // FindSetupFile looks for a setup file in the given directory
 // If path is not provided, defaults to "setup.bp"
 func FindSetupFile(dir, path string) (string, error) {
