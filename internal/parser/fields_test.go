@@ -174,6 +174,59 @@ func TestLineFieldsMethods(t *testing.T) {
 	})
 }
 
+func TestStripComment(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		// full-line comments — stripped to empty string
+		{"# full line comment", ""},
+		{"// full line comment", ""},
+		// inline # comment
+		{"install curl # install curl tool", "install curl "},
+		{"install curl#nospace", "install curl#nospace"}, // no preceding space → not a comment
+		// inline // comment
+		{"run echo hello // this is noise", "run echo hello "},
+		// URLs must not be stripped
+		{"clone https://github.com/user/repo.git to: ~/repo", "clone https://github.com/user/repo.git to: ~/repo"},
+		{"run-sh https://example.com/setup.sh", "run-sh https://example.com/setup.sh"},
+		// no comment
+		{"install git vim curl", "install git vim curl"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := stripComment(tt.input)
+			if got != tt.want {
+				t.Errorf("stripComment(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseContentComments(t *testing.T) {
+	content := `# full line hash comment
+// full line slash comment
+install curl # inline hash comment
+install git // inline slash comment
+install vim
+`
+	rules, err := parseContent(content, "", make(map[string]bool))
+	if err != nil {
+		t.Fatalf("parseContent() error: %v", err)
+	}
+	if len(rules) != 3 {
+		t.Fatalf("got %d rules, want 3", len(rules))
+	}
+	for _, r := range rules {
+		if r.Action != "install" {
+			t.Errorf("unexpected action %q", r.Action)
+		}
+		if len(r.Packages) != 1 {
+			t.Errorf("rule %q: got %d packages, want 1", r.Packages, len(r.Packages))
+		}
+	}
+}
+
 func TestParseFieldsErrorMessages(t *testing.T) {
 	// Verify line numbers appear in errors from parseContent
 	content := "install curl\nfoobar something\nclone https://x"

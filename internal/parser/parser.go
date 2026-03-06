@@ -120,8 +120,8 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 	var rules []Rule
 
 	for lineNum, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "#!/") {
+		line = strings.TrimSpace(stripComment(line))
+		if line == "" {
 			continue
 		}
 

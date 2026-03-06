@@ -192,3 +192,26 @@ func (f lineFields) rest() string {
 func lineError(line, msg string) error {
 	return fmt.Errorf("%s (in: %q)", msg, line)
 }
+
+// stripComment removes an inline comment from a line.
+// Both # and // are supported as comment markers.
+// A marker is only treated as a comment if it is preceded by whitespace or
+// appears at the start of the line, so that URLs (https://) and values
+// containing # (e.g. colour codes) are left intact.
+func stripComment(line string) string {
+	for i := 0; i < len(line); i++ {
+		switch {
+		case line[i] == '#':
+			// # at start or preceded by whitespace → comment
+			if i == 0 || line[i-1] == ' ' || line[i-1] == '\t' {
+				return line[:i]
+			}
+		case i+1 < len(line) && line[i] == '/' && line[i+1] == '/':
+			// // at start or preceded by whitespace → comment
+			if i == 0 || line[i-1] == ' ' || line[i-1] == '\t' {
+				return line[:i]
+			}
+		}
+	}
+	return line
+}
