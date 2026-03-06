@@ -2,7 +2,10 @@ package parser
 
 import (
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/elpic/blueprint/internal/git"
 )
 
 // TestParseGPGKeyBasic tests basic GPG key rule parsing
@@ -1271,6 +1274,141 @@ func TestParseComprehensiveFromFile(t *testing.T) {
 			if len(rule.After) != 1 || rule.After[0] != "nodejs-setup" {
 				t.Errorf("dev-tools dependencies: got %v, want [nodejs-setup]", rule.After)
 			}
+		}
+	}
+}
+
+// TestIsGitURLProtocols verifies that IsGitURL recognises all supported protocols.
+func TestIsGitURLProtocols(t *testing.T) {
+	cases := []struct {
+		input string
+		want  bool
+	}{
+		{"https://github.com/org/repo", true},
+		{"https://github.com/org/repo@main:infra/setup.bp", true},
+		{"http://github.com/org/repo", true},
+		{"git@github.com:org/repo.git", true},
+		{"git://github.com/org/repo.git", true},
+		{"./local/path.bp", false},
+		{"/absolute/path.bp", false},
+		{"relative.bp", false},
+	}
+	for _, tc := range cases {
+		got := git.IsGitURL(tc.input)
+		if got != tc.want {
+			t.Errorf("IsGitURL(%q) = %v, want %v", tc.input, got, tc.want)
+		}
+	}
+}
+
+// TestParseGitURLSSH verifies that ParseGitURL correctly extracts URL, branch, and path
+// for SSH-format git URLs (git@host:org/repo.git), which use a different @ placement.
+func TestParseGitURLSSH(t *testing.T) {
+	cases := []struct {
+		input      string
+		wantURL    string
+		wantBranch string
+		wantPath   string
+	}{
+		{
+			"git@github.com:org/repo.git",
+			"git@github.com:org/repo.git",
+			"",
+			"setup.bp",
+		},
+		{
+			"git@github.com:org/repo.git@main",
+			"git@github.com:org/repo.git",
+			"main",
+			"setup.bp",
+		},
+		{
+			"git@github.com:org/repo.git@main:infra/setup.bp",
+			"git@github.com:org/repo.git",
+			"main",
+			"infra/setup.bp",
+		},
+		{
+			"git@github.com:org/repo.git:infra/setup.bp",
+			"git@github.com:org/repo.git",
+			"",
+			"infra/setup.bp",
+		},
+	}
+	for _, tc := range cases {
+		p := git.ParseGitURL(tc.input)
+		if p.URL != tc.wantURL {
+			t.Errorf("ParseGitURL(%q).URL = %q, want %q", tc.input, p.URL, tc.wantURL)
+		}
+		if p.Branch != tc.wantBranch {
+			t.Errorf("ParseGitURL(%q).Branch = %q, want %q", tc.input, p.Branch, tc.wantBranch)
+		}
+		if p.Path != tc.wantPath {
+			t.Errorf("ParseGitURL(%q).Path = %q, want %q", tc.input, p.Path, tc.wantPath)
+		}
+	}
+}
+
+// TestLocalPathForGitInclude verifies cache path derivation for git include URLs.
+func TestLocalPathForGitInclude(t *testing.T) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("could not get home dir: %v", err)
+	}
+	cases := []struct {
+		input      string
+		wantSuffix string
+	}{
+		{
+			"https://github.com/org/repo",
+			".blueprint/repos/github.com/org/repo",
+		},
+		{
+			"https://github.com/org/repo.git",
+			".blueprint/repos/github.com/org/repo",
+		},
+		{
+			"git@github.com:org/repo.git",
+			".blueprint/repos/github.com/org/repo",
+		},
+		{
+			"git://github.com/org/repo.git",
+			".blueprint/repos/github.com/org/repo",
+		},
+	}
+	for _, tc := range cases {
+		got := localPathForGitInclude(tc.input)
+		want := homeDir + "/" + tc.wantSuffix
+		if got != want {
+			t.Errorf("localPathForGitInclude(%q)\n got  %q\n want %q", tc.input, got, want)
+		}
+	}
+}
+
+// TestParseContentGitIncludeDetected verifies that git URLs in include lines are
+// detected as git URLs rather than treated as local paths (no actual network call).
+func TestParseContentGitIncludeDetected(t *testing.T) {
+	gitURLs := []string{
+		"https://github.com/org/repo",
+		"https://github.com/org/repo@main:setup.bp",
+		"git@github.com:org/repo.git",
+		"git://github.com/org/repo.git",
+	}
+	for _, u := range gitURLs {
+		if !git.IsGitURL(u) {
+			t.Errorf("expected %q to be recognised as a git URL", u)
+		}
+		// parseContent with a git include will attempt a network clone; we only
+		// verify detection here by confirming the URL is passed to loadGitInclude
+		// (which returns an error on offline machines). The error must NOT mention
+		// "failed to resolve include path" (a local-file error).
+		_, err := parseContent("include "+u, "", make(map[string]bool))
+		if err == nil {
+			// If this succeeds (cached/mocked), that's fine.
+			continue
+		}
+		if strings.Contains(err.Error(), "failed to resolve include path") {
+			t.Errorf("git URL %q was incorrectly routed to local file handler: %v", u, err)
 		}
 	}
 }

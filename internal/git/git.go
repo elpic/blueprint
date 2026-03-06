@@ -37,8 +37,12 @@ func IsGitURL(input string) bool {
 		return true
 	}
 
-	// For HTTP(S) URLs, we need to be more careful with colons
+	// For HTTP(S) and git:// URLs, we need to be more careful with colons
 	if strings.HasPrefix(beforeBranch, "https://") || strings.HasPrefix(beforeBranch, "http://") {
+		return true
+	}
+
+	if strings.HasPrefix(beforeBranch, "git://") {
 		return true
 	}
 
@@ -50,20 +54,48 @@ func IsGitURL(input string) bool {
 	return false
 }
 
-// ParseGitURL parses a git URL with optional branch and path
-// Format: repo.git[@branch][:path/to/file.bp]
-// Examples:
+// ParseGitURL parses a git URL with optional branch and path.
 //
-//	https://github.com/user/repo.git
-//	https://github.com/user/repo.git@main
-//	https://github.com/user/repo.git:config/setup.bp
-//	https://github.com/user/repo.git@dev:config/setup.bp
+// Supported formats:
+//
+//	https://github.com/user/repo[@branch][:path/to/file.bp]
+//	https://github.com/user/repo.git[@branch][:path/to/file.bp]
+//	git@github.com:user/repo.git[@branch[:path/to/file.bp]]
+//	git://github.com/user/repo.git[@branch][:path/to/file.bp]
 func ParseGitURL(input string) GitURLParams {
 	params := GitURLParams{
 		Path: "setup.bp", // Default path
 	}
 
-	// Split by @ to get branch
+	// SSH URLs: git@host:org/repo.git[@branch[:path]]
+	// We must NOT split on the first "@" because that separates "git" from the host.
+	// The branch/path specifier uses a second "@" that appears only after ".git".
+	if strings.HasPrefix(input, "git@") {
+		baseURL := input
+		// Look for a second "@" that signals a branch specifier (after the repo part)
+		// e.g. git@github.com:org/repo.git@main:path/to/file.bp
+		if gitIdx := strings.Index(input, ".git"); gitIdx >= 0 {
+			afterGit := input[gitIdx+4:] // everything after ".git"
+			baseURL = input[:gitIdx+4]   // git@host:org/repo.git
+			if strings.HasPrefix(afterGit, "@") {
+				// branch (and optionally path) follow
+				branchAndPath := afterGit[1:]
+				if colonIdx := strings.Index(branchAndPath, ":"); colonIdx >= 0 {
+					params.Branch = branchAndPath[:colonIdx]
+					params.Path = branchAndPath[colonIdx+1:]
+				} else {
+					params.Branch = branchAndPath
+				}
+			} else if strings.HasPrefix(afterGit, ":") {
+				// path only, no branch
+				params.Path = afterGit[1:]
+			}
+		}
+		params.URL = baseURL
+		return params
+	}
+
+	// HTTPS / HTTP / git:// URLs: split on first "@" to extract branch specifier.
 	parts := strings.Split(input, "@")
 	baseURL := parts[0]
 
@@ -116,25 +148,31 @@ func CloneRepository(input string, verbose bool) (string, string, error) {
 		fmt.Printf("To: %s\n", tmpDir)
 	}
 
-	// Try to clone with the original URL
-	err = tryClone(tmpDir, params.URL, params.Branch, verbose)
-
-	// If SSH fails on a public repo, try converting to HTTPS
-	if err != nil && strings.HasPrefix(params.URL, "git@") {
-		if verbose {
-			fmt.Printf("SSH failed, attempting HTTPS fallback...\n")
+	// For SSH URLs use the system git binary so that ~/.ssh/config, the SSH
+	// agent, and known_hosts work exactly as they do when running git manually.
+	// go-git's SSH transport cannot talk to the SSH agent reliably.
+	if strings.HasPrefix(params.URL, "git@") {
+		args := []string{"clone"}
+		if !verbose {
+			args = append(args, "--quiet")
 		}
-		httpsURL := convertSSHToHTTPS(params.URL)
-		if verbose {
-			fmt.Printf("Trying: %s\n", httpsURL)
+		if params.Branch != "" {
+			args = append(args, "--branch", params.Branch)
 		}
-		err = tryClone(tmpDir, httpsURL, params.Branch, verbose)
-	}
-
-	if err != nil {
-		// Clean up the temporary directory on error
-		_ = os.RemoveAll(tmpDir)
-		return "", "", fmt.Errorf("failed to clone repository: %w", err)
+		args = append(args, params.URL, tmpDir)
+		cloneCmd := exec.Command("git", args...) // #nosec G204
+		cloneCmd.Stdout = os.Stdout
+		cloneCmd.Stderr = os.Stderr
+		if err = cloneCmd.Run(); err != nil {
+			_ = os.RemoveAll(tmpDir)
+			return "", "", fmt.Errorf("failed to clone repository: %w", err)
+		}
+	} else {
+		err = tryClone(tmpDir, params.URL, params.Branch, verbose)
+		if err != nil {
+			_ = os.RemoveAll(tmpDir)
+			return "", "", fmt.Errorf("failed to clone repository: %w", err)
+		}
 	}
 
 	if verbose {
@@ -243,19 +281,6 @@ func sshAuth() (ssh.AuthMethod, error) {
 	}
 
 	return nil, fmt.Errorf("no usable SSH authentication: SSH agent unavailable and no key files found in ~/.ssh")
-}
-
-// convertSSHToHTTPS converts an SSH git URL to HTTPS
-// Example: git@github.com:user/repo.git -> https://github.com/user/repo.git
-func convertSSHToHTTPS(sshURL string) string {
-	// Remove git@ prefix
-	sshURL = strings.TrimPrefix(sshURL, "git@")
-
-	// Replace : with /
-	httpsURL := strings.Replace(sshURL, ":", "/", 1)
-
-	// Add https:// prefix
-	return "https://" + httpsURL
 }
 
 // FindSetupFile looks for a setup file in the given directory
