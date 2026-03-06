@@ -37,8 +37,12 @@ func IsGitURL(input string) bool {
 		return true
 	}
 
-	// For HTTP(S) URLs, we need to be more careful with colons
+	// For HTTP(S) and git:// URLs, we need to be more careful with colons
 	if strings.HasPrefix(beforeBranch, "https://") || strings.HasPrefix(beforeBranch, "http://") {
+		return true
+	}
+
+	if strings.HasPrefix(beforeBranch, "git://") {
 		return true
 	}
 

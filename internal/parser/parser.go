@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/elpic/blueprint/internal/git"
 )
 
 type Package struct {
@@ -127,6 +129,21 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 		if strings.HasPrefix(line, "include ") {
 			filePath := strings.TrimPrefix(line, "include ")
 			filePath = strings.TrimSpace(filePath)
+
+			// Dispatch git URLs to the remote include handler
+			if git.IsGitURL(filePath) {
+				if loadedFiles[filePath] {
+					fmt.Printf("Warning: Skipping circular include: %s\n", filePath)
+					continue
+				}
+				loadedFiles[filePath] = true
+				includedRules, err := loadGitInclude(filePath, loadedFiles)
+				if err != nil {
+					return nil, fmt.Errorf("failed to include %s: %w", filePath, err)
+				}
+				rules = append(rules, includedRules...)
+				continue
+			}
 
 			// Resolve relative paths
 			if !filepath.IsAbs(filePath) && baseDir != "" {
@@ -271,6 +288,59 @@ func loadInclude(filePath string, loadedFiles map[string]bool) ([]Rule, error) {
 
 	// Parse with base directory for nested includes
 	baseDir := filepath.Dir(filePath)
+	return parseContent(string(content), baseDir, loadedFiles)
+}
+
+// localPathForGitInclude derives a stable local cache path from a git URL.
+// Supports HTTPS, HTTP, git://, and SSH (git@host:org/repo.git) formats.
+func localPathForGitInclude(rawURL string) string {
+	homeDir, _ := os.UserHomeDir()
+
+	var normalized string
+	if strings.HasPrefix(rawURL, "git@") {
+		// SSH format: git@github.com:org/repo.git[@branch[:path]]
+		// Take everything after "git@", replace the first ":" with "/", drop .git suffix.
+		normalized = strings.TrimPrefix(rawURL, "git@")
+		// Drop any branch/path specifier (everything from "@" that may follow the repo)
+		// SSH repos don't use "@" again in the host:path portion, but be safe.
+		if idx := strings.Index(normalized, "@"); idx >= 0 {
+			normalized = normalized[:idx]
+		}
+		normalized = strings.Replace(normalized, ":", "/", 1)
+	} else {
+		// HTTPS/HTTP/git:// — strip protocol, then drop branch/path specifier (after @)
+		normalized = strings.TrimPrefix(rawURL, "https://")
+		normalized = strings.TrimPrefix(normalized, "http://")
+		normalized = strings.TrimPrefix(normalized, "git://")
+		if idx := strings.Index(normalized, "@"); idx >= 0 {
+			normalized = normalized[:idx]
+		}
+	}
+
+	normalized = strings.TrimSuffix(normalized, ".git")
+	return filepath.Join(homeDir, ".blueprint", "repos", normalized)
+}
+
+// loadGitInclude clones/updates the remote repo and parses the target blueprint file.
+func loadGitInclude(rawURL string, loadedFiles map[string]bool) ([]Rule, error) {
+	params := git.ParseGitURL(rawURL)
+	localPath := localPathForGitInclude(rawURL)
+
+	_, _, _, err := git.CloneOrUpdateRepository(params.URL, localPath, params.Branch)
+	if err != nil {
+		return nil, fmt.Errorf("failed to clone/update %s: %w", rawURL, err)
+	}
+
+	setupFile, err := git.FindSetupFile(localPath, params.Path)
+	if err != nil {
+		return nil, fmt.Errorf("setup file not found in %s: %w", rawURL, err)
+	}
+
+	content, err := os.ReadFile(setupFile) // #nosec G304 -- setupFile is derived from trusted clone path
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s: %w", setupFile, err)
+	}
+	baseDir := filepath.Dir(setupFile)
 	return parseContent(string(content), baseDir, loadedFiles)
 }
 
