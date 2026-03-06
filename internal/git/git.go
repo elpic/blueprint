@@ -148,25 +148,31 @@ func CloneRepository(input string, verbose bool) (string, string, error) {
 		fmt.Printf("To: %s\n", tmpDir)
 	}
 
-	// Try to clone with the original URL
-	err = tryClone(tmpDir, params.URL, params.Branch, verbose)
-
-	// If SSH fails on a public repo, try converting to HTTPS
-	if err != nil && strings.HasPrefix(params.URL, "git@") {
-		if verbose {
-			fmt.Printf("SSH failed, attempting HTTPS fallback...\n")
+	// For SSH URLs use the system git binary so that ~/.ssh/config, the SSH
+	// agent, and known_hosts work exactly as they do when running git manually.
+	// go-git's SSH transport cannot talk to the SSH agent reliably.
+	if strings.HasPrefix(params.URL, "git@") {
+		args := []string{"clone"}
+		if !verbose {
+			args = append(args, "--quiet")
 		}
-		httpsURL := convertSSHToHTTPS(params.URL)
-		if verbose {
-			fmt.Printf("Trying: %s\n", httpsURL)
+		if params.Branch != "" {
+			args = append(args, "--branch", params.Branch)
 		}
-		err = tryClone(tmpDir, httpsURL, params.Branch, verbose)
-	}
-
-	if err != nil {
-		// Clean up the temporary directory on error
-		_ = os.RemoveAll(tmpDir)
-		return "", "", fmt.Errorf("failed to clone repository: %w", err)
+		args = append(args, params.URL, tmpDir)
+		cloneCmd := exec.Command("git", args...) // #nosec G204
+		cloneCmd.Stdout = os.Stdout
+		cloneCmd.Stderr = os.Stderr
+		if err = cloneCmd.Run(); err != nil {
+			_ = os.RemoveAll(tmpDir)
+			return "", "", fmt.Errorf("failed to clone repository: %w", err)
+		}
+	} else {
+		err = tryClone(tmpDir, params.URL, params.Branch, verbose)
+		if err != nil {
+			_ = os.RemoveAll(tmpDir)
+			return "", "", fmt.Errorf("failed to clone repository: %w", err)
+		}
 	}
 
 	if verbose {
