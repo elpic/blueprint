@@ -1301,6 +1301,54 @@ func TestIsGitURLProtocols(t *testing.T) {
 	}
 }
 
+// TestParseGitURLSSH verifies that ParseGitURL correctly extracts URL, branch, and path
+// for SSH-format git URLs (git@host:org/repo.git), which use a different @ placement.
+func TestParseGitURLSSH(t *testing.T) {
+	cases := []struct {
+		input      string
+		wantURL    string
+		wantBranch string
+		wantPath   string
+	}{
+		{
+			"git@github.com:org/repo.git",
+			"git@github.com:org/repo.git",
+			"",
+			"setup.bp",
+		},
+		{
+			"git@github.com:org/repo.git@main",
+			"git@github.com:org/repo.git",
+			"main",
+			"setup.bp",
+		},
+		{
+			"git@github.com:org/repo.git@main:infra/setup.bp",
+			"git@github.com:org/repo.git",
+			"main",
+			"infra/setup.bp",
+		},
+		{
+			"git@github.com:org/repo.git:infra/setup.bp",
+			"git@github.com:org/repo.git",
+			"",
+			"infra/setup.bp",
+		},
+	}
+	for _, tc := range cases {
+		p := git.ParseGitURL(tc.input)
+		if p.URL != tc.wantURL {
+			t.Errorf("ParseGitURL(%q).URL = %q, want %q", tc.input, p.URL, tc.wantURL)
+		}
+		if p.Branch != tc.wantBranch {
+			t.Errorf("ParseGitURL(%q).Branch = %q, want %q", tc.input, p.Branch, tc.wantBranch)
+		}
+		if p.Path != tc.wantPath {
+			t.Errorf("ParseGitURL(%q).Path = %q, want %q", tc.input, p.Path, tc.wantPath)
+		}
+	}
+}
+
 // TestLocalPathForGitInclude verifies cache path derivation for git include URLs.
 func TestLocalPathForGitInclude(t *testing.T) {
 	homeDir, err := os.UserHomeDir()

@@ -54,20 +54,48 @@ func IsGitURL(input string) bool {
 	return false
 }
 
-// ParseGitURL parses a git URL with optional branch and path
-// Format: repo.git[@branch][:path/to/file.bp]
-// Examples:
+// ParseGitURL parses a git URL with optional branch and path.
 //
-//	https://github.com/user/repo.git
-//	https://github.com/user/repo.git@main
-//	https://github.com/user/repo.git:config/setup.bp
-//	https://github.com/user/repo.git@dev:config/setup.bp
+// Supported formats:
+//
+//	https://github.com/user/repo[@branch][:path/to/file.bp]
+//	https://github.com/user/repo.git[@branch][:path/to/file.bp]
+//	git@github.com:user/repo.git[@branch[:path/to/file.bp]]
+//	git://github.com/user/repo.git[@branch][:path/to/file.bp]
 func ParseGitURL(input string) GitURLParams {
 	params := GitURLParams{
 		Path: "setup.bp", // Default path
 	}
 
-	// Split by @ to get branch
+	// SSH URLs: git@host:org/repo.git[@branch[:path]]
+	// We must NOT split on the first "@" because that separates "git" from the host.
+	// The branch/path specifier uses a second "@" that appears only after ".git".
+	if strings.HasPrefix(input, "git@") {
+		baseURL := input
+		// Look for a second "@" that signals a branch specifier (after the repo part)
+		// e.g. git@github.com:org/repo.git@main:path/to/file.bp
+		if gitIdx := strings.Index(input, ".git"); gitIdx >= 0 {
+			afterGit := input[gitIdx+4:] // everything after ".git"
+			baseURL = input[:gitIdx+4]   // git@host:org/repo.git
+			if strings.HasPrefix(afterGit, "@") {
+				// branch (and optionally path) follow
+				branchAndPath := afterGit[1:]
+				if colonIdx := strings.Index(branchAndPath, ":"); colonIdx >= 0 {
+					params.Branch = branchAndPath[:colonIdx]
+					params.Path = branchAndPath[colonIdx+1:]
+				} else {
+					params.Branch = branchAndPath
+				}
+			} else if strings.HasPrefix(afterGit, ":") {
+				// path only, no branch
+				params.Path = afterGit[1:]
+			}
+		}
+		params.URL = baseURL
+		return params
+	}
+
+	// HTTPS / HTTP / git:// URLs: split on first "@" to extract branch specifier.
 	parts := strings.Split(input, "@")
 	baseURL := parts[0]
 
