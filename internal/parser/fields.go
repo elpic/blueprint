@@ -38,11 +38,18 @@ func parseFields(body string) lineFields {
 		kv: make(map[string]string),
 	}
 
-	// Step 1: extract " on: [...]" from the right.
+	// Step 1: extract "on: [...]" from the right.
+	// Match " on:" (inline) or "on:" at position 0 (directive with no other tokens).
+	var onRaw string
 	if idx := strings.LastIndex(body, " on:"); idx >= 0 {
-		onValue := strings.TrimSpace(body[idx+4:])
+		onRaw = strings.TrimSpace(body[idx+4:])
 		body = strings.TrimSpace(body[:idx])
-		onValue = strings.Trim(onValue, "[]")
+	} else if strings.HasPrefix(body, "on:") {
+		onRaw = strings.TrimSpace(body[3:])
+		body = ""
+	}
+	if onRaw != "" {
+		onValue := strings.Trim(onRaw, "[]")
 		for _, part := range strings.Split(onValue, ",") {
 			if s := strings.TrimSpace(part); s != "" {
 				f.osFilter = append(f.osFilter, s)
