@@ -25,7 +25,6 @@ func getOSName() string {
 	}
 }
 
-
 func filterRulesByOS(rules []parser.Rule) []parser.Rule {
 	currentOS := getOSName()
 	var filtered []parser.Rule
@@ -46,7 +45,35 @@ func filterRulesByOS(rules []parser.Rule) []parser.Rule {
 		}
 	}
 
-	return filtered
+	return deduplicateRules(filtered)
+}
+
+// deduplicateRules removes duplicate rules using the same key logic as the
+// topological sort, so plan and apply always show the same count.
+func deduplicateRules(rules []parser.Rule) []parser.Rule {
+	seen := make(map[string]bool)
+	var result []parser.Rule
+	for _, rule := range rules {
+		key := rule.ID
+		if key == "" {
+			handler := handlerskg.NewHandler(rule, "", nil)
+			if handler != nil {
+				if kp, ok := handler.(handlerskg.KeyProvider); ok {
+					key = kp.GetDependencyKey()
+				} else {
+					key = rule.Action
+				}
+			} else {
+				key = rule.Action
+			}
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, rule)
+	}
+	return result
 }
 
 func displayRules(rules []parser.Rule) {
@@ -114,7 +141,7 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 
 	// Build maps for lookup by ID and other identifiers
 	rulesByID := make(map[string]*parser.Rule)
-	rulesByKey := make(map[string]*parser.Rule)  // Maps handler-provided keys to rules
+	rulesByKey := make(map[string]*parser.Rule) // Maps handler-provided keys to rules
 
 	for i := range rules {
 		if rules[i].ID != "" {
@@ -205,7 +232,6 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 
 	return sorted, nil
 }
-
 
 func getBlueprintDir() (string, error) {
 	homeDir, err := os.UserHomeDir()
