@@ -367,9 +367,7 @@ func parseHomebrewRule(line string) (*Rule, error) {
 		homebrewCasks = append(homebrewCasks, cask)
 	}
 	// positional tokens are formulas
-	for _, tok := range f.tokens {
-		homebrewPackages = append(homebrewPackages, tok)
-	}
+	homebrewPackages = append(homebrewPackages, f.tokens...)
 	id := f.word("id:")
 	if id == "" {
 		if len(homebrewPackages) > 0 {
@@ -627,14 +625,10 @@ func parseScheduleRule(line string) (*Rule, error) {
 	scheduleCron := f.multiword("cron:")
 	scheduleSource := f.word("source:")
 	var schedulePreset string
-	if scheduleCron == "" {
-		// preset is the first positional token
-		for _, tok := range f.tokens {
-			switch tok {
-			case "daily", "weekly", "hourly":
-				schedulePreset = tok
-			}
-			break
+	if scheduleCron == "" && len(f.tokens) > 0 {
+		switch f.tokens[0] {
+		case "daily", "weekly", "hourly":
+			schedulePreset = f.tokens[0]
 		}
 	}
 
