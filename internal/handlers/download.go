@@ -30,6 +30,11 @@ func NewDownloadHandler(rule parser.Rule, basePath string) *DownloadHandler {
 }
 
 // Up downloads the file from the URL to the destination path
+// httpClient returns the HTTP client used for downloading files.
+func (h *DownloadHandler) httpClient() *http.Client {
+	return &http.Client{Timeout: 30 * time.Second}
+}
+
 func (h *DownloadHandler) Up() (string, error) {
 	destPath := downloadExpandPath(h.Rule.DownloadPath)
 

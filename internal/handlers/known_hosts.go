@@ -59,6 +59,22 @@ func (h *KnownHostsHandler) Up() (string, error) {
 	return "", fmt.Errorf("failed to add host to known_hosts - \nDetails:\n%s", errMsg)
 }
 
+// DownWithRunner removes the host using an injectable command runner (for testing).
+// BUG: currently ignores runner errors — test will catch this.
+func (h *KnownHostsHandler) DownWithRunner(run func(cmd string) error) (string, error) {
+	if !isValidHostname(h.Rule.KnownHosts) {
+		return "", fmt.Errorf("invalid hostname: %s (contains invalid characters)", h.Rule.KnownHosts)
+	}
+
+	removeHostCmd := fmt.Sprintf(`sed -i.bak '/^%s[, ]/d' ~/.ssh/known_hosts 2>/dev/null || true &&  rm -f ~/.ssh/known_hosts.bak 2>/dev/null || true`, escapeForSed(h.Rule.KnownHosts))
+
+	if err := run(removeHostCmd); err != nil {
+		return "", fmt.Errorf("could not remove %s from known_hosts: %w", h.Rule.KnownHosts, err)
+	}
+
+	return fmt.Sprintf("Removed %s from known_hosts", h.Rule.KnownHosts), nil
+}
+
 // Down removes the host from known_hosts file
 func (h *KnownHostsHandler) Down() (string, error) {
 	// Validate hostname
@@ -71,18 +87,13 @@ func (h *KnownHostsHandler) Down() (string, error) {
 		return "", err
 	}
 
-	// Remove the host entry using sed
-	// sed removes lines that start with the host (including variations of IP addresses)
-	removeHostCmd := fmt.Sprintf(`sed -i.bak '/^%s[, ]/d' ~/.ssh/known_hosts 2>/dev/null || true &&  rm -f ~/.ssh/known_hosts.bak 2>/dev/null || true`, escapeForSed(h.Rule.KnownHosts))
-
-	cmd := exec.Command("sh", "-c", removeHostCmd)
-
-	// TODO: check if known_hosts is empty and remove it
-	if _, err := cmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not remove %s from known_hosts\n", h.Rule.KnownHosts)
-	}
-
-	return fmt.Sprintf("Removed %s from known_hosts", h.Rule.KnownHosts), nil
+	return h.DownWithRunner(func(cmd string) error {
+		out, err := exec.Command("sh", "-c", cmd).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("%w: %s", err, out)
+		}
+		return nil
+	})
 }
 
 func sshDir(create bool) (string, error) {

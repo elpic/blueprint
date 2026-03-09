@@ -29,25 +29,18 @@ func IsGitURL(input string) bool {
 	// Remove branch/path specifiers to check base URL
 	// Format: url[@branch][:path]
 
-	// Split by @ first (branch specifier)
+	// SSH URLs: git@host:user/repo[@branch][:path]
+	if strings.HasPrefix(input, "git@") {
+		return true
+	}
+
+	// Strip trailing @branch specifier for HTTPS/git:// URLs.
 	beforeBranch := strings.Split(input, "@")[0]
 
-	// For SSH URLs (git@...), check for : that's not part of protocol
-	if strings.HasPrefix(beforeBranch, "git@") {
-		return true
-	}
-
-	// For HTTP(S) and git:// URLs, we need to be more careful with colons
-	if strings.HasPrefix(beforeBranch, "https://") || strings.HasPrefix(beforeBranch, "http://") {
-		return true
-	}
-
-	if strings.HasPrefix(beforeBranch, "git://") {
-		return true
-	}
-
-	// Check if ends with .git (even with branch/path)
-	if strings.Contains(input, ".git") {
+	// HTTP(S) and git:// protocol URLs are always remote git URLs.
+	if strings.HasPrefix(beforeBranch, "https://") ||
+		strings.HasPrefix(beforeBranch, "http://") ||
+		strings.HasPrefix(beforeBranch, "git://") {
 		return true
 	}
 

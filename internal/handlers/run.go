@@ -256,6 +256,11 @@ func NewRunShHandler(rule parser.Rule, basePath string) *RunShHandler {
 }
 
 // Up downloads the script and executes it, optionally skipping if the unless check passes
+// httpClient returns the HTTP client used for downloading scripts.
+func (h *RunShHandler) httpClient() *http.Client {
+	return &http.Client{Timeout: 30 * time.Second}
+}
+
 func (h *RunShHandler) Up() (string, error) {
 	if h.Rule.RunUnless != "" {
 		cmd := exec.Command("sh", "-c", h.Rule.RunUnless) // #nosec G204 -- user-supplied unless check from blueprint
