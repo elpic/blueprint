@@ -164,6 +164,11 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 			// Get the actual command from the handler
 			actualCmd = handler.GetCommand()
 
+			// Give record-aware handlers access to records accumulated so far
+			if ra, ok := handler.(handlerskg.RecordAware); ok {
+				ra.SetCurrentRecords(toHandlerRecords(records))
+			}
+
 			// Execute handler
 			if isUninstall {
 				output, err = handler.Down()
@@ -213,6 +218,22 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 	}
 
 	return records
+}
+
+func toHandlerRecords(records []ExecutionRecord) []handlerskg.ExecutionRecord {
+	out := make([]handlerskg.ExecutionRecord, len(records))
+	for i, r := range records {
+		out[i] = handlerskg.ExecutionRecord{
+			Timestamp: r.Timestamp,
+			Blueprint: r.Blueprint,
+			OS:        r.OS,
+			Command:   r.Command,
+			Output:    r.Output,
+			Status:    r.Status,
+			Error:     r.Error,
+		}
+	}
+	return out
 }
 
 func shellEscape(s string) string {

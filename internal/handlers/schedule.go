@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,6 +16,14 @@ import (
 // ScheduleHandler installs/removes a crontab entry that runs blueprint apply on a schedule.
 type ScheduleHandler struct {
 	BaseHandler
+	currentRecords []ExecutionRecord
+}
+
+// SetCurrentRecords provides the handler with the execution records accumulated
+// so far in the current run. The engine calls this before Up() so that the
+// handler can check whether a sudoers rule already ran successfully in this run.
+func (h *ScheduleHandler) SetCurrentRecords(records []ExecutionRecord) {
+	h.currentRecords = records
 }
 
 // NewScheduleHandler creates a new schedule handler
@@ -61,7 +70,7 @@ func scheduleLogPath() string {
 // cronLine returns the full crontab line for this rule
 func (h *ScheduleHandler) cronLine() string {
 	log := scheduleLogPath()
-	return fmt.Sprintf("%s %s apply %s --skip-decrypt >> %s 2>&1", h.cronExpression(), blueprintBinary(), h.Rule.ScheduleSource, log)
+	return fmt.Sprintf(`%s %s apply "%s" --skip-decrypt >> %s 2>&1`, h.cronExpression(), blueprintBinary(), h.Rule.ScheduleSource, log)
 }
 
 // isUserInPasswordlessSudoers returns true if the current user can sudo without a password
@@ -94,13 +103,26 @@ func writeCrontab(content string) error {
 	return nil
 }
 
-// Up adds the crontab entry for this schedule rule
-func (h *ScheduleHandler) Up() (string, error) {
-	if !isUserInPasswordlessSudoers() {
-		return "", fmt.Errorf("user must have passwordless sudo before scheduling; add a sudoers rule first")
+// sudoersRanSuccessfully returns true if a sudoers rule succeeded in the
+// provided current-run execution records.
+func sudoersRanSuccessfully(records []ExecutionRecord) bool {
+	sudoersCmd := NewSudoersHandler(parser.Rule{Action: "sudoers"}, "").GetCommand()
+	for _, r := range records {
+		if r.Status == "success" && r.Command == sudoersCmd {
+			return true
+		}
+	}
+	return false
+}
+
+// UpWithStatus adds the crontab entry using the provided status, current-run
+// execution records, and injectable crontab functions. This is the testable core of Up().
+func (h *ScheduleHandler) UpWithStatus(status *Status, records []ExecutionRecord, readCron func() (string, error), writeCron func(string) error) (string, error) {
+	if len(status.Sudoers) == 0 && !sudoersRanSuccessfully(records) {
+		return "", fmt.Errorf("user must have a sudoers entry before scheduling; add a sudoers rule first")
 	}
 
-	current, err := readCrontab()
+	current, err := readCron()
 	if err != nil {
 		return "", fmt.Errorf("failed to read crontab: %w", err)
 	}
@@ -110,23 +132,45 @@ func (h *ScheduleHandler) Up() (string, error) {
 		return fmt.Sprintf("already scheduled: %s", line), nil
 	}
 
-	// Append line (ensure trailing newline before appending)
 	newContent := current
 	if newContent != "" && !strings.HasSuffix(newContent, "\n") {
 		newContent += "\n"
 	}
 	newContent += line + "\n"
 
-	if err := writeCrontab(newContent); err != nil {
+	if err := writeCron(newContent); err != nil {
 		return "", err
 	}
 
 	return fmt.Sprintf("Scheduled: %s", line), nil
 }
 
-// Down removes the crontab entry for this schedule rule
-func (h *ScheduleHandler) Down() (string, error) {
-	current, err := readCrontab()
+// loadStatus reads the current blueprint status from ~/.blueprint/status.json.
+// Returns an empty Status if the file does not exist or cannot be parsed.
+func loadStatus() *Status {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return &Status{}
+	}
+	data, err := os.ReadFile(filepath.Join(homeDir, ".blueprint", "status.json"))
+	if err != nil {
+		return &Status{}
+	}
+	var s Status
+	if err := json.Unmarshal(data, &s); err != nil {
+		return &Status{}
+	}
+	return &s
+}
+
+// Up adds the crontab entry for this schedule rule
+func (h *ScheduleHandler) Up() (string, error) {
+	return h.UpWithStatus(loadStatus(), h.currentRecords, readCrontab, writeCrontab)
+}
+
+// DownWithCrontab removes the crontab entry using injectable crontab functions.
+func (h *ScheduleHandler) DownWithCrontab(readCron func() (string, error), writeCron func(string) error) (string, error) {
+	current, err := readCron()
 	if err != nil {
 		return "", fmt.Errorf("failed to read crontab: %w", err)
 	}
@@ -142,17 +186,21 @@ func (h *ScheduleHandler) Down() (string, error) {
 			kept = append(kept, l)
 		}
 	}
-	// Trim trailing empty lines but keep a single trailing newline
 	newContent := strings.TrimRight(strings.Join(kept, "\n"), "\n")
 	if newContent != "" {
 		newContent += "\n"
 	}
 
-	if err := writeCrontab(newContent); err != nil {
+	if err := writeCron(newContent); err != nil {
 		return "", err
 	}
 
 	return fmt.Sprintf("Removed schedule: %s", line), nil
+}
+
+// Down removes the crontab entry for this schedule rule
+func (h *ScheduleHandler) Down() (string, error) {
+	return h.DownWithCrontab(readCrontab, writeCrontab)
 }
 
 // GetCommand returns a string representing the install operation (used for record matching)

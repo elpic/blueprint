@@ -199,6 +199,12 @@ type Handler interface {
 	DisplayInfo()
 }
 
+// RecordAware is an optional interface that handlers can implement to receive
+// the execution records accumulated so far in the current run before Up() is called.
+type RecordAware interface {
+	SetCurrentRecords(records []ExecutionRecord)
+}
+
 // SudoAwareHandler is an optional interface that handlers can implement
 // to specify their own sudo requirements. If a handler implements this,
 // the engine will use this method instead of the global needsSudo function.
