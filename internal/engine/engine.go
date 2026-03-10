@@ -7,6 +7,7 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 type ExecutionRecord struct {
@@ -19,8 +20,37 @@ type ExecutionRecord struct {
 	Error     string `json:"error,omitempty"`
 }
 
+// passwordStore is a mutex-protected map of password-id → password.
+type passwordStore struct {
+	mu sync.RWMutex
+	m  map[string]string
+}
+
+func (p *passwordStore) get(key string) (string, bool) {
+	p.mu.RLock()
+	v, ok := p.m[key]
+	p.mu.RUnlock()
+	return v, ok
+}
+
+func (p *passwordStore) set(key, value string) {
+	p.mu.Lock()
+	p.m[key] = value
+	p.mu.Unlock()
+}
+
+func (p *passwordStore) snapshot() map[string]string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := make(map[string]string, len(p.m))
+	for k, v := range p.m {
+		out[k] = v
+	}
+	return out
+}
+
 // passwordCache stores decryption passwords by password-id to avoid re-prompting
-var passwordCache = make(map[string]string)
+var passwordCache = &passwordStore{m: make(map[string]string)}
 
 func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID string, skipDecrypt bool) {
 	var setupPath string

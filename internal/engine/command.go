@@ -58,13 +58,9 @@ func executeCommand(cmdStr string) (string, error) {
 		if exec.Command("sudo", "-n", "true").Run() == nil {
 			// User has passwordless sudo, use -n flag
 			cmdStr = "sudo -n " + cmdStr
-		} else if sudoPassword, ok := passwordCache["sudo"]; ok {
+		} else if sudoPassword, ok := passwordCache.get("sudo"); ok {
 			// Use cached sudo password if available
-			// Use echo to pipe password to sudo with -S flag
-			// This avoids interactive password prompts during execution
-			cmd := exec.Command("sh", "-c", fmt.Sprintf("echo %s | sudo -S %s", shellEscape(sudoPassword), cmdStr))
-			output, err := cmd.CombinedOutput()
-			return string(output), err
+			return sudoRunWithPassword(sudoPassword, cmdStr)
 		} else {
 			// Fallback to regular sudo if no password cached
 			cmdStr = "sudo " + cmdStr
@@ -133,7 +129,7 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 		var actualCmd string
 
 		// Create handler for this rule
-		handler = handlerskg.NewHandler(rule, basePath, passwordCache)
+		handler = handlerskg.NewHandler(rule, basePath, passwordCache.snapshot())
 
 		// Update process state for current rule
 		psState.CurrentRule = i + 1

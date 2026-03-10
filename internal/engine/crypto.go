@@ -89,7 +89,7 @@ func promptForDecryptPasswords(rules []parser.Rule) error {
 			return fmt.Errorf("failed to read password for %s: %w", passwordID, err)
 		}
 		// Cache the password
-		passwordCache[passwordID] = password
+		passwordCache.set(passwordID, password)
 	}
 
 	return nil
@@ -106,7 +106,6 @@ func readPassword() (string, error) {
 	fmt.Println() // Print newline after password prompt
 	return string(bytePassword), nil
 }
-
 
 func promptForSudoPasswordWithOS(rules []parser.Rule, currentOS string) error {
 	// Check if we're on Linux and not root
@@ -151,7 +150,7 @@ func promptForSudoPasswordWithOS(rules []parser.Rule, currentOS string) error {
 			return fmt.Errorf("failed to read sudo password: %w", err)
 		}
 		// Cache the sudo password
-		passwordCache["sudo"] = password
+		passwordCache.set("sudo", password)
 	}
 
 	return nil
