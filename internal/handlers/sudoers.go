@@ -63,6 +63,20 @@ func (h *SudoersHandler) NeedsSudo() bool {
 	return true
 }
 
+// sudoersTempDir returns the directory used for sudoers temp files.
+// Overridable for testing.
+var sudoersTempDir = func() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("could not determine home directory: %w", err)
+	}
+	dir := filepath.Join(home, ".blueprint")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", fmt.Errorf("could not create ~/.blueprint: %w", err)
+	}
+	return dir, nil
+}
+
 // Up writes the sudoers drop-in file for the resolved user
 func (h *SudoersHandler) Up() (string, error) {
 	user, err := h.resolveUser()
@@ -73,8 +87,13 @@ func (h *SudoersHandler) Up() (string, error) {
 	filePath := sudoersFilePath(user)
 	entry := sudoersEntry(user)
 
-	// Write to a temp file first, then validate with visudo -c, then move into place
-	tmpFile, err := os.CreateTemp("", "blueprint-sudoers-*")
+	// Write to a temp file in ~/.blueprint/ (mode 0700) to avoid TOCTOU races
+	// in world-writable /tmp.
+	tmpDir, err := sudoersTempDir()
+	if err != nil {
+		return "", err
+	}
+	tmpFile, err := os.CreateTemp(tmpDir, "blueprint-sudoers-*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
