@@ -291,10 +291,6 @@ func (h *BaseHandler) GetFallbackDependencyKey() string {
 	return h.Rule.Action
 }
 
-// HandlerFactory creates a handler for a given rule
-// passwordCache is optional and only used by DecryptHandler
-type HandlerFactory func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler
-
 // DetectRuleType determines the actual rule type based on the rule's content
 // This is used for "uninstall" actions where the original action is lost
 func DetectRuleType(rule parser.Rule) string {
@@ -398,66 +394,6 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 	default:
 		return nil
 	}
-}
-
-// GetHandlerFactory returns a handler factory function for the given action
-// If no factory is found for the action, returns nil
-func GetHandlerFactory(action string) HandlerFactory {
-	factories := map[string]HandlerFactory{
-		"install": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewInstallHandler(rule, basePath)
-		},
-		"uninstall": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewInstallHandler(rule, basePath)
-		},
-		"clone": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewCloneHandler(rule, basePath)
-		},
-		"decrypt": func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
-			return NewDecryptHandler(rule, basePath, passwordCache)
-		},
-		"mkdir": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewMkdirHandler(rule, basePath)
-		},
-		"asdf": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewAsdfHandler(rule, basePath)
-		},
-		"mise": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewMiseHandler(rule, basePath)
-		},
-		"homebrew": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewHomebrewHandler(rule, basePath)
-		},
-		"ollama": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewOllamaHandler(rule, basePath)
-		},
-		"known_hosts": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewKnownHostsHandler(rule, basePath)
-		},
-		"gpg-key": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewGPGKeyHandler(rule, basePath)
-		},
-		"download": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewDownloadHandler(rule, basePath)
-		},
-		"run": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewRunHandler(rule, basePath)
-		},
-		"run-sh": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewRunShHandler(rule, basePath)
-		},
-		"dotfiles": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewDotfilesHandler(rule, basePath)
-		},
-		"sudoers": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewSudoersHandler(rule, basePath)
-		},
-		"schedule": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewScheduleHandler(rule, basePath)
-		},
-	}
-
-	return factories[action]
 }
 
 // GetStatusProviderHandlers returns all handler instances that implement StatusProvider
