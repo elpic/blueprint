@@ -49,7 +49,22 @@ func parseFields(body string) lineFields {
 		body = ""
 	}
 	if onRaw != "" {
-		onValue := strings.Trim(onRaw, "[]")
+		// onRaw may be "[linux, mac]" or "[linux, mac] id: foo" (when on: is not at the end).
+		// Extract only the bracket contents; put any trailing tokens back into body.
+		onValue := onRaw
+		if strings.HasPrefix(onRaw, "[") {
+			if end := strings.Index(onRaw, "]"); end >= 0 {
+				onValue = onRaw[1:end]
+				trailing := strings.TrimSpace(onRaw[end+1:])
+				if trailing != "" {
+					body = strings.TrimSpace(body + " " + trailing)
+				}
+			} else {
+				onValue = strings.Trim(onRaw, "[]")
+			}
+		} else {
+			onValue = strings.Trim(onRaw, "[]")
+		}
 		for _, part := range strings.Split(onValue, ",") {
 			if s := strings.TrimSpace(part); s != "" {
 				f.osFilter = append(f.osFilter, s)
