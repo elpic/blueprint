@@ -284,6 +284,58 @@ func getDependencyKey(rule parser.Rule, fallbackKey string) string {
 	return fallbackKey
 }
 
+// RuleKey returns the dependency key for a rule without allocating a handler.
+// This mirrors the GetDependencyKey logic of each handler type.
+func RuleKey(rule parser.Rule) string {
+	if rule.ID != "" {
+		return rule.ID
+	}
+	switch rule.Action {
+	case "install", "uninstall":
+		if len(rule.Packages) > 0 {
+			return rule.Packages[0].Name
+		}
+		return "install"
+	case "clone":
+		return rule.ClonePath
+	case "decrypt":
+		return rule.DecryptPath
+	case "download":
+		return rule.DownloadPath
+	case "known_hosts":
+		return rule.KnownHosts
+	case "mkdir":
+		return rule.Mkdir
+	case "run":
+		return rule.RunCommand
+	case "run-sh":
+		return rule.RunShURL
+	case "gpg_key":
+		return rule.GPGKeyring
+	case "homebrew":
+		if len(rule.HomebrewPackages) > 0 {
+			return rule.HomebrewPackages[0]
+		}
+		return "homebrew"
+	case "asdf":
+		return "asdf"
+	case "mise":
+		return "mise"
+	case "ollama":
+		if len(rule.OllamaModels) > 0 {
+			return rule.OllamaModels[0]
+		}
+		return "ollama"
+	case "schedule":
+		if rule.ScheduleSource != "" {
+			return "schedule-" + rule.ScheduleSource
+		}
+		return "schedule"
+	default:
+		return rule.Action
+	}
+}
+
 // GetFallbackDependencyKey returns the handler-specific fallback key when rule.ID is not present.
 // Handlers can override this method to provide their own key logic.
 // Default implementation returns the action name as fallback.
