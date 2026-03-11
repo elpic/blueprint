@@ -435,9 +435,9 @@ func commandSuccessfullyExecuted(cmd string, records []ExecutionRecord) (*Execut
 	var resultRecord *ExecutionRecord
 	commandExecuted := false
 
-	for _, record := range records {
-		if record.Status == "success" && record.Command == cmd {
-			resultRecord = &record
+	for i := range records {
+		if records[i].Status == "success" && records[i].Command == cmd {
+			resultRecord = &records[i]
 			commandExecuted = true
 			break
 		}
