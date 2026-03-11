@@ -243,6 +243,68 @@ func TestParseFieldsErrorMessages(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Edge cases from code review #21
+// ---------------------------------------------------------------------------
+
+func TestParseFieldsKeywordAtEndWithEmptyValue(t *testing.T) {
+	// "id:" at the very end of the line — must not panic; value is empty
+	f := parseFields("install curl id:")
+	if got := f.word("id:"); got != "" {
+		t.Errorf("word(id:) = %q, want empty string for trailing keyword", got)
+	}
+	// "install" and "curl" are both positional tokens
+	if len(f.tokens) != 2 || f.tokens[0] != "install" || f.tokens[1] != "curl" {
+		t.Errorf("positional tokens = %v, want [install curl]", f.tokens)
+	}
+}
+
+func TestParseFieldsCronUnquoted(t *testing.T) {
+	// cron: without quotes — value consumed until next keyword
+	f := parseFields(`cron: 0 * * * * id: my-schedule`)
+	if got := f.kv["cron:"]; got != "0 * * * *" {
+		t.Errorf("cron: = %q, want %q", got, "0 * * * *")
+	}
+	if got := f.word("id:"); got != "my-schedule" {
+		t.Errorf("id: = %q, want my-schedule", got)
+	}
+}
+
+func TestParseFieldsURLWithPortColon(t *testing.T) {
+	// A URL containing a port number must not be misinterpreted as a keyword
+	f := parseFields("https://example.com:8443/apt id: my-repo")
+	if len(f.tokens) == 0 || f.tokens[0] != "https://example.com:8443/apt" {
+		t.Errorf("URL not preserved as positional token: %v", f.tokens)
+	}
+	if got := f.word("id:"); got != "my-repo" {
+		t.Errorf("id: = %q, want my-repo", got)
+	}
+}
+
+func TestParseFieldsSkipWithoutBracketsNoSideEffect(t *testing.T) {
+	// skip: not followed by "[" — must not panic or swallow following tokens
+	f := parseFields("dotfiles id: my-dots skip: .gitconfig")
+	// id: must still be extracted; skip: without brackets leaves the value unextracted
+	if got := f.word("id:"); got != "my-dots" {
+		t.Errorf("id: = %q, want my-dots when skip: has no brackets", got)
+	}
+}
+
+func TestParseFieldsOnNotAtEnd(t *testing.T) {
+	// on: appearing before other keywords must still be extracted
+	f := parseFields("curl on: [mac, linux] id: install-curl")
+	wantOS := []string{"mac", "linux"}
+	if !reflect.DeepEqual(f.osFilter, wantOS) {
+		t.Errorf("osFilter = %v, want %v", f.osFilter, wantOS)
+	}
+	if got := f.word("id:"); got != "install-curl" {
+		t.Errorf("id: = %q, want install-curl", got)
+	}
+	if len(f.tokens) == 0 || f.tokens[0] != "curl" {
+		t.Errorf("positional tokens = %v, want [curl]", f.tokens)
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStr(s, substr))
 }
