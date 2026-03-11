@@ -142,4 +142,3 @@ func TestGPGKeyAutoUninstallDetection(t *testing.T) {
 		t.Error("docker should not be in current rules")
 	}
 }
-
