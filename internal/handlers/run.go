@@ -277,7 +277,7 @@ func (h *RunShHandler) Up() (string, error) {
 	tmpPath := tmpFile.Name()
 	defer func() { _ = os.Remove(tmpPath) }()
 
-	resp, err := http.Get(h.Rule.RunShURL) // #nosec G107 -- URL is user-supplied via blueprint file
+	resp, err := h.httpClient().Get(h.Rule.RunShURL) // #nosec G107 -- URL is user-supplied via blueprint file
 	if err != nil {
 		_ = tmpFile.Close()
 		return "", fmt.Errorf("failed to download script %s: %w", h.Rule.RunShURL, err)
