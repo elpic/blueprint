@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/user"
 	"path/filepath"
 	"strings"
 	"time"
@@ -36,7 +35,7 @@ func (h *DownloadHandler) httpClient() *http.Client {
 }
 
 func (h *DownloadHandler) Up() (string, error) {
-	destPath := downloadExpandPath(h.Rule.DownloadPath)
+	destPath := expandPath(h.Rule.DownloadPath)
 
 	// If overwrite is false and file already exists, skip
 	if !h.Rule.DownloadOverwrite {
@@ -101,7 +100,7 @@ func (h *DownloadHandler) Up() (string, error) {
 
 // Down removes the downloaded file
 func (h *DownloadHandler) Down() (string, error) {
-	destPath := downloadExpandPath(h.Rule.DownloadPath)
+	destPath := expandPath(h.Rule.DownloadPath)
 
 	if _, err := os.Stat(destPath); os.IsNotExist(err) {
 		return fmt.Sprintf("File %s does not exist", destPath), nil
@@ -144,7 +143,7 @@ func (h *DownloadHandler) UpdateStatus(status *Status, records []ExecutionRecord
 
 		// Also check if the file was skipped (already exists) — treat as success
 		if !downloadExecuted {
-			skippedCmd := fmt.Sprintf("already exists, skipping: %s", downloadExpandPath(h.Rule.DownloadPath))
+			skippedCmd := fmt.Sprintf("already exists, skipping: %s", expandPath(h.Rule.DownloadPath))
 			for _, record := range records {
 				if record.Status == "success" && strings.Contains(record.Output, skippedCmd) {
 					downloadExecuted = true
@@ -164,7 +163,7 @@ func (h *DownloadHandler) UpdateStatus(status *Status, records []ExecutionRecord
 			})
 		}
 	} else if h.Rule.Action == "uninstall" && DetectRuleType(h.Rule) == "download" {
-		expandedPath := downloadExpandPath(h.Rule.DownloadPath)
+		expandedPath := expandPath(h.Rule.DownloadPath)
 		if _, err := os.Stat(expandedPath); os.IsNotExist(err) {
 			status.Downloads = removeDownloadStatus(status.Downloads, h.Rule.DownloadPath, blueprint, osName)
 		}
@@ -259,16 +258,4 @@ func (h *DownloadHandler) DisplayStatusFromStatus(status *Status) {
 			ui.FormatDim(abbreviateBlueprintPath(dl.Blueprint)),
 		)
 	}
-}
-
-// downloadExpandPath expands ~ to home directory
-func downloadExpandPath(path string) string {
-	if strings.HasPrefix(path, "~") {
-		usr, err := user.Current()
-		if err != nil {
-			return path
-		}
-		return filepath.Join(usr.HomeDir, path[1:])
-	}
-	return path
 }
