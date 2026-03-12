@@ -17,6 +17,7 @@ import (
 // GPGKeyHandler handles GPG key addition and repository management
 type GPGKeyHandler struct {
 	BaseHandler
+	sudoPassword string
 }
 
 // NewGPGKeyHandler creates a new GPG key handler
@@ -27,6 +28,29 @@ func NewGPGKeyHandler(rule parser.Rule, basePath string) *GPGKeyHandler {
 			BasePath: basePath,
 		},
 	}
+}
+
+// NewGPGKeyHandlerWithPassword creates a new GPG key handler with a cached sudo password.
+func NewGPGKeyHandlerWithPassword(rule parser.Rule, basePath, sudoPassword string) *GPGKeyHandler {
+	return &GPGKeyHandler{
+		BaseHandler: BaseHandler{
+			Rule:     rule,
+			BasePath: basePath,
+		},
+		sudoPassword: sudoPassword,
+	}
+}
+
+// sudoCommand returns a sudo command that injects the cached password via stdin
+// when available, falling back to plain sudo otherwise.
+func (h *GPGKeyHandler) sudoCommand(args ...string) *exec.Cmd {
+	if h.sudoPassword != "" {
+		allArgs := append([]string{"-S"}, args...)
+		cmd := exec.Command("sudo", allArgs...) // #nosec G204
+		cmd.Stdin = strings.NewReader(h.sudoPassword + "\n")
+		return cmd
+	}
+	return exec.Command("sudo", args...) // #nosec G204
 }
 
 // buildUpCommand returns the components needed to install the GPG key.
@@ -64,26 +88,34 @@ func (h *GPGKeyHandler) Up() (string, error) {
 	}
 
 	// Copy sources list and update apt using discrete exec.Command calls.
-	cpOut, err := exec.Command("sudo", "cp", tmpFile, sourcesListPath).CombinedOutput() // #nosec G204 -- args passed discretely
+	cpOut, err := h.sudoCommand("cp", tmpFile, sourcesListPath).CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("failed to copy sources list: %w\n%s", err, cpOut)
 	}
-	_, _ = exec.Command("sudo", "apt", "update").CombinedOutput() // #nosec G204 -- no user data in args
+	_, _ = h.sudoCommand("apt", "update").CombinedOutput()
 
 	return fmt.Sprintf("Added GPG key %s and repository %s", keyring, debURL), nil
 }
 
 // downloadAndDearmor downloads a GPG key from url and writes the dearmored binary
 // to destPath using discrete exec.Command invocations (no shell string interpolation).
-var downloadAndDearmor = func(url, destPath string) error {
+// sudoPassword, if non-empty, is fed to sudo via stdin to avoid interactive prompts.
+var downloadAndDearmor = func(url, destPath, sudoPassword string) error {
 	// curl -fsSL <url>
 	curl := exec.Command("curl", "-fsSL", url) // #nosec G204 -- URL is user-supplied; passed as argument, not shell string
 	pr, pw := io.Pipe()
 	curl.Stdout = pw
 
-	// sudo gpg --yes --dearmor -o <destPath>
-	gpg := exec.Command("sudo", "gpg", "--yes", "--dearmor", "-o", destPath) // #nosec G204 -- destPath is derived from user keyring name; passed as argument
-	gpg.Stdin = pr
+	// sudo [-S] gpg --yes --dearmor -o <destPath>
+	var gpg *exec.Cmd
+	if sudoPassword != "" {
+		gpg = exec.Command("sudo", "-S", "gpg", "--yes", "--dearmor", "-o", destPath) // #nosec G204
+		// Prepend password line followed by the pipe data
+		gpg.Stdin = io.MultiReader(strings.NewReader(sudoPassword+"\n"), pr)
+	} else {
+		gpg = exec.Command("sudo", "gpg", "--yes", "--dearmor", "-o", destPath) // #nosec G204 -- destPath is derived from user keyring name; passed as argument
+		gpg.Stdin = pr
+	}
 
 	if err := curl.Start(); err != nil {
 		return fmt.Errorf("curl start: %w", err)
@@ -107,7 +139,7 @@ var downloadAndDearmor = func(url, destPath string) error {
 }
 
 func (h *GPGKeyHandler) downloadAndDearmor(url, destPath string) error {
-	return downloadAndDearmor(url, destPath)
+	return downloadAndDearmor(url, destPath, h.sudoPassword)
 }
 
 // Down removes the GPG key and repository
@@ -118,9 +150,9 @@ func (h *GPGKeyHandler) Down() (string, error) {
 	sourcesListPath := fmt.Sprintf("/etc/apt/sources.list.d/%s.list", keyring)
 
 	// Use discrete exec.Command calls — never interpolate user-controlled keyring into a shell string.
-	_, _ = exec.Command("sudo", "rm", "-f", sourcesListPath).CombinedOutput() // #nosec G204 -- args passed discretely
-	_, _ = exec.Command("sudo", "rm", "-f", keyringPath).CombinedOutput()     // #nosec G204 -- args passed discretely
-	_, _ = exec.Command("sudo", "apt", "update").CombinedOutput()             // #nosec G204 -- no user data in args
+	_, _ = h.sudoCommand("rm", "-f", sourcesListPath).CombinedOutput()
+	_, _ = h.sudoCommand("rm", "-f", keyringPath).CombinedOutput()
+	_, _ = h.sudoCommand("apt", "update").CombinedOutput()
 
 	return fmt.Sprintf("Removed GPG key %s and repository", keyring), nil
 }

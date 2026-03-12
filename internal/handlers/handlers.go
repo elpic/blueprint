@@ -430,7 +430,7 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 	case "known_hosts":
 		return NewKnownHostsHandler(rule, basePath)
 	case "gpg-key":
-		return NewGPGKeyHandler(rule, basePath)
+		return NewGPGKeyHandlerWithPassword(rule, basePath, passwordCache["sudo"])
 	case "download":
 		return NewDownloadHandler(rule, basePath)
 	case "run":
