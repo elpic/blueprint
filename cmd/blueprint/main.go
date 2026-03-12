@@ -103,7 +103,7 @@ func main() {
 	default:
 		// Short mode: treat as file path only if it looks like a path (not a known command typo).
 		if !isKnownCommand(mode) {
-			if _, err := os.Stat(mode); err == nil {
+			if _, err := os.Stat(mode); err == nil { // #nosec G703 -- user-supplied file path is intentional
 				engine.Run(mode, false)
 				return
 			}
