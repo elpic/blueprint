@@ -241,13 +241,6 @@ func toHandlerRecords(records []ExecutionRecord) []handlerskg.ExecutionRecord {
 	return out
 }
 
-func shellEscape(s string) string {
-	// Use single quotes to prevent shell interpretation
-	// Replace single quotes with '\'' (end quote, escaped quote, start quote)
-	escaped := strings.ReplaceAll(s, "'", "'\\''")
-	return fmt.Sprintf("'%s'", escaped)
-}
-
 // clearSudoCache clears the sudo password cache on all operating systems
 // On Linux: runs 'sudo -K' to invalidate the sudo timestamp
 // On macOS: runs 'sudo -K' to invalidate the sudo timestamp

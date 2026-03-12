@@ -25,5 +25,5 @@ func TestSudoPasswordNotExposedInCommandLine(t *testing.T) {
 		return "ok", nil
 	}
 
-	sudoRunWithPassword(sensitivePassword, "sudo ls /root")
+	_, _ = sudoRunWithPassword(sensitivePassword, "sudo ls /root")
 }

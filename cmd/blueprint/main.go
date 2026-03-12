@@ -101,12 +101,14 @@ func main() {
 	case "ps":
 		engine.PrintPS()
 	default:
-		// Short mode: treat as file path only if it exists on disk.
-		if _, err := os.Stat(mode); err == nil {
-			engine.Run(mode, false)
-		} else {
-			fmt.Fprintln(os.Stderr, unknownCommandMessage(mode))
-			os.Exit(1)
+		// Short mode: treat as file path only if it looks like a path (not a known command typo).
+		if !isKnownCommand(mode) {
+			if _, err := os.Stat(mode); err == nil {
+				engine.Run(mode, false)
+				return
+			}
 		}
+		fmt.Fprintln(os.Stderr, unknownCommandMessage(mode))
+		os.Exit(1)
 	}
 }

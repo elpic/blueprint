@@ -73,12 +73,6 @@ func (h *ScheduleHandler) cronLine() string {
 	return fmt.Sprintf(`%s %s apply "%s" --skip-decrypt >> %s 2>&1`, h.cronExpression(), blueprintBinary(), h.Rule.ScheduleSource, log)
 }
 
-// isUserInPasswordlessSudoers returns true if the current user can sudo without a password
-func isUserInPasswordlessSudoers() bool {
-	cmd := exec.Command("sudo", "-n", "true")
-	return cmd.Run() == nil
-}
-
 // readCrontab reads the current user's crontab, returning empty string if none exists
 func readCrontab() (string, error) {
 	out, err := exec.Command("crontab", "-l").Output()
