@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
@@ -308,6 +309,43 @@ func gitSHA(path string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// remoteRef returns the SHA for the given ref on the remote using go-git (no git binary required).
+// Returns empty string if the check fails (network unavailable, auth issue, etc.) —
+// callers should fall back to a full fetch in that case.
+func remoteRef(url, ref string) string {
+	remote := git.NewRemote(nil, &config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{url},
+	})
+	refs, err := remote.List(&git.ListOptions{})
+	if err != nil {
+		return ""
+	}
+	// Build a map of ref name → SHA for easy lookup
+	refMap := make(map[string]string, len(refs))
+	for _, r := range refs {
+		if !r.Hash().IsZero() {
+			refMap[r.Name().String()] = r.Hash().String()
+		}
+	}
+
+	// Direct match (e.g. refs/heads/main)
+	if sha, ok := refMap[ref]; ok {
+		return sha
+	}
+
+	// For "HEAD", resolve through the symbolic ref target
+	if ref == "HEAD" {
+		for _, r := range refs {
+			if r.Name().String() == "HEAD" && r.Type() == plumbing.SymbolicReference {
+				return refMap[r.Target().String()]
+			}
+		}
+	}
+
+	return ""
+}
+
 // CloneOrUpdateRepository clones a repository to a specific path or updates it if already exists.
 // Uses the system git binary so that ~/.ssh/config, SSH agent, and host key verification work
 // exactly as they do when running git manually.
@@ -333,6 +371,18 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 
 	if pathExists {
 		oldSHA := gitSHA(path)
+
+		// Check remote HEAD without fetching to avoid unnecessary network traffic
+		ref := "HEAD"
+		if branch != "" {
+			ref = "refs/heads/" + branch
+		}
+		remoteSHA := remoteRef(url, ref)
+
+		// If local HEAD already matches remote, skip fetch entirely
+		if remoteSHA != "" && oldSHA == remoteSHA {
+			return oldSHA, oldSHA, "Already up to date", nil
+		}
 
 		// Fetch and reset to origin HEAD
 		var stderr bytes.Buffer
