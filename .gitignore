@@ -3,6 +3,9 @@ blueprint
 blueprint-*
 *.exe
 
+# Claude Code
+.claude/settings.local.json
+
 # IDE and Editor files
 .vscode/
 .idea/

@@ -2,14 +2,11 @@ package handlers
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/elpic/blueprint/internal"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
 )
@@ -53,147 +50,181 @@ func (h *GPGKeyHandler) sudoCommand(args ...string) *exec.Cmd {
 	return exec.Command("sudo", args...) // #nosec G204
 }
 
-// buildUpCommand returns the components needed to install the GPG key.
-// Exposed for testing — callers should not embed these in shell strings.
-func (h *GPGKeyHandler) buildUpCommand() (gpgKeyURL, keyringPath, tmpFile, sourcesListPath string) {
-	keyring := h.Rule.GPGKeyring
-	gpgKeyURL = h.Rule.GPGKeyURL
-	keyringPath = fmt.Sprintf("/usr/share/keyrings/%s.gpg", keyring)
-	tmpFile = filepath.Join(os.TempDir(), fmt.Sprintf("sources-%s.list", keyring))
-	sourcesListPath = fmt.Sprintf("/etc/apt/sources.list.d/%s.list", keyring)
-	return
+// keyringPath returns the path where the ASCII-armored key is stored.
+// Uses /etc/apt/keyrings/ (modern admin-managed location, apt 2.4+).
+func (h *GPGKeyHandler) keyringPath() string {
+	return fmt.Sprintf("/etc/apt/keyrings/%s.asc", h.Rule.GPGKeyring)
 }
 
-// Up adds the GPG key and repository
-func (h *GPGKeyHandler) Up() (string, error) {
-	keyring := h.Rule.GPGKeyring
-	gpgKeyURL := h.Rule.GPGKeyURL
-	debURL := h.Rule.GPGDebURL
+// sourcesListPath returns the apt sources list path for this rule.
+func (h *GPGKeyHandler) sourcesListPath() string {
+	return fmt.Sprintf("/etc/apt/sources.list.d/%s.list", h.Rule.GPGKeyring)
+}
 
-	keyringPath := fmt.Sprintf("/usr/share/keyrings/%s.gpg", keyring)
-	sourcesListPath := fmt.Sprintf("/etc/apt/sources.list.d/%s.list", keyring)
+// isKeyringInstalled returns true if the keyring file already exists on disk.
+func isKeyringInstalled(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// isRepoConfigured returns true if the repo URL is already present in any
+// file under /etc/apt/sources.list.d/.
+func isRepoConfigured(repoURL string) bool {
+	entries, err := os.ReadDir("/etc/apt/sources.list.d/")
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		data, err := os.ReadFile("/etc/apt/sources.list.d/" + e.Name()) // #nosec G304
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(data), repoURL) {
+			return true
+		}
+	}
+	return false
+}
+
+// Up adds the GPG key and repository, skipping both if already configured.
+func (h *GPGKeyHandler) Up() (string, error) {
+	keyringPath := h.keyringPath()
+	sourcesPath := h.sourcesListPath()
+	debURL := h.Rule.GPGDebURL
 	debSourceLine := fmt.Sprintf("deb [signed-by=%s] %s * *", keyringPath, debURL)
 
-	// Write sources list content to temp file
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("sources-%s.list", keyring))
-	if err := os.WriteFile(tmpFile, []byte(debSourceLine+"\n"), internal.FilePermission); err != nil {
-		return "", fmt.Errorf("failed to write sources file: %w", err)
-	}
-	defer func() { _ = os.Remove(tmpFile) }()
+	keyExists := isKeyringInstalled(keyringPath)
+	repoExists := isRepoConfigured(debURL)
 
-	// Download GPG key and pipe to gpg --dearmor using discrete exec.Command calls
-	// to prevent shell injection from user-controlled URL/keyring values.
-	if err := h.downloadAndDearmor(gpgKeyURL, keyringPath); err != nil {
-		return "", fmt.Errorf("failed to add GPG key: %w", err)
+	if keyExists && repoExists {
+		return fmt.Sprintf("already configured: %s", h.Rule.GPGKeyring), nil
 	}
 
-	// Copy sources list and update apt using discrete exec.Command calls.
-	cpOut, err := h.sudoCommand("cp", tmpFile, sourcesListPath).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("failed to copy sources list: %w\n%s", err, cpOut)
-	}
-	_, _ = h.sudoCommand("apt", "update").CombinedOutput()
+	needsUpdate := false
 
-	return fmt.Sprintf("Added GPG key %s and repository %s", keyring, debURL), nil
+	// Ensure /etc/apt/keyrings exists (not present on Ubuntu < 22.04)
+	if mkdirOut, err := h.sudoCommand("install", "-m", "0755", "-d", "/etc/apt/keyrings").CombinedOutput(); err != nil {
+		return "", fmt.Errorf("failed to create keyrings directory: %w\n%s", err, mkdirOut)
+	}
+
+	if !keyExists {
+		// Download the ASCII-armored key directly — APT 1.4+ reads .asc natively,
+		// so we can skip gpg --dearmor entirely.
+		if err := h.downloadKey(h.Rule.GPGKeyURL, keyringPath); err != nil {
+			return "", fmt.Errorf("failed to download GPG key: %w", err)
+		}
+		// Ensure the key is world-readable so apt (running as root) can read it.
+		if chmodOut, err := h.sudoCommand("chmod", "go+r", keyringPath).CombinedOutput(); err != nil {
+			return "", fmt.Errorf("failed to set key permissions: %w\n%s", err, chmodOut)
+		}
+		needsUpdate = true
+	}
+
+	if !repoExists {
+		// Write sources list to a temp file and copy with sudo (avoids shell redirection with elevated privileges).
+		tmpFile, err := os.CreateTemp("", fmt.Sprintf("blueprint-sources-%s-*.list", h.Rule.GPGKeyring))
+		if err != nil {
+			return "", fmt.Errorf("failed to create temp sources file: %w", err)
+		}
+		tmpPath := tmpFile.Name()
+		defer func() { _ = os.Remove(tmpPath) }()
+
+		if _, err := tmpFile.WriteString(debSourceLine + "\n"); err != nil {
+			_ = tmpFile.Close()
+			return "", fmt.Errorf("failed to write sources file: %w", err)
+		}
+		_ = tmpFile.Close()
+
+		if cpOut, err := h.sudoCommand("cp", tmpPath, sourcesPath).CombinedOutput(); err != nil {
+			return "", fmt.Errorf("failed to install sources list: %w\n%s", err, cpOut)
+		}
+		needsUpdate = true
+	}
+
+	if needsUpdate {
+		_, _ = h.sudoCommand("apt-get", "update").CombinedOutput()
+	}
+
+	return fmt.Sprintf("added GPG key %s and repository %s", h.Rule.GPGKeyring, debURL), nil
 }
 
-// downloadAndDearmor downloads a GPG key from url and writes the dearmored binary
-// to destPath using discrete exec.Command invocations (no shell string interpolation).
-// sudoPassword, if non-empty, is fed to sudo via stdin to avoid interactive prompts.
-var downloadAndDearmor = func(url, destPath, sudoPassword string) error {
-	// curl -fsSL <url>
-	curl := exec.Command("curl", "-fsSL", url) // #nosec G204 -- URL is user-supplied; passed as argument, not shell string
-	pr, pw := io.Pipe()
-	curl.Stdout = pw
+// downloadKey fetches a GPG key from url and writes it (as-is) to destPath via sudo tee.
+// Storing the raw .asc avoids gpg --dearmor; APT 1.4+ reads ASCII-armored keys directly.
+var downloadKey = func(url, destPath, sudoPassword string) error {
+	// First download to a temp file to avoid piping directly into sudo, which
+	// complicates password injection (sudo -S reads password from stdin, leaving
+	// no clean way to also feed the key data through the same stdin).
+	tmp, err := os.CreateTemp("", "blueprint-gpgkey-*.asc")
+	if err != nil {
+		return fmt.Errorf("temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	_ = tmp.Close()
+	defer func() { _ = os.Remove(tmpPath) }()
 
-	// sudo [-S] gpg --yes --dearmor -o <destPath>
-	var gpg *exec.Cmd
+	// curl -fsSL <url> -o <tmpPath>
+	curlOut, err := exec.Command("curl", "-fsSL", url, "-o", tmpPath).CombinedOutput() // #nosec G204 -- URL is user-supplied; passed as arg, never in shell string
+	if err != nil {
+		return fmt.Errorf("curl failed: %w\n%s", err, curlOut)
+	}
+
+	// sudo [-S] cp <tmpPath> <destPath>
+	var cpCmd *exec.Cmd
 	if sudoPassword != "" {
-		gpg = exec.Command("sudo", "-S", "gpg", "--yes", "--dearmor", "-o", destPath) // #nosec G204
-		// Prepend password line followed by the pipe data
-		gpg.Stdin = io.MultiReader(strings.NewReader(sudoPassword+"\n"), pr)
+		cpCmd = exec.Command("sudo", "-S", "cp", tmpPath, destPath) // #nosec G204
+		cpCmd.Stdin = strings.NewReader(sudoPassword + "\n")
 	} else {
-		gpg = exec.Command("sudo", "gpg", "--yes", "--dearmor", "-o", destPath) // #nosec G204 -- destPath is derived from user keyring name; passed as argument
-		gpg.Stdin = pr
+		cpCmd = exec.Command("sudo", "cp", tmpPath, destPath) // #nosec G204
 	}
-
-	if err := curl.Start(); err != nil {
-		return fmt.Errorf("curl start: %w", err)
-	}
-	if err := gpg.Start(); err != nil {
-		_ = pw.Close()
-		return fmt.Errorf("gpg start: %w", err)
-	}
-
-	curlErr := curl.Wait()
-	_ = pw.Close()
-	gpgErr := gpg.Wait()
-
-	if curlErr != nil {
-		return fmt.Errorf("curl failed: %w", curlErr)
-	}
-	if gpgErr != nil {
-		return fmt.Errorf("gpg failed: %w", gpgErr)
+	if cpOut, err := cpCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("sudo cp failed: %w\n%s", err, cpOut)
 	}
 	return nil
 }
 
-func (h *GPGKeyHandler) downloadAndDearmor(url, destPath string) error {
-	return downloadAndDearmor(url, destPath, h.sudoPassword)
+func (h *GPGKeyHandler) downloadKey(url, destPath string) error {
+	return downloadKey(url, destPath, h.sudoPassword)
 }
 
 // Down removes the GPG key and repository
 func (h *GPGKeyHandler) Down() (string, error) {
 	keyring := h.Rule.GPGKeyring
+	keyringPath := h.keyringPath()
+	sourcesPath := h.sourcesListPath()
 
-	keyringPath := fmt.Sprintf("/usr/share/keyrings/%s.gpg", keyring)
-	sourcesListPath := fmt.Sprintf("/etc/apt/sources.list.d/%s.list", keyring)
-
-	// Use discrete exec.Command calls — never interpolate user-controlled keyring into a shell string.
-	_, _ = h.sudoCommand("rm", "-f", sourcesListPath).CombinedOutput()
+	_, _ = h.sudoCommand("rm", "-f", sourcesPath).CombinedOutput()
 	_, _ = h.sudoCommand("rm", "-f", keyringPath).CombinedOutput()
-	_, _ = h.sudoCommand("apt", "update").CombinedOutput()
+	_, _ = h.sudoCommand("apt-get", "update").CombinedOutput()
 
-	return fmt.Sprintf("Removed GPG key %s and repository", keyring), nil
+	return fmt.Sprintf("removed GPG key %s and repository", keyring), nil
 }
 
 // GetCommand returns the actual command(s) that will be executed
 func (h *GPGKeyHandler) GetCommand() string {
-	if h.Rule.Action == "uninstall" {
-		keyring := h.Rule.GPGKeyring
-		keyringPath := fmt.Sprintf("/usr/share/keyrings/%s.gpg", keyring)
-		sourcesListPath := fmt.Sprintf("/etc/apt/sources.list.d/%s.list", keyring)
+	keyringPath := h.keyringPath()
+	sourcesPath := h.sourcesListPath()
 
-		// Show the main removal steps
+	if h.Rule.Action == "uninstall" {
 		return fmt.Sprintf(
-			"sudo rm -f %s && sudo rm -f %s && sudo apt update",
-			sourcesListPath,
-			keyringPath,
+			"sudo rm -f %s && sudo rm -f %s && sudo apt-get update",
+			sourcesPath, keyringPath,
 		)
 	}
 
-	// Up action (install) - show the combined command
-	keyring := h.Rule.GPGKeyring
-	gpgKeyURL := h.Rule.GPGKeyURL
-
-	keyringPath := fmt.Sprintf("/usr/share/keyrings/%s.gpg", keyring)
-	sourcesListPath := fmt.Sprintf("/etc/apt/sources.list.d/%s.list", keyring)
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("sources-%s.list", keyring))
-
-	// Show the combined command that runs in a single sudo session
 	return fmt.Sprintf(
-		"sh -c 'curl -fsSL %s | gpg --yes --dearmor -o %s && cp %s %s && sudo apt update'",
-		gpgKeyURL, keyringPath, tmpFile, sourcesListPath,
+		"curl -fsSL %s | sudo tee %s && echo 'deb [signed-by=%s] %s * *' | sudo tee %s && sudo apt-get update",
+		h.Rule.GPGKeyURL, keyringPath, keyringPath, h.Rule.GPGDebURL, sourcesPath,
 	)
 }
 
 // UpdateStatus updates the status after adding or removing a GPG key
 func (h *GPGKeyHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
-	// Normalize blueprint path for consistent storage and comparison
 	blueprint = normalizePath(blueprint)
 
 	if h.Rule.Action == "gpg-key" {
-		// Check if this rule's command was executed successfully
 		commandExecuted := false
 		for _, record := range records {
 			if record.Status == "success" && strings.Contains(record.Command, "gpg-key") && strings.Contains(record.Command, h.Rule.GPGKeyring) {
@@ -203,9 +234,7 @@ func (h *GPGKeyHandler) UpdateStatus(status *Status, records []ExecutionRecord, 
 		}
 
 		if commandExecuted {
-			// Remove existing entry if present
 			status.GPGKeys = removeGPGKeyStatus(status.GPGKeys, h.Rule.GPGKeyring, blueprint, osName)
-			// Add new entry
 			status.GPGKeys = append(status.GPGKeys, GPGKeyStatus{
 				Keyring:   h.Rule.GPGKeyring,
 				URL:       h.Rule.GPGKeyURL,
@@ -216,7 +245,6 @@ func (h *GPGKeyHandler) UpdateStatus(status *Status, records []ExecutionRecord, 
 			})
 		}
 	} else if h.Rule.Action == "uninstall" && DetectRuleType(h.Rule) == "gpg-key" {
-		// Remove GPG key from status if uninstall was successful
 		status.GPGKeys = removeGPGKeyStatus(status.GPGKeys, h.Rule.GPGKeyring, blueprint, osName)
 	}
 
@@ -248,7 +276,6 @@ func (h *GPGKeyHandler) DisplayStatus(keys []GPGKeyStatus) {
 
 	fmt.Printf("\n%s\n", ui.FormatHighlight("GPG Keys:"))
 	for _, key := range keys {
-		// Parse timestamp for display
 		t, err := time.Parse(time.RFC3339, key.AddedAt)
 		var timeStr string
 		if err == nil {
@@ -297,7 +324,6 @@ func (h *GPGKeyHandler) GetState(isUninstall bool) map[string]string {
 func (h *GPGKeyHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizePath(blueprintFile)
 
-	// Build set of current GPG keyrings from gpg-key rules
 	currentGPGKeys := make(map[string]bool)
 	for _, rule := range currentRules {
 		if rule.Action == "gpg-key" && rule.GPGKeyring != "" {
@@ -305,7 +331,6 @@ func (h *GPGKeyHandler) FindUninstallRules(status *Status, currentRules []parser
 		}
 	}
 
-	// Find GPG keys to uninstall (in status but not in current rules)
 	var rules []parser.Rule
 	if status.GPGKeys != nil {
 		for _, gpg := range status.GPGKeys {
