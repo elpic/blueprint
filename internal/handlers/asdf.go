@@ -193,13 +193,6 @@ func (h *AsdfHandler) Down() (string, error) {
 	return "Uninstalled asdf packages", nil
 }
 
-// isAsdfInstalled checks if asdf is installed in /usr/local/bin
-func (h *AsdfHandler) isAsdfInstalled() bool {
-	// Check if /usr/local/bin/asdf exists
-	_, err := os.Stat("/usr/local/bin/asdf")
-	return err == nil
-}
-
 // getInstalledAsdfVersion returns the currently installed asdf version
 func (h *AsdfHandler) getInstalledAsdfVersion() (string, error) {
 	// Try to get version from asdf
