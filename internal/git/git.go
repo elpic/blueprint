@@ -1,7 +1,6 @@
 package git
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	gossh "golang.org/x/crypto/ssh"
@@ -300,13 +300,33 @@ func CleanupRepository(path string) error {
 	return os.RemoveAll(path)
 }
 
-// gitSHA reads the HEAD SHA of a repository at the given path using the system git binary.
+// gitSHA reads the HEAD SHA of a repository at the given path using go-git.
 func gitSHA(path string) string {
-	out, err := exec.Command("git", "-C", path, "rev-parse", "HEAD").Output() // #nosec G204
+	repo, err := git.PlainOpen(path)
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	ref, err := repo.Head()
+	if err != nil {
+		return ""
+	}
+	return ref.Hash().String()
+}
+
+// repoAuth returns the appropriate go-git auth method for the given URL.
+func repoAuth(url string) (transport.AuthMethod, error) {
+	if strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://") {
+		if username := os.Getenv("GITHUB_USER"); username != "" {
+			if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+				return &http.BasicAuth{Username: username, Password: token}, nil
+			}
+		}
+		return nil, fmt.Errorf("no HTTPS credentials available")
+	}
+	if strings.HasPrefix(url, "git@") {
+		return sshAuth()
+	}
+	return nil, fmt.Errorf("unsupported URL scheme")
 }
 
 // remoteRef returns the SHA for the given ref on the remote using go-git (no git binary required).
@@ -384,45 +404,66 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 			return oldSHA, oldSHA, "Already up to date", nil
 		}
 
-		// Fetch and reset to origin HEAD
-		var stderr bytes.Buffer
-		fetchCmd := exec.Command("git", "-C", path, "fetch", "--quiet", "origin") // #nosec G204
-		fetchCmd.Stderr = &stderr
-		if err := fetchCmd.Run(); err != nil {
-			return oldSHA, "", "", fmt.Errorf("failed to fetch: %w\n%s", err, stderr.String())
+		// Open existing repo and fetch via go-git
+		repo, err := git.PlainOpen(path)
+		if err != nil {
+			return oldSHA, "", "", fmt.Errorf("failed to open repository: %w", err)
 		}
 
-		// Determine the remote tracking branch to reset to
-		resetTarget := "FETCH_HEAD"
+		fetchOpts := &git.FetchOptions{
+			RemoteName: "origin",
+			Progress:   io.Discard,
+		}
+		if auth, authErr := repoAuth(url); authErr == nil {
+			fetchOpts.Auth = auth
+		}
+
+		fetchErr := repo.Fetch(fetchOpts)
+		if fetchErr != nil && fetchErr != git.NoErrAlreadyUpToDate {
+			return oldSHA, "", "", fmt.Errorf("failed to fetch: %w", fetchErr)
+		}
+
+		// Resolve the target ref to reset to
+		var targetHash plumbing.Hash
 		if branch != "" {
-			resetTarget = "origin/" + branch
-		}
-		stderr.Reset()
-		resetCmd := exec.Command("git", "-C", path, "reset", "--hard", resetTarget) // #nosec G204
-		resetCmd.Stderr = &stderr
-		if err := resetCmd.Run(); err != nil {
-			return oldSHA, "", "", fmt.Errorf("failed to reset to %s: %w\n%s", resetTarget, err, stderr.String())
+			ref, refErr := repo.Reference(plumbing.NewRemoteReferenceName("origin", branch), true)
+			if refErr != nil {
+				return oldSHA, "", "", fmt.Errorf("failed to resolve origin/%s: %w", branch, refErr)
+			}
+			targetHash = ref.Hash()
+		} else {
+			ref, refErr := repo.Reference(plumbing.NewRemoteReferenceName("origin", "HEAD"), true)
+			if refErr != nil {
+				// Fall back to FETCH_HEAD
+				ref, refErr = repo.Reference("FETCH_HEAD", true)
+				if refErr != nil {
+					return oldSHA, "", "", fmt.Errorf("failed to resolve fetch target: %w", refErr)
+				}
+			}
+			targetHash = ref.Hash()
 		}
 
-		newSHA := gitSHA(path)
+		worktree, err := repo.Worktree()
+		if err != nil {
+			return oldSHA, "", "", fmt.Errorf("failed to get worktree: %w", err)
+		}
+		if err := worktree.Reset(&git.ResetOptions{
+			Commit: targetHash,
+			Mode:   git.HardReset,
+		}); err != nil {
+			return oldSHA, "", "", fmt.Errorf("failed to reset: %w", err)
+		}
+
+		newSHA := targetHash.String()
 		if oldSHA != newSHA {
 			return oldSHA, newSHA, "Updated", nil
 		}
 		return oldSHA, newSHA, "Already up to date", nil
 	}
 
-	// Clone
-	args := []string{"clone", "--quiet"}
-	if branch != "" {
-		args = append(args, "--branch", branch)
-	}
-	args = append(args, url, path)
-
-	var stderr bytes.Buffer
-	cloneCmd := exec.Command("git", args...) // #nosec G204
-	cloneCmd.Stderr = &stderr
-	if err := cloneCmd.Run(); err != nil {
-		return "", "", "", fmt.Errorf("failed to clone: %w\n%s", err, stderr.String())
+	// Clone via go-git
+	if err := tryClone(path, url, branch, false); err != nil {
+		return "", "", "", fmt.Errorf("failed to clone: %w", err)
 	}
 
 	newSHA := gitSHA(path)
