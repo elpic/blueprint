@@ -76,9 +76,7 @@ func (h *AsdfHandler) Up() (string, error) {
 		}
 	}
 
-	// Install plugins and versions
-	// Build a single shell command that sources asdf first, then installs all packages
-	// This ensures asdf is available even if freshly installed
+	// Install plugins and versions, skipping any already installed.
 	var allCmds []string
 
 	for _, pkg := range h.Rule.AsdfPackages {
@@ -98,8 +96,11 @@ func (h *AsdfHandler) Up() (string, error) {
 			return "", fmt.Errorf("invalid version: %s (contains invalid characters)", version)
 		}
 
-		// Add each command to the list
-		// Only add plugin and install version, don't set local version
+		// Skip if this exact plugin@version is already installed.
+		if isAsdfVersionInstalled(plugin, version) {
+			continue
+		}
+
 		allCmds = append(allCmds,
 			fmt.Sprintf("asdf plugin add %s 2>/dev/null || true", plugin),
 			fmt.Sprintf("asdf install %s %s", plugin, version),
@@ -108,24 +109,23 @@ func (h *AsdfHandler) Up() (string, error) {
 
 	// Execute all commands in a single shell session with asdf in PATH
 	if len(allCmds) > 0 {
-		// Build command with asdf in PATH - symlink and PATH are sufficient for asdf to work
 		combinedCmd := strings.Join(allCmds, " && ")
-		// Set PATH to include asdf bin directory
 		fullCmd := fmt.Sprintf("export PATH=\"$HOME/.asdf/bin:$PATH\" && %s", combinedCmd)
 		cmd := exec.Command("bash", "-c", fullCmd)
-		// Ensure stdin is completely disconnected
 		cmd.Stdin = nil
-		// Capture output for debugging
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Sprintf("Installation output:\n%s", string(output)), fmt.Errorf("failed to install asdf packages: %w", err)
 		}
 	}
 
-	if isInstalled {
-		return "Installed plugins and versions", nil
+	if len(allCmds) == 0 {
+		return "already installed: all plugins and versions present", nil
 	}
-	return "Installed asdf and plugins", nil
+	if isInstalled {
+		return "installed plugins and versions", nil
+	}
+	return "installed asdf and plugins", nil
 }
 
 // Down uninstalls asdf packages and optionally asdf itself
@@ -629,6 +629,17 @@ func succeededAsdfUninstall(records []ExecutionRecord) bool {
 		}
 	}
 	return false
+}
+
+// isAsdfVersionInstalled returns true if the given plugin@version is already installed.
+// It runs `asdf list <plugin> <version>` which exits 0 only when that exact version
+// is present, non-zero otherwise.
+var isAsdfVersionInstalled = func(plugin, version string) bool {
+	cmd := exec.Command("bash", "-c",
+		fmt.Sprintf(`export PATH="$HOME/.asdf/bin:$PATH" && asdf list %s %s 2>/dev/null`, plugin, version),
+	)
+	cmd.Stdin = nil
+	return cmd.Run() == nil
 }
 
 // isValidAsdfIdentifier validates that a plugin or version name is safe to use in shell commands
