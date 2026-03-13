@@ -24,6 +24,13 @@ var (
 	asdfVersionMutex sync.Mutex
 )
 
+// asdfInstalledCheck returns true if asdf is installed at /usr/local/bin/asdf.
+// Defined as a var to allow stubbing in tests.
+var asdfInstalledCheck = func() bool {
+	_, err := os.Stat("/usr/local/bin/asdf")
+	return err == nil
+}
+
 // AsdfHandler handles asdf version manager operations
 type AsdfHandler struct {
 	BaseHandler
@@ -42,7 +49,7 @@ func NewAsdfHandler(rule parser.Rule, basePath string) *AsdfHandler {
 // Up installs asdf (if not present) and then installs specified packages
 func (h *AsdfHandler) Up() (string, error) {
 	// Check if asdf is installed
-	isInstalled := h.isAsdfInstalled()
+	isInstalled := asdfInstalledCheck()
 	needsInstall := false
 	var latestVersion string
 
@@ -632,11 +639,11 @@ func succeededAsdfUninstall(records []ExecutionRecord) bool {
 }
 
 // isAsdfVersionInstalled returns true if the given plugin@version is already installed.
-// It runs `asdf list <plugin> <version>` which exits 0 only when that exact version
-// is present, non-zero otherwise.
+// It lists installed versions for the plugin and greps for the exact version string.
+// grep -qF exits 0 if found (installed), 1 if not found.
 var isAsdfVersionInstalled = func(plugin, version string) bool {
 	cmd := exec.Command("bash", "-c",
-		fmt.Sprintf(`export PATH="$HOME/.asdf/bin:$PATH" && asdf list %s %s 2>/dev/null`, plugin, version),
+		fmt.Sprintf(`export PATH="$HOME/.asdf/bin:$PATH" && asdf list %s 2>/dev/null | grep -qF %s`, plugin, version),
 	)
 	cmd.Stdin = nil
 	return cmd.Run() == nil

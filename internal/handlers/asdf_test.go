@@ -397,6 +397,52 @@ func TestAsdfHandlerDisplayInfo(t *testing.T) {
 }
 
 
+func TestAsdfUpSkipsAlreadyInstalledVersions(t *testing.T) {
+	origVersionInstalled := isAsdfVersionInstalled
+	defer func() { isAsdfVersionInstalled = origVersionInstalled }()
+	isAsdfVersionInstalled = func(plugin, version string) bool {
+		return plugin == "nodejs" && version == "21.4.0"
+	}
+
+	origAsdfInstalled := asdfInstalledCheck
+	defer func() { asdfInstalledCheck = origAsdfInstalled }()
+	asdfInstalledCheck = func() bool { return true }
+
+	var executedCmds []string
+	origExec := executeCommandWithCache
+	defer func() { executeCommandWithCache = origExec }()
+	executeCommandWithCache = func(cmd string) (string, error) {
+		executedCmds = append(executedCmds, cmd)
+		return "", nil
+	}
+
+	// Stub getLatestAsdfVersion to avoid network call — make installed version == latest
+	origCache := asdfVersionCache
+	defer func() { asdfVersionCache = origCache }()
+	asdfVersionCache = "0.0.0" // any value; getInstalledAsdfVersion will differ, triggering reinstall
+	// Instead: make asdfInstalledCheck return true and bypass version check by pre-populating cache
+	// and stubbing getInstalledAsdfVersion indirectly. Since we can't stub getInstalledAsdfVersion
+	// easily, we rely on it failing (non-zero exit) which means needsInstall stays false.
+
+	rule := parser.Rule{
+		Action:       "asdf",
+		AsdfPackages: []string{"nodejs@21.4.0"},
+	}
+	h := NewAsdfHandler(rule, "")
+	out, err := h.Up()
+	if err != nil {
+		t.Fatalf("Up() error: %v", err)
+	}
+	if !strings.Contains(out, "already installed") {
+		t.Errorf("expected 'already installed' message, got %q", out)
+	}
+	for _, cmd := range executedCmds {
+		if strings.Contains(cmd, "asdf install nodejs 21.4.0") {
+			t.Errorf("should not have run install for already-installed version, but ran: %q", cmd)
+		}
+	}
+}
+
 func TestAsdfHandlerGetDependencyKey(t *testing.T) {
 	tests := []struct {
 		name     string
