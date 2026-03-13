@@ -65,15 +65,15 @@ func TestAsdfHandlerGetCommand(t *testing.T) {
 
 func TestAsdfHandlerUpdateStatus(t *testing.T) {
 	tests := []struct {
-		name          string
-		rule          parser.Rule
-		records       []ExecutionRecord
-		initialStatus Status
-		expectedAsdfs int
-		shouldContain bool
-		expectedPlugin string
+		name            string
+		rule            parser.Rule
+		records         []ExecutionRecord
+		initialStatus   Status
+		expectedAsdfs   int
+		shouldContain   bool
+		expectedPlugin  string
 		expectedVersion string
-		description    string
+		description     string
 	}{
 		{
 			name: "add asdf to status on successful install",
@@ -88,12 +88,12 @@ func TestAsdfHandlerUpdateStatus(t *testing.T) {
 					Output:  "Installed asdf (SHA: abc123def456)",
 				},
 			},
-			initialStatus:    Status{},
-			expectedAsdfs:    1,
-			shouldContain:    true,
-			expectedPlugin:   "nodejs",
-			expectedVersion:  "18.0.0",
-			description:      "Single asdf rule adds one package",
+			initialStatus:   Status{},
+			expectedAsdfs:   1,
+			shouldContain:   true,
+			expectedPlugin:  "nodejs",
+			expectedVersion: "18.0.0",
+			description:     "Single asdf rule adds one package",
 		},
 		{
 			name: "multiple asdf rules preserve packages from other rules",
@@ -118,11 +118,11 @@ func TestAsdfHandlerUpdateStatus(t *testing.T) {
 					},
 				},
 			},
-			expectedAsdfs:    2,
-			shouldContain:    true,
-			expectedPlugin:   "python",
-			expectedVersion:  "3.11.0",
-			description:      "Second asdf rule preserves nodejs entry and adds python",
+			expectedAsdfs:   2,
+			shouldContain:   true,
+			expectedPlugin:  "python",
+			expectedVersion: "3.11.0",
+			description:     "Second asdf rule preserves nodejs entry and adds python",
 		},
 		{
 			name: "multiple versions of same plugin coexist",
@@ -147,11 +147,11 @@ func TestAsdfHandlerUpdateStatus(t *testing.T) {
 					},
 				},
 			},
-			expectedAsdfs:    2,
-			shouldContain:    true,
-			expectedPlugin:   "nodejs",
-			expectedVersion:  "20.0.0",
-			description:      "Multiple versions of same plugin can coexist (node@18 and node@20)",
+			expectedAsdfs:   2,
+			shouldContain:   true,
+			expectedPlugin:  "nodejs",
+			expectedVersion: "20.0.0",
+			description:     "Multiple versions of same plugin can coexist (node@18 and node@20)",
 		},
 		{
 			name: "remove specific plugin version on uninstall, preserve other versions",
@@ -217,11 +217,11 @@ func TestAsdfHandlerUpdateStatus(t *testing.T) {
 					},
 				},
 			},
-			expectedAsdfs:    1,
-			shouldContain:    true,
-			expectedPlugin:   "nodejs",
-			expectedVersion:  "18.0.0",
-			description:      "Idempotent: installing same version twice keeps count at 1",
+			expectedAsdfs:   1,
+			shouldContain:   true,
+			expectedPlugin:  "nodejs",
+			expectedVersion: "18.0.0",
+			description:     "Idempotent: installing same version twice keeps count at 1",
 		},
 		{
 			name: "no action if asdf install failed",
@@ -396,6 +396,51 @@ func TestAsdfHandlerDisplayInfo(t *testing.T) {
 	}
 }
 
+func TestAsdfUpSkipsAlreadyInstalledVersions(t *testing.T) {
+	origVersionInstalled := isAsdfVersionInstalled
+	defer func() { isAsdfVersionInstalled = origVersionInstalled }()
+	isAsdfVersionInstalled = func(plugin, version string) bool {
+		return plugin == "nodejs" && version == "21.4.0"
+	}
+
+	origAsdfInstalled := asdfInstalledCheck
+	defer func() { asdfInstalledCheck = origAsdfInstalled }()
+	asdfInstalledCheck = func() bool { return true }
+
+	var executedCmds []string
+	origExec := executeCommandWithCache
+	defer func() { executeCommandWithCache = origExec }()
+	executeCommandWithCache = func(cmd string) (string, error) {
+		executedCmds = append(executedCmds, cmd)
+		return "", nil
+	}
+
+	// Stub getLatestAsdfVersion to avoid network call — make installed version == latest
+	origCache := asdfVersionCache
+	defer func() { asdfVersionCache = origCache }()
+	asdfVersionCache = "0.0.0" // any value; getInstalledAsdfVersion will differ, triggering reinstall
+	// Instead: make asdfInstalledCheck return true and bypass version check by pre-populating cache
+	// and stubbing getInstalledAsdfVersion indirectly. Since we can't stub getInstalledAsdfVersion
+	// easily, we rely on it failing (non-zero exit) which means needsInstall stays false.
+
+	rule := parser.Rule{
+		Action:       "asdf",
+		AsdfPackages: []string{"nodejs@21.4.0"},
+	}
+	h := NewAsdfHandler(rule, "")
+	out, err := h.Up()
+	if err != nil {
+		t.Fatalf("Up() error: %v", err)
+	}
+	if !strings.Contains(out, "already installed") {
+		t.Errorf("expected 'already installed' message, got %q", out)
+	}
+	for _, cmd := range executedCmds {
+		if strings.Contains(cmd, "asdf install nodejs 21.4.0") {
+			t.Errorf("should not have run install for already-installed version, but ran: %q", cmd)
+		}
+	}
+}
 
 func TestAsdfHandlerGetDependencyKey(t *testing.T) {
 	tests := []struct {
