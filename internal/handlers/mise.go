@@ -49,22 +49,6 @@ func NewMiseHandler(rule parser.Rule, basePath string) *MiseHandler {
 	}
 }
 
-// isMiseInstalled checks if mise is installed
-func (h *MiseHandler) isMiseInstalled() bool {
-	// Check default curl install location first
-	homeDir, err := os.UserHomeDir()
-	if err == nil {
-		misePath := filepath.Join(homeDir, ".local", "bin", "mise")
-		if _, err := os.Stat(misePath); err == nil {
-			return true
-		}
-	}
-
-	// Fall back to PATH lookup
-	_, err = exec.LookPath("mise")
-	return err == nil
-}
-
 // miseCmd returns the full path to the mise binary
 func (h *MiseHandler) miseCmd() string {
 	homeDir, err := os.UserHomeDir()
