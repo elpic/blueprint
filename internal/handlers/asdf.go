@@ -631,15 +631,36 @@ func succeededAsdfUninstall(records []ExecutionRecord) bool {
 	return false
 }
 
+// asdfBin returns the path to the asdf binary, checking ~/.asdf/bin first then PATH.
+func asdfBin() string {
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		p := filepath.Join(homeDir, ".asdf", "bin", "asdf")
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	if p, err := exec.LookPath("asdf"); err == nil {
+		return p
+	}
+	return "asdf"
+}
+
 // isAsdfVersionInstalled returns true if the given plugin@version is already installed.
-// It lists installed versions for the plugin and greps for the exact version string.
-// grep -qF exits 0 if found (installed), 1 if not found.
+// Calls asdf directly (no shell) to avoid slow bash startup on zsh-only systems.
 var isAsdfVersionInstalled = func(plugin, version string) bool {
-	cmd := exec.Command("bash", "-c",
-		fmt.Sprintf(`export PATH="$HOME/.asdf/bin:$PATH" && asdf list %s 2>/dev/null | grep -qF %s`, plugin, version),
-	)
+	cmd := exec.Command(asdfBin(), "list", plugin)
 	cmd.Stdin = nil
-	return cmd.Run() == nil
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(line) == version {
+			return true
+		}
+	}
+	return false
 }
 
 // isValidAsdfIdentifier validates that a plugin or version name is safe to use in shell commands
