@@ -13,6 +13,27 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
+// isMiseVersionInstalled returns true if the given tool@version is already installed.
+// It uses `mise where <tool> <version>` which exits 0 when installed, 1 when not.
+var isMiseVersionInstalled = func(miseBin, tool, version string) bool {
+	cmd := exec.Command(miseBin, "where", tool, version)
+	cmd.Stdin = nil
+	return cmd.Run() == nil
+}
+
+// miseInstalledCheck returns true if mise is installed. Defined as a var to allow stubbing in tests.
+var miseInstalledCheck = func() bool {
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		misePath := filepath.Join(homeDir, ".local", "bin", "mise")
+		if _, err := os.Stat(misePath); err == nil {
+			return true
+		}
+	}
+	_, err = exec.LookPath("mise")
+	return err == nil
+}
+
 // MiseHandler handles mise version manager operations
 type MiseHandler struct {
 	BaseHandler
@@ -26,22 +47,6 @@ func NewMiseHandler(rule parser.Rule, basePath string) *MiseHandler {
 			BasePath: basePath,
 		},
 	}
-}
-
-// isMiseInstalled checks if mise is installed
-func (h *MiseHandler) isMiseInstalled() bool {
-	// Check default curl install location first
-	homeDir, err := os.UserHomeDir()
-	if err == nil {
-		misePath := filepath.Join(homeDir, ".local", "bin", "mise")
-		if _, err := os.Stat(misePath); err == nil {
-			return true
-		}
-	}
-
-	// Fall back to PATH lookup
-	_, err = exec.LookPath("mise")
-	return err == nil
 }
 
 // miseCmd returns the full path to the mise binary
@@ -134,7 +139,7 @@ func (h *MiseHandler) resolvedMisePath() (string, error) {
 
 // Up installs mise (if not present) and then installs specified tool versions
 func (h *MiseHandler) Up() (string, error) {
-	isInstalled := h.isMiseInstalled()
+	isInstalled := miseInstalledCheck()
 
 	if !isInstalled {
 		if err := h.installMise(); err != nil {
@@ -152,7 +157,7 @@ func (h *MiseHandler) Up() (string, error) {
 	miseBin := h.miseCmd()
 	global := h.isGlobal()
 
-	// Build a single combined command for all packages
+	// Build a single combined command for all packages, skipping already-installed ones
 	var allCmds []string
 	for _, pkg := range h.Rule.MisePackages {
 		if strings.Contains(pkg, "@") {
@@ -165,6 +170,11 @@ func (h *MiseHandler) Up() (string, error) {
 			}
 			if !isValidAsdfIdentifier(version) {
 				return "", fmt.Errorf("invalid version: %s (contains invalid characters)", version)
+			}
+
+			// Skip if this exact tool@version is already installed
+			if isMiseVersionInstalled(miseBin, tool, version) {
+				continue
 			}
 
 			if global {
@@ -183,6 +193,10 @@ func (h *MiseHandler) Up() (string, error) {
 				allCmds = append(allCmds, fmt.Sprintf("%s use %s", miseBin, tool))
 			}
 		}
+	}
+
+	if len(allCmds) == 0 {
+		return "already installed: all tools and versions present", nil
 	}
 
 	if len(allCmds) > 0 {

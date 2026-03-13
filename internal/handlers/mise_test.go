@@ -84,3 +84,41 @@ func TestMiseHandlerGetDisplayDetails(t *testing.T) {
 		t.Errorf("GetDisplayDetails() = %q, expected to contain package names", got)
 	}
 }
+
+func TestMiseUpSkipsAlreadyInstalledVersions(t *testing.T) {
+	origVersionInstalled := isMiseVersionInstalled
+	defer func() { isMiseVersionInstalled = origVersionInstalled }()
+	isMiseVersionInstalled = func(miseBin, tool, version string) bool {
+		return tool == "node" && version == "21.4.0"
+	}
+
+	origMiseInstalled := miseInstalledCheck
+	defer func() { miseInstalledCheck = origMiseInstalled }()
+	miseInstalledCheck = func() bool { return true }
+
+	var executedCmds []string
+	origExec := executeCommandWithCache
+	defer func() { executeCommandWithCache = origExec }()
+	executeCommandWithCache = func(cmd string) (string, error) {
+		executedCmds = append(executedCmds, cmd)
+		return "", nil
+	}
+
+	rule := parser.Rule{
+		Action:       "mise",
+		MisePackages: []string{"node@21.4.0"},
+	}
+	h := NewMiseHandler(rule, "")
+	out, err := h.Up()
+	if err != nil {
+		t.Fatalf("Up() error: %v", err)
+	}
+	if !strings.Contains(out, "already installed") {
+		t.Errorf("expected 'already installed' message, got %q", out)
+	}
+	for _, cmd := range executedCmds {
+		if strings.Contains(cmd, "mise use") && strings.Contains(cmd, "node@21.4.0") {
+			t.Errorf("should not have run mise use for already-installed version, but ran: %q", cmd)
+		}
+	}
+}
