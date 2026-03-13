@@ -3,11 +3,11 @@ package handlers
 import (
 	"fmt"
 	"os/user"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/elpic/blueprint/internal"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
 )
@@ -341,16 +341,8 @@ func (h *InstallHandler) buildUninstallCommandForManager(manager string, pkgName
 	}
 }
 
-// getOSName returns the current operating system name
 func getOSName() string {
-	switch runtime.GOOS {
-	case "darwin":
-		return "mac"
-	case "linux":
-		return "linux"
-	default:
-		return runtime.GOOS
-	}
+	return internal.OSName()
 }
 
 // DisplayInfo displays handler-specific information

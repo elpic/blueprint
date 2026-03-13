@@ -48,6 +48,15 @@ func needsSudo(command string) bool {
 	return false
 }
 
+// sudoRunWithPassword runs cmdStr under sudo by feeding password via stdin.
+// The password never appears in the process argument list.
+var sudoRunWithPassword = func(password, cmdStr string) (string, error) {
+	cmd := exec.Command("sh", "-c", "sudo -S "+cmdStr) // #nosec G204 -- user-supplied command from blueprint
+	cmd.Stdin = strings.NewReader(password + "\n")
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
 func executeCommand(cmdStr string) (string, error) {
 	// Check if the command needs shell processing (contains pipes, redirects, tilde expansion, etc.)
 	needsShell := strings.ContainsAny(cmdStr, "|><&;$()~`")
@@ -58,13 +67,9 @@ func executeCommand(cmdStr string) (string, error) {
 		if exec.Command("sudo", "-n", "true").Run() == nil {
 			// User has passwordless sudo, use -n flag
 			cmdStr = "sudo -n " + cmdStr
-		} else if sudoPassword, ok := passwordCache["sudo"]; ok {
+		} else if sudoPassword, ok := passwordCache.get("sudo"); ok {
 			// Use cached sudo password if available
-			// Use echo to pipe password to sudo with -S flag
-			// This avoids interactive password prompts during execution
-			cmd := exec.Command("sh", "-c", fmt.Sprintf("echo %s | sudo -S %s", shellEscape(sudoPassword), cmdStr))
-			output, err := cmd.CombinedOutput()
-			return string(output), err
+			return sudoRunWithPassword(sudoPassword, cmdStr)
 		} else {
 			// Fallback to regular sudo if no password cached
 			cmdStr = "sudo " + cmdStr
@@ -133,7 +138,7 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 		var actualCmd string
 
 		// Create handler for this rule
-		handler = handlerskg.NewHandler(rule, basePath, passwordCache)
+		handler = handlerskg.NewHandler(rule, basePath, passwordCache.snapshot())
 
 		// Update process state for current rule
 		psState.CurrentRule = i + 1
@@ -163,6 +168,11 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 
 			// Get the actual command from the handler
 			actualCmd = handler.GetCommand()
+
+			// Give record-aware handlers access to records accumulated so far
+			if ra, ok := handler.(handlerskg.RecordAware); ok {
+				ra.SetCurrentRecords(toHandlerRecords(records))
+			}
 
 			// Execute handler
 			if isUninstall {
@@ -215,11 +225,20 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 	return records
 }
 
-func shellEscape(s string) string {
-	// Use single quotes to prevent shell interpretation
-	// Replace single quotes with '\'' (end quote, escaped quote, start quote)
-	escaped := strings.ReplaceAll(s, "'", "'\\''")
-	return fmt.Sprintf("'%s'", escaped)
+func toHandlerRecords(records []ExecutionRecord) []handlerskg.ExecutionRecord {
+	out := make([]handlerskg.ExecutionRecord, len(records))
+	for i, r := range records {
+		out[i] = handlerskg.ExecutionRecord{
+			Timestamp: r.Timestamp,
+			Blueprint: r.Blueprint,
+			OS:        r.OS,
+			Command:   r.Command,
+			Output:    r.Output,
+			Status:    r.Status,
+			Error:     r.Error,
+		}
+	}
+	return out
 }
 
 // clearSudoCache clears the sudo password cache on all operating systems

@@ -33,6 +33,19 @@ func parseFlags(args []string) (skipGroup, skipID, onlyID string, skipDecrypt bo
 	return
 }
 
+var knownCommands = map[string]bool{
+	"plan": true, "apply": true, "encrypt": true,
+	"status": true, "history": true, "ps": true,
+}
+
+func isKnownCommand(cmd string) bool {
+	return knownCommands[cmd]
+}
+
+func unknownCommandMessage(cmd string) string {
+	return fmt.Sprintf("unknown command: %q\nUsage: blueprint <plan|apply|encrypt|status|history|ps> [<file>]", cmd)
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: blueprint <plan|apply|encrypt|status|history|ps> [<file|run_number>]")
@@ -88,7 +101,14 @@ func main() {
 	case "ps":
 		engine.PrintPS()
 	default:
-		// Short mode: blueprint setup.bp
-		engine.Run(mode, false)
+		// Short mode: treat as file path only if it looks like a path (not a known command typo).
+		if !isKnownCommand(mode) {
+			if _, err := os.Stat(mode); err == nil { // #nosec G703 -- user-supplied file path is intentional
+				engine.Run(mode, false)
+				return
+			}
+		}
+		fmt.Fprintln(os.Stderr, unknownCommandMessage(mode))
+		os.Exit(1)
 	}
 }

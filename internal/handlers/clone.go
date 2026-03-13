@@ -3,8 +3,6 @@ package handlers
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	gitpkg "github.com/elpic/blueprint/internal/git"
@@ -150,18 +148,6 @@ func (h *CloneHandler) DisplayInfo() {
 	if h.Rule.Branch != "" {
 		fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("Branch: %s", h.Rule.Branch)))
 	}
-}
-
-// expandPath expands ~ to home directory
-func expandPath(path string) string {
-	if strings.HasPrefix(path, "~") {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return path
-		}
-		return filepath.Join(homeDir, path[1:])
-	}
-	return path
 }
 
 // DisplayStatus displays cloned repository status information

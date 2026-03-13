@@ -7,13 +7,21 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+
+	"golang.org/x/crypto/pbkdf2"
 )
+
+const saltSize = 32
 
 // EncryptFile encrypts a file using AES-256-GCM and returns the encrypted data
 func EncryptFile(plaintext []byte, password string) ([]byte, error) {
-	// Derive a 32-byte key from the password using a simple method
-	// In production, use PBKDF2, Argon2, or similar
-	key := deriveKey(password)
+	// Generate random salt
+	salt := make([]byte, saltSize)
+	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
+		return nil, fmt.Errorf("failed to generate salt: %w", err)
+	}
+
+	key := deriveKey(password, salt)
 
 	// Create cipher
 	block, err := aes.NewCipher(key)
@@ -32,18 +40,25 @@ func EncryptFile(plaintext []byte, password string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to generate nonce: %w", err)
 	}
 
-	// Encrypt the plaintext
-	ciphertext := aead.Seal(nonce, nonce, plaintext, nil)
+	// Output: [salt | nonce | ciphertext+tag]
+	out := make([]byte, 0, saltSize+len(nonce)+len(plaintext)+aead.Overhead())
+	out = append(out, salt...)
+	out = aead.Seal(append(out, nonce...), nonce, plaintext, nil)
 
-	return ciphertext, nil
+	return out, nil
 }
 
 // DecryptFile decrypts a file encrypted with EncryptFile using AES-256-GCM
 func DecryptFile(ciphertext []byte, password string) ([]byte, error) {
-	// Derive key from password (must match encryption)
-	key := deriveKey(password)
+	// Extract salt, then nonce, then encrypted data
+	if len(ciphertext) < saltSize {
+		return nil, fmt.Errorf("ciphertext too short")
+	}
+	salt := ciphertext[:saltSize]
+	rest := ciphertext[saltSize:]
 
-	// Create cipher
+	key := deriveKey(password, salt)
+
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cipher: %w", err)
@@ -54,14 +69,13 @@ func DecryptFile(ciphertext []byte, password string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to create GCM: %w", err)
 	}
 
-	// Extract nonce from ciphertext
 	nonceSize := aead.NonceSize()
-	if len(ciphertext) < nonceSize {
+	if len(rest) < nonceSize {
 		return nil, fmt.Errorf("ciphertext too short")
 	}
 
-	nonce := ciphertext[:nonceSize]
-	encryptedData := ciphertext[nonceSize:]
+	nonce := rest[:nonceSize]
+	encryptedData := rest[nonceSize:]
 
 	// Decrypt
 	plaintext, err := aead.Open(nil, nonce, encryptedData, nil)
@@ -72,11 +86,10 @@ func DecryptFile(ciphertext []byte, password string) ([]byte, error) {
 	return plaintext, nil
 }
 
-// deriveKey creates a 32-byte key from a password
-// Uses SHA-256 hash-based derivation
-// In production, use PBKDF2 or Argon2 for better security
-func deriveKey(password string) []byte {
-	// Use SHA-256 to derive a key from password
-	hash := sha256.Sum256([]byte(password))
-	return hash[:]
+const pbkdf2Iterations = 260_000 // OWASP recommended minimum for PBKDF2-SHA256
+
+// deriveKey creates a 32-byte AES key from a password and a random salt
+// using PBKDF2-SHA256 with 260,000 iterations.
+func deriveKey(password string, salt []byte) []byte {
+	return pbkdf2.Key([]byte(password), salt, pbkdf2Iterations, 32, sha256.New)
 }

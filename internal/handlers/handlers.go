@@ -199,6 +199,12 @@ type Handler interface {
 	DisplayInfo()
 }
 
+// RecordAware is an optional interface that handlers can implement to receive
+// the execution records accumulated so far in the current run before Up() is called.
+type RecordAware interface {
+	SetCurrentRecords(records []ExecutionRecord)
+}
+
 // SudoAwareHandler is an optional interface that handlers can implement
 // to specify their own sudo requirements. If a handler implements this,
 // the engine will use this method instead of the global needsSudo function.
@@ -278,16 +284,64 @@ func getDependencyKey(rule parser.Rule, fallbackKey string) string {
 	return fallbackKey
 }
 
+// RuleKey returns the dependency key for a rule without allocating a handler.
+// This mirrors the GetDependencyKey logic of each handler type.
+func RuleKey(rule parser.Rule) string {
+	if rule.ID != "" {
+		return rule.ID
+	}
+	switch rule.Action {
+	case "install", "uninstall":
+		if len(rule.Packages) > 0 {
+			return rule.Packages[0].Name
+		}
+		return "install"
+	case "clone":
+		return rule.ClonePath
+	case "decrypt":
+		return rule.DecryptPath
+	case "download":
+		return rule.DownloadPath
+	case "known_hosts":
+		return rule.KnownHosts
+	case "mkdir":
+		return rule.Mkdir
+	case "run":
+		return rule.RunCommand
+	case "run-sh":
+		return rule.RunShURL
+	case "gpg_key":
+		return rule.GPGKeyring
+	case "homebrew":
+		if len(rule.HomebrewPackages) > 0 {
+			return rule.HomebrewPackages[0]
+		}
+		return "homebrew"
+	case "asdf":
+		return "asdf"
+	case "mise":
+		return "mise"
+	case "ollama":
+		if len(rule.OllamaModels) > 0 {
+			return rule.OllamaModels[0]
+		}
+		return "ollama"
+	case "schedule":
+		if rule.ScheduleSource != "" {
+			return "schedule-" + rule.ScheduleSource
+		}
+		return "schedule"
+	default:
+		return rule.Action
+	}
+}
+
 // GetFallbackDependencyKey returns the handler-specific fallback key when rule.ID is not present.
 // Handlers can override this method to provide their own key logic.
 // Default implementation returns the action name as fallback.
 func (h *BaseHandler) GetFallbackDependencyKey() string {
 	return h.Rule.Action
 }
-
-// HandlerFactory creates a handler for a given rule
-// passwordCache is optional and only used by DecryptHandler
-type HandlerFactory func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler
 
 // DetectRuleType determines the actual rule type based on the rule's content
 // This is used for "uninstall" actions where the original action is lost
@@ -376,7 +430,7 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 	case "known_hosts":
 		return NewKnownHostsHandler(rule, basePath)
 	case "gpg-key":
-		return NewGPGKeyHandler(rule, basePath)
+		return NewGPGKeyHandlerWithPassword(rule, basePath, passwordCache["sudo"])
 	case "download":
 		return NewDownloadHandler(rule, basePath)
 	case "run":
@@ -392,66 +446,6 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 	default:
 		return nil
 	}
-}
-
-// GetHandlerFactory returns a handler factory function for the given action
-// If no factory is found for the action, returns nil
-func GetHandlerFactory(action string) HandlerFactory {
-	factories := map[string]HandlerFactory{
-		"install": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewInstallHandler(rule, basePath)
-		},
-		"uninstall": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewInstallHandler(rule, basePath)
-		},
-		"clone": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewCloneHandler(rule, basePath)
-		},
-		"decrypt": func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
-			return NewDecryptHandler(rule, basePath, passwordCache)
-		},
-		"mkdir": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewMkdirHandler(rule, basePath)
-		},
-		"asdf": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewAsdfHandler(rule, basePath)
-		},
-		"mise": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewMiseHandler(rule, basePath)
-		},
-		"homebrew": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewHomebrewHandler(rule, basePath)
-		},
-		"ollama": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewOllamaHandler(rule, basePath)
-		},
-		"known_hosts": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewKnownHostsHandler(rule, basePath)
-		},
-		"gpg-key": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewGPGKeyHandler(rule, basePath)
-		},
-		"download": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewDownloadHandler(rule, basePath)
-		},
-		"run": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewRunHandler(rule, basePath)
-		},
-		"run-sh": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewRunShHandler(rule, basePath)
-		},
-		"dotfiles": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewDotfilesHandler(rule, basePath)
-		},
-		"sudoers": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewSudoersHandler(rule, basePath)
-		},
-		"schedule": func(rule parser.Rule, basePath string, _ map[string]string) Handler {
-			return NewScheduleHandler(rule, basePath)
-		},
-	}
-
-	return factories[action]
 }
 
 // GetStatusProviderHandlers returns all handler instances that implement StatusProvider
@@ -493,9 +487,9 @@ func commandSuccessfullyExecuted(cmd string, records []ExecutionRecord) (*Execut
 	var resultRecord *ExecutionRecord
 	commandExecuted := false
 
-	for _, record := range records {
-		if record.Status == "success" && record.Command == cmd {
-			resultRecord = &record
+	for i := range records {
+		if records[i].Status == "success" && records[i].Command == cmd {
+			resultRecord = &records[i]
 			commandExecuted = true
 			break
 		}

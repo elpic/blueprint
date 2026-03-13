@@ -148,7 +148,7 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 	// Process each rule by creating appropriate handler and calling UpdateStatus
 	for _, rule := range rules {
 		// Create handler for the rule (handles both install and uninstall)
-		handler := handlerskg.NewHandler(rule, "", passwordCache)
+		handler := handlerskg.NewHandler(rule, "", passwordCache.snapshot())
 		if handler == nil {
 			// Skip unknown actions
 			continue
@@ -173,7 +173,6 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 
 	return nil
 }
-
 
 // getAutoUninstallRules compares status with current rules and generates uninstall rules for removed resources
 // Each handler's FindUninstallRules method encapsulates all status comparison logic
@@ -212,7 +211,6 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 
 	return autoUninstallRules
 }
-
 
 // normalizePath normalizes a file path to allow comparison of relative and absolute paths
 // It converts to absolute path and normalizes separators
@@ -261,6 +259,7 @@ func PrintStatus() {
 
 	fmt.Printf("\n")
 }
+
 // getNextRunNumber returns the next run number and increments the counter
 func getNextRunNumber() (int, error) {
 	blueprintDir, err := getBlueprintDir()

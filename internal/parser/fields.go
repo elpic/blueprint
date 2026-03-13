@@ -21,130 +21,158 @@ var multiwordKeys = map[string]bool{
 	"after:":  true, // comma-separated list which may contain spaces: "after: a, b, c"
 }
 
+// bracketKeys are keywords whose value is a bracket-delimited list: "key: [a, b, c]".
+var bracketKeys = map[string]bool{
+	"on:":   true,
+	"skip:": true,
+}
+
 // parseFields tokenizes a rule body into keyword fields and positional tokens.
 //
-// Algorithm:
-//  1. Split off " on: [...]" from the right using strings.LastIndex to avoid
-//     collisions with URLs that contain "on:" (e.g. "http://example.com/something").
-//  2. Handle cron: "..." quoted value by extracting it before general tokenisation.
-//  3. Handle skip: [...] bracket list similarly.
-//  4. Scan remaining tokens left-to-right: a token ending in ":" is a keyword key;
-//     the immediately following token(s) are its value.
-//     - Single-word keywords: consume exactly one token.
-//     - Multiword keywords (unless:, undo:): consume all tokens until the next keyword.
-//  5. Tokens that are not keyword keys or keyword values are positional (f.tokens).
+// Single-pass algorithm: scan whitespace-separated tokens left-to-right.
+// A token is a keyword key when ALL of these hold:
+//   - It ends with ":"
+//   - It is not a URL scheme token (does not contain "://")
+//
+// Special value handling per keyword type:
+//   - bracketKeys (on:, skip:): consume the rest of the line up to and
+//     including the closing "]", then continue scanning after it.
+//   - cron:: if the next character is a double-quote, consume the quoted
+//     string; otherwise consume tokens until the next keyword.
+//   - multiwordKeys (unless:, undo:, after:): consume tokens until the
+//     next keyword or end-of-input.
+//   - all others: consume exactly one token.
+//
+// Tokens that are not keyword keys or keyword values are positional (f.tokens).
 func parseFields(body string) lineFields {
 	f := lineFields{
 		kv: make(map[string]string),
 	}
 
-	// Step 1: extract "on: [...]" from the right.
-	// Match " on:" (inline) or "on:" at position 0 (directive with no other tokens).
-	var onRaw string
-	if idx := strings.LastIndex(body, " on:"); idx >= 0 {
-		onRaw = strings.TrimSpace(body[idx+4:])
-		body = strings.TrimSpace(body[:idx])
-	} else if strings.HasPrefix(body, "on:") {
-		onRaw = strings.TrimSpace(body[3:])
-		body = ""
-	}
-	if onRaw != "" {
-		onValue := strings.Trim(onRaw, "[]")
-		for _, part := range strings.Split(onValue, ",") {
-			if s := strings.TrimSpace(part); s != "" {
-				f.osFilter = append(f.osFilter, s)
-			}
-		}
-	}
+	// We work on the raw string with a cursor so that bracket and quoted
+	// values (which may contain spaces) can be consumed without re-joining.
+	s := strings.TrimSpace(body)
 
-	// Step 2: extract cron: "..." quoted value before tokenisation to avoid
-	// splitting on spaces inside the cron expression.
-	if idx := strings.Index(body, `cron: "`); idx >= 0 {
-		rest := body[idx+len(`cron: "`):]
-		end := strings.Index(rest, `"`)
-		if end >= 0 {
-			f.kv["cron:"] = rest[:end]
-			body = strings.TrimSpace(body[:idx]) + " " + strings.TrimSpace(rest[end+1:])
+	for len(s) > 0 {
+		s = strings.TrimSpace(s)
+		if len(s) == 0 {
+			break
 		}
-	} else if idx := strings.Index(body, "cron:"); idx >= 0 {
-		// unquoted cron: take until next keyword or end
-		rest := strings.TrimSpace(body[idx+5:])
-		body = strings.TrimSpace(body[:idx])
-		// find next keyword boundary
-		parts := strings.Fields(rest)
-		var cronParts []string
-		var remainder []string
-		inCron := true
-		for _, p := range parts {
-			if inCron && strings.HasSuffix(p, ":") {
-				inCron = false
-				remainder = append(remainder, p)
-			} else if inCron {
-				cronParts = append(cronParts, p)
-			} else {
-				remainder = append(remainder, p)
-			}
-		}
-		f.kv["cron:"] = strings.Join(cronParts, " ")
-		if len(remainder) > 0 {
-			body = body + " " + strings.Join(remainder, " ")
-		}
-	}
 
-	// Step 3: extract skip: [...] bracket list.
-	if idx := strings.Index(body, "skip:"); idx >= 0 {
-		rest := strings.TrimSpace(body[idx+5:])
-		body = strings.TrimSpace(body[:idx])
-		if strings.HasPrefix(rest, "[") {
-			end := strings.Index(rest, "]")
-			if end >= 0 {
-				inner := rest[1:end]
-				var skipList []string
-				for _, s := range strings.Split(inner, ",") {
-					if v := strings.TrimSpace(s); v != "" {
-						skipList = append(skipList, v)
-					}
-				}
-				f.kv["skip:"] = strings.Join(skipList, ",")
-				// anything after "]" goes back to body
-				after := strings.TrimSpace(rest[end+1:])
-				if after != "" {
-					body = body + " " + after
-				}
-			}
+		// Find the end of the current token (next whitespace).
+		spIdx := strings.IndexAny(s, " \t")
+		var tok string
+		if spIdx < 0 {
+			tok = s
+			s = ""
+		} else {
+			tok = s[:spIdx]
+			s = strings.TrimSpace(s[spIdx:])
 		}
-	}
 
-	// Step 4 & 5: tokenise the remaining body.
-	// after: is special: comma-separated list, but still single "word" in the token sense
-	// (no spaces around commas). We treat it as a single-word keyword.
-	tokens := strings.Fields(body)
-	i := 0
-	for i < len(tokens) {
-		tok := tokens[i]
-		if strings.HasSuffix(tok, ":") {
+		// Is this token a keyword key?
+		// Condition: ends with ":" and contains no "://" (rules out URL schemes).
+		if strings.HasSuffix(tok, ":") && !strings.Contains(tok, "://") {
 			key := tok
-			i++
-			if multiwordKeys[key] {
-				// Consume tokens until the next keyword or end.
-				var valueParts []string
-				for i < len(tokens) && !strings.HasSuffix(tokens[i], ":") {
-					valueParts = append(valueParts, tokens[i])
-					i++
+
+			switch {
+			case bracketKeys[key]:
+				// Value is "[item, item, ...]" — may span the rest of the line.
+				s = strings.TrimSpace(s)
+				if strings.HasPrefix(s, "[") {
+					end := strings.Index(s, "]")
+					if end >= 0 {
+						inner := s[1:end]
+						s = strings.TrimSpace(s[end+1:])
+						if key == "on:" {
+							for _, part := range strings.Split(inner, ",") {
+								if v := strings.TrimSpace(part); v != "" {
+									f.osFilter = append(f.osFilter, v)
+								}
+							}
+						} else {
+							// skip: — store as comma-joined trimmed list
+							var items []string
+							for _, part := range strings.Split(inner, ",") {
+								if v := strings.TrimSpace(part); v != "" {
+									items = append(items, v)
+								}
+							}
+							f.kv[key] = strings.Join(items, ",")
+						}
+					}
+					// If no "]" found, ignore malformed bracket value.
 				}
-				f.kv[key] = strings.Join(valueParts, " ")
-			} else {
-				// Single-word value.
-				if i < len(tokens) {
-					f.kv[key] = tokens[i]
-					i++
+				// If not followed by "[", the keyword is silently ignored
+				// (no value to extract, no side-effects on subsequent tokens).
+
+			case key == "cron:":
+				s = strings.TrimSpace(s)
+				if strings.HasPrefix(s, `"`) {
+					// Quoted cron expression: consume up to the closing quote.
+					end := strings.Index(s[1:], `"`)
+					if end >= 0 {
+						f.kv[key] = s[1 : end+1]
+						s = strings.TrimSpace(s[end+2:])
+					}
 				} else {
-					f.kv[key] = ""
+					// Unquoted: consume tokens until the next keyword or end.
+					var parts []string
+					for len(s) > 0 {
+						sp := strings.IndexAny(s, " \t")
+						var word string
+						if sp < 0 {
+							word = s
+							s = ""
+						} else {
+							word = s[:sp]
+							s = strings.TrimSpace(s[sp:])
+						}
+						if strings.HasSuffix(word, ":") && !strings.Contains(word, "://") {
+							// Put the keyword back for the outer loop.
+							s = word + " " + s
+							break
+						}
+						parts = append(parts, word)
+					}
+					f.kv[key] = strings.Join(parts, " ")
+				}
+
+			case multiwordKeys[key]:
+				// Consume tokens until the next keyword or end.
+				var parts []string
+				for len(s) > 0 {
+					sp := strings.IndexAny(s, " \t")
+					var word string
+					if sp < 0 {
+						word = s
+						s = ""
+					} else {
+						word = s[:sp]
+						s = strings.TrimSpace(s[sp:])
+					}
+					if strings.HasSuffix(word, ":") && !strings.Contains(word, "://") {
+						s = word + " " + s
+						break
+					}
+					parts = append(parts, word)
+				}
+				f.kv[key] = strings.Join(parts, " ")
+
+			default:
+				// Single-word value.
+				sp := strings.IndexAny(s, " \t")
+				if sp < 0 {
+					f.kv[key] = s
+					s = ""
+				} else {
+					f.kv[key] = s[:sp]
+					s = strings.TrimSpace(s[sp:])
 				}
 			}
 		} else {
+			// Positional token.
 			f.tokens = append(f.tokens, tok)
-			i++
 		}
 	}
 

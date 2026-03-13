@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/elpic/blueprint/internal"
 	"os"
-	"os/user"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -33,7 +32,7 @@ func NewMkdirHandler(rule parser.Rule, basePath string) *MkdirHandler {
 func (h *MkdirHandler) Up() (string, error) {
 	// Expand path (handle ~)
 	path := h.Rule.Mkdir
-	path = mkdirExpandPath(path)
+	path = expandPath(path)
 
 	// Validate permissions if specified
 	if h.Rule.MkdirPerms != "" {
@@ -67,7 +66,7 @@ func (h *MkdirHandler) Up() (string, error) {
 func (h *MkdirHandler) Down() (string, error) {
 	// Expand path (handle ~)
 	path := h.Rule.Mkdir
-	path = mkdirExpandPath(path)
+	path = expandPath(path)
 
 	// Check if directory exists
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -160,18 +159,6 @@ func (h *MkdirHandler) DisplayInfo() {
 	if h.Rule.MkdirPerms != "" {
 		fmt.Printf("  %s\n", formatFunc(fmt.Sprintf("Permissions: %s", h.Rule.MkdirPerms)))
 	}
-}
-
-// mkdirExpandPath expands ~ to home directory
-func mkdirExpandPath(path string) string {
-	if strings.HasPrefix(path, "~") {
-		usr, err := user.Current()
-		if err != nil {
-			return path
-		}
-		return filepath.Join(usr.HomeDir, path[1:])
-	}
-	return path
 }
 
 // mkdirEscapePath escapes special characters for shell

@@ -8,21 +8,11 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
 func getOSName() string {
-	switch runtime.GOOS {
-	case "darwin":
-		return "mac"
-	case "linux":
-		return "linux"
-	case "windows":
-		return "windows"
-	default:
-		return runtime.GOOS
-	}
+	return internal.OSName()
 }
 
 func filterRulesByOS(rules []parser.Rule) []parser.Rule {
@@ -54,19 +44,7 @@ func deduplicateRules(rules []parser.Rule) []parser.Rule {
 	seen := make(map[string]bool)
 	var result []parser.Rule
 	for _, rule := range rules {
-		key := rule.ID
-		if key == "" {
-			handler := handlerskg.NewHandler(rule, "", nil)
-			if handler != nil {
-				if kp, ok := handler.(handlerskg.KeyProvider); ok {
-					key = kp.GetDependencyKey()
-				} else {
-					key = rule.Action
-				}
-			} else {
-				key = rule.Action
-			}
-		}
+		key := handlerskg.RuleKey(rule)
 		if seen[key] {
 			continue
 		}
@@ -147,16 +125,8 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 		if rules[i].ID != "" {
 			rulesByID[rules[i].ID] = &rules[i]
 		}
-
-		// Let the handler provide its dependency keys
-		handler := handlerskg.NewHandler(rules[i], "", nil)
-		if handler != nil {
-			// Check if handler implements KeyProvider to provide custom identifiers
-			if keyProvider, ok := handler.(handlerskg.KeyProvider); ok {
-				key := keyProvider.GetDependencyKey()
-				rulesByKey[key] = &rules[i]
-			}
-		}
+		key := handlerskg.RuleKey(rules[i])
+		rulesByKey[key] = &rules[i]
 
 		// Also allow install packages to be referenced by package name
 		for _, pkg := range rules[i].Packages {
@@ -172,22 +142,7 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 	// Helper function for DFS
 	var visit func(rule *parser.Rule) error
 	visit = func(rule *parser.Rule) error {
-		ruleKey := rule.ID
-		if ruleKey == "" {
-			// Use handler's KeyProvider interface to get the key
-			handler := handlerskg.NewHandler(*rule, "", nil)
-			if handler != nil {
-				if keyProvider, ok := handler.(handlerskg.KeyProvider); ok {
-					ruleKey = keyProvider.GetDependencyKey()
-				} else {
-					// Fallback: use action as key if no KeyProvider implemented
-					ruleKey = rule.Action
-				}
-			} else {
-				// Fallback: use action as key if no handler found
-				ruleKey = rule.Action
-			}
-		}
+		ruleKey := handlerskg.RuleKey(*rule)
 
 		if recursionStack[ruleKey] {
 			return fmt.Errorf("circular dependency detected involving rule %s", ruleKey)
