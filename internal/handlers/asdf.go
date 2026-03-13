@@ -84,7 +84,7 @@ func (h *AsdfHandler) Up() (string, error) {
 	}
 
 	// Install plugins and versions, skipping any already installed.
-	var allCmds []string
+	var allCmds [][]string
 
 	for _, pkg := range h.Rule.AsdfPackages {
 		parts := strings.Split(pkg, "@")
@@ -108,21 +108,21 @@ func (h *AsdfHandler) Up() (string, error) {
 			continue
 		}
 
-		allCmds = append(allCmds,
-			fmt.Sprintf("asdf plugin add %s 2>/dev/null || true", plugin),
-			fmt.Sprintf("asdf install %s %s", plugin, version),
-		)
+		// Skip plugin add if plugin is already present
+		if !isAsdfPluginInstalled(plugin) {
+			allCmds = append(allCmds, []string{"plugin", "add", plugin})
+		}
+		allCmds = append(allCmds, []string{"install", plugin, version})
 	}
 
-	// Execute all commands in a single shell session with asdf in PATH
-	if len(allCmds) > 0 {
-		combinedCmd := strings.Join(allCmds, " && ")
-		fullCmd := fmt.Sprintf("export PATH=\"$HOME/.asdf/bin:$PATH\" && %s", combinedCmd)
-		cmd := exec.Command("bash", "-c", fullCmd)
+	// Execute each command directly (no shell) to avoid slow bash startup on zsh systems
+	bin := asdfBin()
+	for _, args := range allCmds {
+		cmd := exec.Command(bin, args...)
 		cmd.Stdin = nil
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			return fmt.Sprintf("Installation output:\n%s", string(output)), fmt.Errorf("failed to install asdf packages: %w", err)
+			return fmt.Sprintf("Installation output:\n%s", string(output)), fmt.Errorf("failed to run asdf %s: %w", strings.Join(args, " "), err)
 		}
 	}
 
@@ -644,6 +644,22 @@ func asdfBin() string {
 		return p
 	}
 	return "asdf"
+}
+
+// isAsdfPluginInstalled returns true if the given plugin is already added to asdf.
+var isAsdfPluginInstalled = func(plugin string) bool {
+	cmd := exec.Command(asdfBin(), "plugin", "list")
+	cmd.Stdin = nil
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(line) == plugin {
+			return true
+		}
+	}
+	return false
 }
 
 // isAsdfVersionInstalled returns true if the given plugin@version is already installed.
