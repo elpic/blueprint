@@ -65,15 +65,15 @@ func TestAsdfHandlerGetCommand(t *testing.T) {
 
 func TestAsdfHandlerUpdateStatus(t *testing.T) {
 	tests := []struct {
-		name          string
-		rule          parser.Rule
-		records       []ExecutionRecord
-		initialStatus Status
-		expectedAsdfs int
-		shouldContain bool
-		expectedPlugin string
+		name            string
+		rule            parser.Rule
+		records         []ExecutionRecord
+		initialStatus   Status
+		expectedAsdfs   int
+		shouldContain   bool
+		expectedPlugin  string
 		expectedVersion string
-		description    string
+		description     string
 	}{
 		{
 			name: "add asdf to status on successful install",
@@ -88,12 +88,12 @@ func TestAsdfHandlerUpdateStatus(t *testing.T) {
 					Output:  "Installed asdf (SHA: abc123def456)",
 				},
 			},
-			initialStatus:    Status{},
-			expectedAsdfs:    1,
-			shouldContain:    true,
-			expectedPlugin:   "nodejs",
-			expectedVersion:  "18.0.0",
-			description:      "Single asdf rule adds one package",
+			initialStatus:   Status{},
+			expectedAsdfs:   1,
+			shouldContain:   true,
+			expectedPlugin:  "nodejs",
+			expectedVersion: "18.0.0",
+			description:     "Single asdf rule adds one package",
 		},
 		{
 			name: "multiple asdf rules preserve packages from other rules",
@@ -118,11 +118,11 @@ func TestAsdfHandlerUpdateStatus(t *testing.T) {
 					},
 				},
 			},
-			expectedAsdfs:    2,
-			shouldContain:    true,
-			expectedPlugin:   "python",
-			expectedVersion:  "3.11.0",
-			description:      "Second asdf rule preserves nodejs entry and adds python",
+			expectedAsdfs:   2,
+			shouldContain:   true,
+			expectedPlugin:  "python",
+			expectedVersion: "3.11.0",
+			description:     "Second asdf rule preserves nodejs entry and adds python",
 		},
 		{
 			name: "multiple versions of same plugin coexist",
@@ -147,11 +147,11 @@ func TestAsdfHandlerUpdateStatus(t *testing.T) {
 					},
 				},
 			},
-			expectedAsdfs:    2,
-			shouldContain:    true,
-			expectedPlugin:   "nodejs",
-			expectedVersion:  "20.0.0",
-			description:      "Multiple versions of same plugin can coexist (node@18 and node@20)",
+			expectedAsdfs:   2,
+			shouldContain:   true,
+			expectedPlugin:  "nodejs",
+			expectedVersion: "20.0.0",
+			description:     "Multiple versions of same plugin can coexist (node@18 and node@20)",
 		},
 		{
 			name: "remove specific plugin version on uninstall, preserve other versions",
@@ -217,11 +217,11 @@ func TestAsdfHandlerUpdateStatus(t *testing.T) {
 					},
 				},
 			},
-			expectedAsdfs:    1,
-			shouldContain:    true,
-			expectedPlugin:   "nodejs",
-			expectedVersion:  "18.0.0",
-			description:      "Idempotent: installing same version twice keeps count at 1",
+			expectedAsdfs:   1,
+			shouldContain:   true,
+			expectedPlugin:  "nodejs",
+			expectedVersion: "18.0.0",
+			description:     "Idempotent: installing same version twice keeps count at 1",
 		},
 		{
 			name: "no action if asdf install failed",
@@ -395,7 +395,6 @@ func TestAsdfHandlerDisplayInfo(t *testing.T) {
 		})
 	}
 }
-
 
 func TestAsdfUpSkipsAlreadyInstalledVersions(t *testing.T) {
 	origVersionInstalled := isAsdfVersionInstalled
