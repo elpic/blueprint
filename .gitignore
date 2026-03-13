@@ -6,6 +6,9 @@ blueprint-*
 # Claude Code
 .claude/settings.local.json
 
+# Local task tracking
+.tasks/
+
 # IDE and Editor files
 .vscode/
 .idea/
