@@ -20,12 +20,12 @@ func TestSudoersUpSkipsIfAlreadyPresent(t *testing.T) {
 		return []byte(entry), nil
 	}
 
-	// Stub executeCommandWithCache — it must NOT be called
-	origExec := executeCommandWithCache
-	defer func() { executeCommandWithCache = origExec }()
-	executed := false
-	executeCommandWithCache = func(cmd string) (string, error) {
-		executed = true
+	// Stub sudoRun — it must NOT be called when already present
+	origSudoRun := sudoRun
+	defer func() { sudoRun = origSudoRun }()
+	sudoRunCalled := false
+	sudoRun = func(args ...string) (string, error) {
+		sudoRunCalled = true
 		return "", nil
 	}
 
@@ -38,8 +38,8 @@ func TestSudoersUpSkipsIfAlreadyPresent(t *testing.T) {
 	if !strings.Contains(out, "already in sudoers") {
 		t.Errorf("expected 'already in sudoers' message, got %q", out)
 	}
-	if executed {
-		t.Error("executeCommandWithCache should not have been called when entry already exists")
+	if sudoRunCalled {
+		t.Error("sudoRun should not have been called when entry already exists")
 	}
 }
 
@@ -57,21 +57,24 @@ func TestSudoersTempFileUsesSecureDir(t *testing.T) {
 	// Intercept the temp-dir selection
 	original := sudoersTempDir
 	defer func() { sudoersTempDir = original }()
-
 	sudoersTempDir = func() (string, error) {
 		return secureMarker, nil
 	}
 
-	// Intercept executeCommandWithCache — capture visudo call
-	origExec := executeCommandWithCache
-	defer func() { executeCommandWithCache = origExec }()
+	// Stub sudoersFileReader so the skip-check doesn't short-circuit
+	origReader := sudoersFileReader
+	defer func() { sudoersFileReader = origReader }()
+	sudoersFileReader = func(path string) ([]byte, error) {
+		return nil, nil // empty → not already present
+	}
 
-	executeCommandWithCache = func(cmd string) (string, error) {
-		if strings.HasPrefix(cmd, "visudo") {
-			parts := strings.Fields(cmd)
-			if len(parts) >= 4 {
-				capturedTmpPath = parts[len(parts)-1]
-			}
+	// Intercept sudoRun — capture visudo call to verify temp path
+	origSudoRun := sudoRun
+	defer func() { sudoRun = origSudoRun }()
+	sudoRun = func(args ...string) (string, error) {
+		// args: ["visudo", "-c", "-f", "<tmpPath>"]
+		if len(args) > 0 && args[0] == "visudo" {
+			capturedTmpPath = args[len(args)-1]
 		}
 		return "", nil
 	}

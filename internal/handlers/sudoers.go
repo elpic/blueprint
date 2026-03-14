@@ -63,8 +63,25 @@ func (h *SudoersHandler) NeedsSudo() bool {
 	return true
 }
 
-// sudoersFileReader reads the contents of a file. Overridable for testing.
-var sudoersFileReader = os.ReadFile
+// sudoersFileReader reads the contents of a sudoers drop-in file.
+// Uses sudo cat since /etc/sudoers.d/ files are root-owned (mode 0440).
+// Overridable for testing.
+var sudoersFileReader = func(path string) ([]byte, error) {
+	cmd := exec.Command("sudo", "cat", path)
+	cmd.Stdin = nil
+	out, err := cmd.Output()
+	return out, err
+}
+
+// sudoRun runs a command under sudo directly, bypassing executeCommandWithCache
+// to avoid the engine's double-sudo logic. Overridable for testing.
+var sudoRun = func(args ...string) (string, error) {
+	fullArgs := append([]string{"sudo"}, args...)
+	cmd := exec.Command(fullArgs[0], fullArgs[1:]...) // #nosec G204
+	cmd.Stdin = nil
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
 
 // sudoersTempDir returns the directory used for sudoers temp files.
 // Overridable for testing.
@@ -116,19 +133,16 @@ func (h *SudoersHandler) Up() (string, error) {
 	_ = tmpFile.Close()
 
 	// Validate with visudo -c -f (requires root).
-	// Wrap in sh -c so the engine's Linux sudo-detection does not prepend a
-	// second sudo when it sees the word "sudo" at the start of the command.
-	validateCmd := fmt.Sprintf("sh -c 'sudo visudo -c -f %q'", tmpPath)
-	if out, err := executeCommandWithCache(validateCmd); err != nil {
-		return "", fmt.Errorf("sudoers validation failed for entry %q: %s", entry, out)
+	if out, err := sudoRun("visudo", "-c", "-f", tmpPath); err != nil {
+		return "", fmt.Errorf("sudoers validation failed: %s", out)
 	}
 
-	// Write the validated file into /etc/sudoers.d/ with 0440 permissions.
-	// Both operations run in one sh -c so the engine won't prepend a second sudo.
-	installCmd := fmt.Sprintf("sh -c 'sudo tee %s > /dev/null < %s && sudo chmod 0440 %s'",
-		filePath, tmpPath, filePath)
-	if out, err := executeCommandWithCache(installCmd); err != nil {
+	// Copy validated file into /etc/sudoers.d/ and set correct permissions.
+	if out, err := sudoRun("cp", tmpPath, filePath); err != nil {
 		return "", fmt.Errorf("failed to install sudoers file at %s: %s", filePath, out)
+	}
+	if out, err := sudoRun("chmod", "0440", filePath); err != nil {
+		return "", fmt.Errorf("failed to set permissions on %s: %s", filePath, out)
 	}
 
 	return fmt.Sprintf("Added %s to sudoers (NOPASSWD: ALL)", user), nil
@@ -142,9 +156,8 @@ func (h *SudoersHandler) Down() (string, error) {
 	}
 
 	filePath := sudoersFilePath(user)
-	removeCmd := fmt.Sprintf("sh -c 'sudo rm -f %s'", filePath)
-	if _, err := executeCommandWithCache(removeCmd); err != nil {
-		return "", fmt.Errorf("failed to remove sudoers file %s: %w", filePath, err)
+	if out, err := sudoRun("rm", "-f", filePath); err != nil {
+		return "", fmt.Errorf("failed to remove sudoers file %s: %s", filePath, out)
 	}
 
 	return fmt.Sprintf("Removed %s from sudoers", user), nil
@@ -157,7 +170,7 @@ func (h *SudoersHandler) GetCommand() string {
 		if user == "" {
 			user = "$USER"
 		}
-		return fmt.Sprintf("sh -c 'sudo rm -f /etc/sudoers.d/%s'", user)
+		return fmt.Sprintf("sudo rm -f /etc/sudoers.d/%s", user)
 	}
 	user := h.Rule.SudoersUser
 	if user == "" {
