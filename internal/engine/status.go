@@ -260,7 +260,7 @@ func PrintStatus() {
 
 // PrintSlow displays the slowest rule executions from history.
 // topN limits the results (default 10). If lastOnly is true, only the latest run is shown.
-func PrintSlow(topN int, lastOnly bool) {
+func PrintSlow(topN int) {
 	historyPath, err := getHistoryPath()
 	if err != nil {
 		fmt.Printf("%s\n", ui.FormatError("Error getting history path"))
@@ -277,10 +277,6 @@ func PrintSlow(topN int, lastOnly bool) {
 	if err := json.Unmarshal(data, &records); err != nil {
 		fmt.Printf("%s\n", ui.FormatError("Error parsing history file"))
 		return
-	}
-
-	if lastOnly {
-		// history.json already contains only the latest run, nothing to filter
 	}
 
 	// Filter out records with no duration

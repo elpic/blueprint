@@ -102,19 +102,13 @@ func main() {
 		engine.PrintPS()
 	case "slow":
 		topN := 10
-		lastOnly := false
 		for i := 2; i < len(os.Args); i++ {
-			switch os.Args[i] {
-			case "--top":
-				if i+1 < len(os.Args) {
-					_, _ = fmt.Sscanf(os.Args[i+1], "%d", &topN)
-					i++
-				}
-			case "--last":
-				lastOnly = true
+			if os.Args[i] == "--top" && i+1 < len(os.Args) {
+				_, _ = fmt.Sscanf(os.Args[i+1], "%d", &topN)
+				i++
 			}
 		}
-		engine.PrintSlow(topN, lastOnly)
+		engine.PrintSlow(topN)
 	default:
 		// Short mode: treat as file path only if it looks like a path (not a known command typo).
 		if !isKnownCommand(mode) {
