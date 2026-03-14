@@ -46,7 +46,7 @@ func (h *DownloadHandler) Up() (string, error) {
 
 	// Create parent directories if needed
 	parentDir := filepath.Dir(destPath)
-	if err := os.MkdirAll(parentDir, 0755); err != nil { // #nosec G301 -- user-supplied path, standard dir perms
+	if err := os.MkdirAll(parentDir, 0750); err != nil {
 		return "", fmt.Errorf("failed to create parent directory %s: %w", parentDir, err)
 	}
 

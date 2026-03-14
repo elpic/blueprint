@@ -297,10 +297,6 @@ func (h *RunShHandler) Up() (string, error) {
 		return "", fmt.Errorf("failed to write script: %w", copyErr)
 	}
 
-	if err := os.Chmod(tmpPath, 0700); err != nil { // #nosec G302 -- temp script needs execute permission
-		return "", fmt.Errorf("failed to make script executable: %w", err)
-	}
-
 	runCmd := "sh " + tmpPath
 	if h.Rule.RunSudo {
 		runCmd = "sudo sh " + tmpPath
