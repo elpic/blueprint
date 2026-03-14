@@ -7,6 +7,42 @@ import (
 	"github.com/elpic/blueprint/internal/parser"
 )
 
+// TestSudoersUpSkipsIfAlreadyPresent verifies that Up() returns early without
+// running any commands when the correct sudoers entry already exists on disk.
+func TestSudoersUpSkipsIfAlreadyPresent(t *testing.T) {
+	const user = "testuser"
+
+	// Stub the file reader to return the correct entry
+	origReader := sudoersFileReader
+	defer func() { sudoersFileReader = origReader }()
+	sudoersFileReader = func(path string) ([]byte, error) {
+		entry := sudoersEntry(user)
+		return []byte(entry), nil
+	}
+
+	// Stub executeCommandWithCache — it must NOT be called
+	origExec := executeCommandWithCache
+	defer func() { executeCommandWithCache = origExec }()
+	executed := false
+	executeCommandWithCache = func(cmd string) (string, error) {
+		executed = true
+		return "", nil
+	}
+
+	rule := parser.Rule{Action: "sudoers", SudoersUser: user}
+	h := NewSudoersHandler(rule, "")
+	out, err := h.Up()
+	if err != nil {
+		t.Fatalf("Up() returned error: %v", err)
+	}
+	if !strings.Contains(out, "already in sudoers") {
+		t.Errorf("expected 'already in sudoers' message, got %q", out)
+	}
+	if executed {
+		t.Error("executeCommandWithCache should not have been called when entry already exists")
+	}
+}
+
 // TestSudoersTempFileUsesSecureDir verifies that the sudoers handler creates
 // its temp file in the directory returned by sudoersTempDir(), not via a
 // hardcoded os.TempDir() call that would bypass the secure-directory selection.

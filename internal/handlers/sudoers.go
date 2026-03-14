@@ -63,6 +63,9 @@ func (h *SudoersHandler) NeedsSudo() bool {
 	return true
 }
 
+// sudoersFileReader reads the contents of a file. Overridable for testing.
+var sudoersFileReader = os.ReadFile
+
 // sudoersTempDir returns the directory used for sudoers temp files.
 // Overridable for testing.
 var sudoersTempDir = func() (string, error) {
@@ -86,6 +89,12 @@ func (h *SudoersHandler) Up() (string, error) {
 
 	filePath := sudoersFilePath(user)
 	entry := sudoersEntry(user)
+
+	// Skip if the correct entry is already present
+	if existing, err := sudoersFileReader(filePath); err == nil &&
+		strings.TrimSpace(string(existing)) == strings.TrimSpace(entry) {
+		return fmt.Sprintf("%s already in sudoers", user), nil
+	}
 
 	// Write to a temp file in ~/.blueprint/ (mode 0700) to avoid TOCTOU races
 	// in world-writable /tmp.
