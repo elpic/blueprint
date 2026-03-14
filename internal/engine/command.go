@@ -136,6 +136,7 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 		var output string
 		var err error
 		var actualCmd string
+		var durationMs int64
 
 		// Create handler for this rule
 		handler = handlerskg.NewHandler(rule, basePath, passwordCache.snapshot())
@@ -175,11 +176,13 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 			}
 
 			// Execute handler
+			start := time.Now()
 			if isUninstall {
 				output, err = handler.Down()
 			} else {
 				output, err = handler.Up()
 			}
+			durationMs = time.Since(start).Milliseconds()
 		} else {
 			// Unknown action - this shouldn't happen if parsing is correct
 			fmt.Printf(" %s", ui.FormatError("unknown action"))
@@ -189,11 +192,12 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 
 		// Create execution record
 		record := ExecutionRecord{
-			Timestamp: time.Now().Format(time.RFC3339),
-			Blueprint: blueprint,
-			OS:        osName,
-			Command:   actualCmd,
-			Output:    strings.TrimSpace(output),
+			Timestamp:  time.Now().Format(time.RFC3339),
+			Blueprint:  blueprint,
+			OS:         osName,
+			Command:    actualCmd,
+			DurationMs: durationMs,
+			Output:     strings.TrimSpace(output),
 		}
 
 		if err != nil {

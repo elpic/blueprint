@@ -11,13 +11,14 @@ import (
 )
 
 type ExecutionRecord struct {
-	Timestamp string `json:"timestamp"`
-	Blueprint string `json:"blueprint"`
-	OS        string `json:"os"`
-	Command   string `json:"command"`
-	Status    string `json:"status"`
-	Output    string `json:"output,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Timestamp  string `json:"timestamp"`
+	Blueprint  string `json:"blueprint"`
+	OS         string `json:"os"`
+	Command    string `json:"command"`
+	Status     string `json:"status"`
+	DurationMs int64  `json:"duration_ms,omitempty"`
+	Output     string `json:"output,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 // passwordStore is a mutex-protected map of password-id → password.
