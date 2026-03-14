@@ -361,6 +361,17 @@ func PrintHistory(runNumber int, stepNumber int) {
 		return
 	}
 
+	// Load durations from history.json (best-effort, keyed by 1-based rule index)
+	durations := map[int]int64{}
+	if data, err := readBlueprintFile(filepath.Join(blueprintDir, "history.json")); err == nil {
+		var recs []ExecutionRecord
+		if json.Unmarshal(data, &recs) == nil {
+			for idx, r := range recs {
+				durations[idx+1] = r.DurationMs
+			}
+		}
+	}
+
 	fmt.Printf("\n%s\n", ui.FormatHighlight(fmt.Sprintf("=== RUN %d HISTORY ===", runNumber)))
 
 	// List all output files
@@ -386,14 +397,12 @@ func PrintHistory(runNumber int, stepNumber int) {
 	for _, entry := range entries {
 		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".output" {
 			ruleNum := strings.TrimSuffix(entry.Name(), ".output")
+			ruleNumInt := 0
+			_, _ = fmt.Sscanf(ruleNum, "%d", &ruleNumInt)
 
 			// If stepNumber is specified, only show that step
-			if stepNumber >= 0 {
-				ruleNumInt := 0
-				_, _ = fmt.Sscanf(ruleNum, "%d", &ruleNumInt)
-				if ruleNumInt != stepNumber {
-					continue
-				}
+			if stepNumber >= 0 && ruleNumInt != stepNumber {
+				continue
 			}
 
 			outputPath := filepath.Join(historyDir, entry.Name())
@@ -403,7 +412,11 @@ func PrintHistory(runNumber int, stepNumber int) {
 				continue
 			}
 
-			fmt.Printf("\n%s\n", ui.FormatHighlight(fmt.Sprintf("Rule #%s:", ruleNum)))
+			durationStr := ""
+			if ms, ok := durations[ruleNumInt]; ok && ms > 0 {
+				durationStr = fmt.Sprintf(" %s", ui.FormatDim(fmt.Sprintf("[%.1fs]", float64(ms)/1000)))
+			}
+			fmt.Printf("\n%s\n", ui.FormatHighlight(fmt.Sprintf("Rule #%s:%s", ruleNum, durationStr)))
 
 			// Parse stdout and stderr sections
 			contentStr := string(content)
