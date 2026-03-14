@@ -324,3 +324,18 @@ func (h *SudoersHandler) FindUninstallRules(status *Status, currentRules []parse
 
 	return rules
 }
+
+// IsInstalled returns true if the sudoers user in this rule is already in status.
+func (h *SudoersHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+	user := h.Rule.SudoersUser
+	if user == "" {
+		user = os.Getenv("USER")
+	}
+	for _, s := range status.Sudoers {
+		if s.User == user && normalizePath(s.Blueprint) == normalizedBlueprint && s.OS == osName {
+			return true
+		}
+	}
+	return false
+}

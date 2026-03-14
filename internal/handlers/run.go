@@ -209,6 +209,17 @@ func (h *RunHandler) FindUninstallRules(status *Status, currentRules []parser.Ru
 	return rules
 }
 
+// IsInstalled returns true if the run command in this rule is already in status.
+func (h *RunHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+	for _, r := range status.Runs {
+		if r.Action == "run" && r.Command == h.Rule.RunCommand && normalizePath(r.Blueprint) == normalizedBlueprint && r.OS == osName {
+			return true
+		}
+	}
+	return false
+}
+
 // DisplayStatusFromStatus displays run status from Status object
 func (h *RunHandler) DisplayStatusFromStatus(status *Status) {
 	if status == nil || len(status.Runs) == 0 {
@@ -454,6 +465,17 @@ func (h *RunShHandler) FindUninstallRules(status *Status, currentRules []parser.
 	}
 
 	return rules
+}
+
+// IsInstalled returns true if the run-sh URL in this rule is already in status.
+func (h *RunShHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+	for _, r := range status.Runs {
+		if r.Action == "run-sh" && r.Command == h.Rule.RunShURL && normalizePath(r.Blueprint) == normalizedBlueprint && r.OS == osName {
+			return true
+		}
+	}
+	return false
 }
 
 // DisplayStatusFromStatus displays run-sh status from Status object (delegates to RunHandler)

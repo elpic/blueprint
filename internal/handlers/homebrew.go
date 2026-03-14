@@ -466,6 +466,32 @@ func (h *HomebrewHandler) FindUninstallRules(status *Status, currentRules []pars
 	return rules
 }
 
+// IsInstalled returns true if all homebrew formulas and casks in this rule are already in status.
+func (h *HomebrewHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+
+	// Build set of stored formula keys for this blueprint+OS
+	stored := make(map[string]bool)
+	for _, brew := range status.Brews {
+		if normalizePath(brew.Blueprint) == normalizedBlueprint && brew.OS == osName {
+			stored[brew.Formula] = true
+		}
+	}
+
+	for _, formulaStr := range h.Rule.HomebrewPackages {
+		parts := strings.Split(formulaStr, "@")
+		if !stored[parts[0]] {
+			return false
+		}
+	}
+	for _, cask := range h.Rule.HomebrewCasks {
+		if !stored[caskKey(cask)] {
+			return false
+		}
+	}
+	return true
+}
+
 // removeHomebrewStatus removes a homebrew formula from the status brews list
 func removeHomebrewStatus(brews []HomebrewStatus, formula string, blueprint string, osName string) []HomebrewStatus {
 	var result []HomebrewStatus

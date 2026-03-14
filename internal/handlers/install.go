@@ -479,6 +479,24 @@ func (h *InstallHandler) FindUninstallRules(status *Status, currentRules []parse
 	return rules
 }
 
+// IsInstalled returns true if all packages in this rule are already in status.
+func (h *InstallHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+	for _, pkg := range h.Rule.Packages {
+		found := false
+		for _, s := range status.Packages {
+			if s.Name == pkg.Name && normalizePath(s.Blueprint) == normalizedBlueprint && s.OS == osName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
 // NeedsSudo returns true if package installation/uninstallation requires sudo privileges
 func (h *InstallHandler) NeedsSudo() bool {
 	// Only package managers on Linux require sudo

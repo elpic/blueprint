@@ -495,6 +495,30 @@ func (h *MiseHandler) FindUninstallRules(status *Status, currentRules []parser.R
 	return rules
 }
 
+// IsInstalled returns true if all mise packages in this rule are already in status.
+func (h *MiseHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+	for _, pkg := range h.Rule.MisePackages {
+		parts := strings.SplitN(pkg, "@", 2)
+		tool := parts[0]
+		version := ""
+		if len(parts) == 2 {
+			version = parts[1]
+		}
+		found := false
+		for _, s := range status.Mises {
+			if s.Tool == tool && s.Version == version && normalizePath(s.Blueprint) == normalizedBlueprint && s.OS == osName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
 // succeededMiseUninstall checks if mise uninstall was successful
 func succeededMiseUninstall(records []ExecutionRecord) bool {
 	for _, record := range records {

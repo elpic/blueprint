@@ -234,6 +234,17 @@ func (h *DownloadHandler) FindUninstallRules(status *Status, currentRules []pars
 	return rules
 }
 
+// IsInstalled returns true if the download path in this rule is already in status.
+func (h *DownloadHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+	for _, dl := range status.Downloads {
+		if dl.Path == h.Rule.DownloadPath && normalizePath(dl.Blueprint) == normalizedBlueprint && dl.OS == osName {
+			return true
+		}
+	}
+	return false
+}
+
 // DisplayStatusFromStatus displays download status from Status object
 func (h *DownloadHandler) DisplayStatusFromStatus(status *Status) {
 	if status == nil || len(status.Downloads) == 0 {

@@ -347,3 +347,14 @@ func (h *GPGKeyHandler) FindUninstallRules(status *Status, currentRules []parser
 
 	return rules
 }
+
+// IsInstalled returns true if the GPG keyring in this rule is already in status.
+func (h *GPGKeyHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+	for _, gpg := range status.GPGKeys {
+		if gpg.Keyring == h.Rule.GPGKeyring && normalizePath(gpg.Blueprint) == normalizedBlueprint && gpg.OS == osName {
+			return true
+		}
+	}
+	return false
+}

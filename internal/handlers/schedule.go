@@ -310,3 +310,15 @@ func (h *ScheduleHandler) FindUninstallRules(status *Status, currentRules []pars
 
 	return rules
 }
+
+// IsInstalled returns true if the schedule entry in this rule is already in status.
+func (h *ScheduleHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+	cronExpr := h.cronExpression()
+	for _, s := range status.Schedules {
+		if s.CronExpr == cronExpr && s.Source == h.Rule.ScheduleSource && normalizePath(s.Blueprint) == normalizedBlueprint && s.OS == osName {
+			return true
+		}
+	}
+	return false
+}

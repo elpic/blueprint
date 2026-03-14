@@ -444,3 +444,14 @@ func (h *DotfilesHandler) FindUninstallRules(status *Status, currentRules []pars
 
 	return rules
 }
+
+// IsInstalled returns true if the dotfiles URL in this rule is already in status.
+func (h *DotfilesHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+	for _, d := range status.Dotfiles {
+		if d.URL == h.Rule.DotfilesURL && normalizePath(d.Blueprint) == normalizedBlueprint && d.OS == osName {
+			return true
+		}
+	}
+	return false
+}

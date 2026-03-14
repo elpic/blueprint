@@ -263,6 +263,24 @@ func (h *OllamaHandler) FindUninstallRules(status *Status, currentRules []parser
 	return rules
 }
 
+// IsInstalled returns true if all ollama models in this rule are already in status.
+func (h *OllamaHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+	for _, model := range h.Rule.OllamaModels {
+		found := false
+		for _, s := range status.Ollamas {
+			if s.Model == model && normalizePath(s.Blueprint) == normalizedBlueprint && s.OS == osName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
 // removeOllamaStatus removes an ollama model from the status ollamas list
 func removeOllamaStatus(ollamas []OllamaStatus, model string, blueprint string, osName string) []OllamaStatus {
 	var result []OllamaStatus
