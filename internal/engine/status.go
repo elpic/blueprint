@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/elpic/blueprint/internal"
+	gitpkg "github.com/elpic/blueprint/internal/git"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
@@ -216,7 +217,23 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 // PrintDiff compares the desired state in the blueprint file against the installed state
 // in status.json and prints what would be added or removed on the next apply.
 func PrintDiff(blueprintFile string) {
-	rules, err := parser.ParseFile(blueprintFile)
+	// Resolve git URLs the same way RunWithSkip does
+	setupPath := blueprintFile
+	if gitpkg.IsGitURL(blueprintFile) {
+		tempDir, setupFile, err := gitpkg.CloneRepository(blueprintFile, true)
+		if err != nil {
+			fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error cloning repository: %v", err)))
+			return
+		}
+		defer func() { _ = gitpkg.CleanupRepository(tempDir) }()
+		setupPath, err = gitpkg.FindSetupFile(tempDir, setupFile)
+		if err != nil {
+			fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error finding setup file: %v", err)))
+			return
+		}
+	}
+
+	rules, err := parser.ParseFile(setupPath)
 	if err != nil {
 		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error parsing blueprint: %v", err)))
 		return
