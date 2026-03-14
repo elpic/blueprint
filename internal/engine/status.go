@@ -82,7 +82,9 @@ func readBlueprintFile(filePath string) ([]byte, error) {
 	return os.ReadFile(filePath)
 }
 
-// saveHistory saves execution records to ~/.blueprint/history.json
+// saveHistory saves execution records to ~/.blueprint/history.json.
+// Only the latest run's records are kept — full output for all runs is
+// already persisted in ~/.blueprint/history/<run>/<rule>.output files.
 func saveHistory(records []ExecutionRecord) error {
 	if len(records) == 0 {
 		return nil
@@ -93,17 +95,13 @@ func saveHistory(records []ExecutionRecord) error {
 		return err
 	}
 
-	// Read existing history
-	var allRecords []ExecutionRecord
-	if data, err := readBlueprintFile(historyPath); err == nil {
-		_ = json.Unmarshal(data, &allRecords)
+	// Strip output — it's already in per-run .output files
+	for i := range records {
+		records[i].Output = ""
 	}
 
-	// Append new records
-	allRecords = append(allRecords, records...)
-
-	// Write back to file
-	data, err := json.MarshalIndent(allRecords, "", "  ")
+	// Overwrite with only the latest run's records
+	data, err := json.MarshalIndent(records, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal history: %w", err)
 	}

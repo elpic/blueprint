@@ -63,6 +63,26 @@ func (h *SudoersHandler) NeedsSudo() bool {
 	return true
 }
 
+// sudoersFileReader reads the contents of a sudoers drop-in file.
+// Uses sudo cat since /etc/sudoers.d/ files are root-owned (mode 0440).
+// Overridable for testing.
+var sudoersFileReader = func(path string) ([]byte, error) {
+	cmd := exec.Command("sudo", "cat", path)
+	cmd.Stdin = nil
+	out, err := cmd.Output()
+	return out, err
+}
+
+// sudoRun runs a command under sudo directly, bypassing executeCommandWithCache
+// to avoid the engine's double-sudo logic. Overridable for testing.
+var sudoRun = func(args ...string) (string, error) {
+	fullArgs := append([]string{"sudo"}, args...)
+	cmd := exec.Command(fullArgs[0], fullArgs[1:]...) // #nosec G204
+	cmd.Stdin = nil
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
 // sudoersTempDir returns the directory used for sudoers temp files.
 // Overridable for testing.
 var sudoersTempDir = func() (string, error) {
@@ -87,6 +107,12 @@ func (h *SudoersHandler) Up() (string, error) {
 	filePath := sudoersFilePath(user)
 	entry := sudoersEntry(user)
 
+	// Skip if the correct entry is already present
+	if existing, err := sudoersFileReader(filePath); err == nil &&
+		strings.TrimSpace(string(existing)) == strings.TrimSpace(entry) {
+		return fmt.Sprintf("%s already in sudoers", user), nil
+	}
+
 	// Write to a temp file in ~/.blueprint/ (mode 0700) to avoid TOCTOU races
 	// in world-writable /tmp.
 	tmpDir, err := sudoersTempDir()
@@ -106,18 +132,17 @@ func (h *SudoersHandler) Up() (string, error) {
 	}
 	_ = tmpFile.Close()
 
-	// Validate with visudo -c -f
-	validateCmd := fmt.Sprintf("visudo -c -f %s", tmpPath)
-	if _, err := executeCommandWithCache(validateCmd); err != nil {
-		return "", fmt.Errorf("sudoers validation failed for entry: %s", entry)
+	// Validate with visudo -c -f (requires root).
+	if out, err := sudoRun("visudo", "-c", "-f", tmpPath); err != nil {
+		return "", fmt.Errorf("sudoers validation failed: %s", out)
 	}
 
-	// Copy validated file into /etc/sudoers.d/ using sudo (via executeCommandWithCache so
-	// the cached sudo password is used when available)
-	// 0440 is the standard permission for sudoers drop-in files
-	copyCmd := fmt.Sprintf("sudo install -m 0440 %s %s", tmpPath, filePath)
-	if _, err := executeCommandWithCache(copyCmd); err != nil {
-		return "", fmt.Errorf("failed to install sudoers file at %s: %w", filePath, err)
+	// Copy validated file into /etc/sudoers.d/ and set correct permissions.
+	if out, err := sudoRun("cp", tmpPath, filePath); err != nil {
+		return "", fmt.Errorf("failed to install sudoers file at %s: %s", filePath, out)
+	}
+	if out, err := sudoRun("chmod", "0440", filePath); err != nil {
+		return "", fmt.Errorf("failed to set permissions on %s: %s", filePath, out)
 	}
 
 	return fmt.Sprintf("Added %s to sudoers (NOPASSWD: ALL)", user), nil
@@ -131,9 +156,8 @@ func (h *SudoersHandler) Down() (string, error) {
 	}
 
 	filePath := sudoersFilePath(user)
-	removeCmd := fmt.Sprintf("sudo rm -f %s", filePath)
-	if _, err := executeCommandWithCache(removeCmd); err != nil {
-		return "", fmt.Errorf("failed to remove sudoers file %s: %w", filePath, err)
+	if out, err := sudoRun("rm", "-f", filePath); err != nil {
+		return "", fmt.Errorf("failed to remove sudoers file %s: %s", filePath, out)
 	}
 
 	return fmt.Sprintf("Removed %s from sudoers", user), nil
