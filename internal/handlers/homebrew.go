@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -42,8 +43,26 @@ func (h *HomebrewHandler) Up() (string, error) {
 		return "", fmt.Errorf("failed to ensure homebrew is installed: %w", err)
 	}
 
-	// Then install the formulas
-	cmd := h.buildCommand()
+	// Filter out already-installed formulas and casks
+	brew := brewCmd()
+	var missingFormulas []string
+	for _, f := range h.Rule.HomebrewPackages {
+		if !isBrewFormulaInstalled(brew, f) {
+			missingFormulas = append(missingFormulas, f)
+		}
+	}
+	var missingCasks []string
+	for _, c := range h.Rule.HomebrewCasks {
+		if !isBrewCaskInstalled(brew, c) {
+			missingCasks = append(missingCasks, c)
+		}
+	}
+
+	if len(missingFormulas) == 0 && len(missingCasks) == 0 {
+		return "already installed", nil
+	}
+
+	cmd := h.buildCommandForPackages(brew, missingFormulas, missingCasks)
 	if cmd == "" {
 		return "", fmt.Errorf("unable to build install command")
 	}
@@ -179,8 +198,38 @@ func (h *HomebrewHandler) ensureHomebrewInstalled() error {
 	}
 }
 
-// isHomebrewInstalled checks if homebrew is installed
+// isBrewFormulaInstalled checks if a formula is already installed.
+// Overridable for testing.
+var isBrewFormulaInstalled = func(brew, formula string) bool {
+	cmd := exec.Command(brew, "list", "--versions", formula)
+	cmd.Stdin = nil
+	return cmd.Run() == nil
+}
+
+// isBrewCaskInstalled checks if a cask is already installed.
+// Overridable for testing.
+var isBrewCaskInstalled = func(brew, cask string) bool {
+	cmd := exec.Command(brew, "list", "--cask", cask)
+	cmd.Stdin = nil
+	return cmd.Run() == nil
+}
+
+// knownBrewPaths are the standard install locations for homebrew on each platform.
+var knownBrewPaths = []string{
+	"/opt/homebrew/bin/brew",              // macOS Apple Silicon
+	"/usr/local/bin/brew",                 // macOS Intel
+	"/home/linuxbrew/.linuxbrew/bin/brew", // Linux (system-wide)
+}
+
+// isHomebrewInstalled checks if homebrew is installed by checking known paths
+// and falling back to PATH lookup. On Linux, brew is often not on PATH even
+// when installed, so the path check is essential.
 func (h *HomebrewHandler) isHomebrewInstalled() bool {
+	for _, p := range knownBrewPaths {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
 	return exec.Command("which", "brew").Run() == nil
 }
 
@@ -224,6 +273,12 @@ func (h *HomebrewHandler) installHomebrewLinux() error {
 // natively regardless of the parent process architecture.
 func brewCmd() string {
 	if getOSName() != "mac" {
+		// On Linux brew is often not on PATH — check known locations first
+		for _, p := range knownBrewPaths {
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
 		return "brew"
 	}
 
@@ -238,16 +293,18 @@ func brewCmd() string {
 
 // buildCommand builds the install command for formulas and/or casks
 func (h *HomebrewHandler) buildCommand() string {
-	brew := brewCmd()
+	return h.buildCommandForPackages(brewCmd(), h.Rule.HomebrewPackages, h.Rule.HomebrewCasks)
+}
+
+// buildCommandForPackages builds a brew install command for specific package lists.
+func (h *HomebrewHandler) buildCommandForPackages(brew string, formulas, casks []string) string {
 	var cmds []string
-
-	if len(h.Rule.HomebrewPackages) > 0 {
-		cmds = append(cmds, fmt.Sprintf("%s install %s", brew, strings.Join(h.Rule.HomebrewPackages, " ")))
+	if len(formulas) > 0 {
+		cmds = append(cmds, fmt.Sprintf("%s install %s", brew, strings.Join(formulas, " ")))
 	}
-	if len(h.Rule.HomebrewCasks) > 0 {
-		cmds = append(cmds, fmt.Sprintf("%s install --cask %s", brew, strings.Join(h.Rule.HomebrewCasks, " ")))
+	if len(casks) > 0 {
+		cmds = append(cmds, fmt.Sprintf("%s install --cask %s", brew, strings.Join(casks, " ")))
 	}
-
 	return strings.Join(cmds, " && ")
 }
 

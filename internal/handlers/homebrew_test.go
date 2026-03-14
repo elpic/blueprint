@@ -98,3 +98,82 @@ func TestHomebrewHandlerGetDisplayDetails(t *testing.T) {
 		t.Errorf("GetDisplayDetails() = %q, expected to contain package and cask names", details)
 	}
 }
+
+func TestHomebrewUpSkipsAlreadyInstalled(t *testing.T) {
+	origFormula := isBrewFormulaInstalled
+	origCask := isBrewCaskInstalled
+	origExec := executeCommandWithCache
+	defer func() {
+		isBrewFormulaInstalled = origFormula
+		isBrewCaskInstalled = origCask
+		executeCommandWithCache = origExec
+	}()
+
+	// All packages already installed
+	isBrewFormulaInstalled = func(brew, formula string) bool { return true }
+	isBrewCaskInstalled = func(brew, cask string) bool { return true }
+
+	executed := false
+	executeCommandWithCache = func(cmd string) (string, error) {
+		executed = true
+		return "", nil
+	}
+
+	rule := parser.Rule{
+		Action:           "install",
+		HomebrewPackages: []string{"git"},
+		HomebrewCasks:    []string{"wezterm"},
+	}
+	h := NewHomebrewHandler(rule, "")
+	out, err := h.Up()
+	if err != nil {
+		t.Fatalf("Up() error: %v", err)
+	}
+	if out != "already installed" {
+		t.Errorf("expected 'already installed', got %q", out)
+	}
+	if executed {
+		t.Error("executeCommandWithCache should not have been called when all packages already installed")
+	}
+}
+
+func TestHomebrewUpInstallsMissingOnly(t *testing.T) {
+	origFormula := isBrewFormulaInstalled
+	origCask := isBrewCaskInstalled
+	origExec := executeCommandWithCache
+	defer func() {
+		isBrewFormulaInstalled = origFormula
+		isBrewCaskInstalled = origCask
+		executeCommandWithCache = origExec
+	}()
+
+	// git installed, curl not; wezterm cask installed
+	isBrewFormulaInstalled = func(brew, formula string) bool { return formula == "git" }
+	isBrewCaskInstalled = func(brew, cask string) bool { return true }
+
+	var ranCmd string
+	executeCommandWithCache = func(cmd string) (string, error) {
+		ranCmd = cmd
+		return "", nil
+	}
+
+	rule := parser.Rule{
+		Action:           "install",
+		HomebrewPackages: []string{"git", "curl"},
+		HomebrewCasks:    []string{"wezterm"},
+	}
+	h := NewHomebrewHandler(rule, "")
+	_, err := h.Up()
+	if err != nil {
+		t.Fatalf("Up() error: %v", err)
+	}
+	if !strings.Contains(ranCmd, "curl") {
+		t.Errorf("expected command to install curl, got %q", ranCmd)
+	}
+	if strings.Contains(ranCmd, "git") {
+		t.Errorf("should not reinstall already-installed git, got %q", ranCmd)
+	}
+	if strings.Contains(ranCmd, "wezterm") {
+		t.Errorf("should not reinstall already-installed wezterm cask, got %q", ranCmd)
+	}
+}
