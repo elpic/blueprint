@@ -115,18 +115,20 @@ func (h *SudoersHandler) Up() (string, error) {
 	}
 	_ = tmpFile.Close()
 
-	// Validate with visudo -c -f
-	validateCmd := fmt.Sprintf("visudo -c -f %s", tmpPath)
-	if _, err := executeCommandWithCache(validateCmd); err != nil {
-		return "", fmt.Errorf("sudoers validation failed for entry: %s", entry)
+	// Validate with visudo -c -f (requires root).
+	// Wrap in sh -c so the engine's Linux sudo-detection does not prepend a
+	// second sudo when it sees the word "sudo" at the start of the command.
+	validateCmd := fmt.Sprintf("sh -c 'sudo visudo -c -f %q'", tmpPath)
+	if out, err := executeCommandWithCache(validateCmd); err != nil {
+		return "", fmt.Errorf("sudoers validation failed for entry %q: %s", entry, out)
 	}
 
-	// Copy validated file into /etc/sudoers.d/ using sudo (via executeCommandWithCache so
-	// the cached sudo password is used when available)
-	// 0440 is the standard permission for sudoers drop-in files
-	copyCmd := fmt.Sprintf("sudo install -m 0440 %s %s", tmpPath, filePath)
-	if _, err := executeCommandWithCache(copyCmd); err != nil {
-		return "", fmt.Errorf("failed to install sudoers file at %s: %w", filePath, err)
+	// Write the validated file into /etc/sudoers.d/ with 0440 permissions.
+	// Both operations run in one sh -c so the engine won't prepend a second sudo.
+	installCmd := fmt.Sprintf("sh -c 'sudo tee %s > /dev/null < %s && sudo chmod 0440 %s'",
+		filePath, tmpPath, filePath)
+	if out, err := executeCommandWithCache(installCmd); err != nil {
+		return "", fmt.Errorf("failed to install sudoers file at %s: %s", filePath, out)
 	}
 
 	return fmt.Sprintf("Added %s to sudoers (NOPASSWD: ALL)", user), nil
@@ -140,7 +142,7 @@ func (h *SudoersHandler) Down() (string, error) {
 	}
 
 	filePath := sudoersFilePath(user)
-	removeCmd := fmt.Sprintf("sudo rm -f %s", filePath)
+	removeCmd := fmt.Sprintf("sh -c 'sudo rm -f %s'", filePath)
 	if _, err := executeCommandWithCache(removeCmd); err != nil {
 		return "", fmt.Errorf("failed to remove sudoers file %s: %w", filePath, err)
 	}
@@ -155,7 +157,7 @@ func (h *SudoersHandler) GetCommand() string {
 		if user == "" {
 			user = "$USER"
 		}
-		return fmt.Sprintf("sudo rm -f /etc/sudoers.d/%s", user)
+		return fmt.Sprintf("sh -c 'sudo rm -f /etc/sudoers.d/%s'", user)
 	}
 	user := h.Rule.SudoersUser
 	if user == "" {
