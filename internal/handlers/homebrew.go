@@ -43,8 +43,26 @@ func (h *HomebrewHandler) Up() (string, error) {
 		return "", fmt.Errorf("failed to ensure homebrew is installed: %w", err)
 	}
 
-	// Then install the formulas
-	cmd := h.buildCommand()
+	// Filter out already-installed formulas and casks
+	brew := brewCmd()
+	var missingFormulas []string
+	for _, f := range h.Rule.HomebrewPackages {
+		if !isBrewFormulaInstalled(brew, f) {
+			missingFormulas = append(missingFormulas, f)
+		}
+	}
+	var missingCasks []string
+	for _, c := range h.Rule.HomebrewCasks {
+		if !isBrewCaskInstalled(brew, c) {
+			missingCasks = append(missingCasks, c)
+		}
+	}
+
+	if len(missingFormulas) == 0 && len(missingCasks) == 0 {
+		return "already installed", nil
+	}
+
+	cmd := h.buildCommandForPackages(brew, missingFormulas, missingCasks)
 	if cmd == "" {
 		return "", fmt.Errorf("unable to build install command")
 	}
@@ -180,6 +198,22 @@ func (h *HomebrewHandler) ensureHomebrewInstalled() error {
 	}
 }
 
+// isBrewFormulaInstalled checks if a formula is already installed.
+// Overridable for testing.
+var isBrewFormulaInstalled = func(brew, formula string) bool {
+	cmd := exec.Command(brew, "list", "--versions", formula)
+	cmd.Stdin = nil
+	return cmd.Run() == nil
+}
+
+// isBrewCaskInstalled checks if a cask is already installed.
+// Overridable for testing.
+var isBrewCaskInstalled = func(brew, cask string) bool {
+	cmd := exec.Command(brew, "list", "--cask", cask)
+	cmd.Stdin = nil
+	return cmd.Run() == nil
+}
+
 // knownBrewPaths are the standard install locations for homebrew on each platform.
 var knownBrewPaths = []string{
 	"/opt/homebrew/bin/brew",              // macOS Apple Silicon
@@ -259,16 +293,18 @@ func brewCmd() string {
 
 // buildCommand builds the install command for formulas and/or casks
 func (h *HomebrewHandler) buildCommand() string {
-	brew := brewCmd()
+	return h.buildCommandForPackages(brewCmd(), h.Rule.HomebrewPackages, h.Rule.HomebrewCasks)
+}
+
+// buildCommandForPackages builds a brew install command for specific package lists.
+func (h *HomebrewHandler) buildCommandForPackages(brew string, formulas, casks []string) string {
 	var cmds []string
-
-	if len(h.Rule.HomebrewPackages) > 0 {
-		cmds = append(cmds, fmt.Sprintf("%s install %s", brew, strings.Join(h.Rule.HomebrewPackages, " ")))
+	if len(formulas) > 0 {
+		cmds = append(cmds, fmt.Sprintf("%s install %s", brew, strings.Join(formulas, " ")))
 	}
-	if len(h.Rule.HomebrewCasks) > 0 {
-		cmds = append(cmds, fmt.Sprintf("%s install --cask %s", brew, strings.Join(h.Rule.HomebrewCasks, " ")))
+	if len(casks) > 0 {
+		cmds = append(cmds, fmt.Sprintf("%s install --cask %s", brew, strings.Join(casks, " ")))
 	}
-
 	return strings.Join(cmds, " && ")
 }
 
