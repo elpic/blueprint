@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -179,8 +180,22 @@ func (h *HomebrewHandler) ensureHomebrewInstalled() error {
 	}
 }
 
-// isHomebrewInstalled checks if homebrew is installed
+// knownBrewPaths are the standard install locations for homebrew on each platform.
+var knownBrewPaths = []string{
+	"/opt/homebrew/bin/brew",              // macOS Apple Silicon
+	"/usr/local/bin/brew",                 // macOS Intel
+	"/home/linuxbrew/.linuxbrew/bin/brew", // Linux (system-wide)
+}
+
+// isHomebrewInstalled checks if homebrew is installed by checking known paths
+// and falling back to PATH lookup. On Linux, brew is often not on PATH even
+// when installed, so the path check is essential.
 func (h *HomebrewHandler) isHomebrewInstalled() bool {
+	for _, p := range knownBrewPaths {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
 	return exec.Command("which", "brew").Run() == nil
 }
 
@@ -224,6 +239,12 @@ func (h *HomebrewHandler) installHomebrewLinux() error {
 // natively regardless of the parent process architecture.
 func brewCmd() string {
 	if getOSName() != "mac" {
+		// On Linux brew is often not on PATH — check known locations first
+		for _, p := range knownBrewPaths {
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
 		return "brew"
 	}
 
