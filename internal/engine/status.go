@@ -220,7 +220,7 @@ func PrintDiff(blueprintFile string) {
 	// Resolve git URLs the same way RunWithSkip does
 	setupPath := blueprintFile
 	if gitpkg.IsGitURL(blueprintFile) {
-		tempDir, setupFile, err := gitpkg.CloneRepository(blueprintFile, true)
+		tempDir, setupFile, err := gitpkg.CloneRepository(blueprintFile, false)
 		if err != nil {
 			fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error cloning repository: %v", err)))
 			return
