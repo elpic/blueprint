@@ -258,6 +258,72 @@ func PrintStatus() {
 	fmt.Printf("\n")
 }
 
+// PrintSlow displays the slowest rule executions from history.
+// topN limits the results (default 10). If lastOnly is true, only the latest run is shown.
+func PrintSlow(topN int, lastOnly bool) {
+	historyPath, err := getHistoryPath()
+	if err != nil {
+		fmt.Printf("%s\n", ui.FormatError("Error getting history path"))
+		return
+	}
+
+	data, err := readBlueprintFile(historyPath)
+	if err != nil {
+		fmt.Printf("%s\n", ui.FormatInfo("No history found. Run 'blueprint apply' to create one."))
+		return
+	}
+
+	var records []ExecutionRecord
+	if err := json.Unmarshal(data, &records); err != nil {
+		fmt.Printf("%s\n", ui.FormatError("Error parsing history file"))
+		return
+	}
+
+	if lastOnly {
+		// history.json already contains only the latest run, nothing to filter
+	}
+
+	// Filter out records with no duration
+	var timed []ExecutionRecord
+	for _, r := range records {
+		if r.DurationMs > 0 {
+			timed = append(timed, r)
+		}
+	}
+
+	if len(timed) == 0 {
+		fmt.Printf("%s\n", ui.FormatInfo("No duration data found in history."))
+		return
+	}
+
+	// Sort by duration descending
+	sort.Slice(timed, func(i, j int) bool {
+		return timed[i].DurationMs > timed[j].DurationMs
+	})
+
+	if topN <= 0 {
+		topN = 10
+	}
+	if topN > len(timed) {
+		topN = len(timed)
+	}
+
+	fmt.Printf("\n%s\n", ui.FormatHighlight(fmt.Sprintf("=== Top %d Slowest Rules ===", topN)))
+	for i, r := range timed[:topN] {
+		duration := fmt.Sprintf("%.1fs", float64(r.DurationMs)/1000)
+		cmd := r.Command
+		if cmd == "" {
+			cmd = r.Status
+		}
+		fmt.Printf("%s %s  %s\n",
+			ui.FormatDim(fmt.Sprintf("%2d.", i+1)),
+			ui.FormatHighlight(duration),
+			ui.FormatInfo(cmd),
+		)
+	}
+	fmt.Printf("\n")
+}
+
 // getNextRunNumber returns the next run number and increments the counter
 func getNextRunNumber() (int, error) {
 	blueprintDir, err := getBlueprintDir()
