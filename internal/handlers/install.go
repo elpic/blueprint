@@ -103,14 +103,8 @@ func needsSudo(cmd string) bool {
 
 // shouldAddSudo checks if sudo should be added for package installation on this OS
 func (h *InstallHandler) shouldAddSudo() bool {
-	// Determine target OS
-	targetOS := getOSName()
-	if len(h.Rule.OSList) > 0 {
-		targetOS = strings.TrimSpace(h.Rule.OSList[0])
-	}
-
 	// Only Linux requires sudo for package managers
-	if targetOS != "linux" {
+	if getOSName() != "linux" {
 		return false
 	}
 
@@ -133,11 +127,7 @@ func (h *InstallHandler) buildCommand() string {
 		return ""
 	}
 
-	// Determine target OS
 	targetOS := getOSName()
-	if len(h.Rule.OSList) > 0 {
-		targetOS = strings.TrimSpace(h.Rule.OSList[0])
-	}
 
 	// Group packages by package manager
 	packagesByManager := h.groupPackagesByManager()
@@ -212,14 +202,14 @@ func (h *InstallHandler) buildInstallCommandForManager(manager string, pkgNames 
 		return ""
 
 	case "homebrew", "brew":
-		// Homebrew (macOS and Linux)
-		return fmt.Sprintf("brew install %s", pkgStr)
+		// Homebrew (macOS and Linux) — use brewCmd() to handle Rosetta 2 on Apple Silicon
+		return fmt.Sprintf("%s install %s", brewCmd(), pkgStr)
 
 	case "apt", "apt-get", "default":
 		// apt-get (Linux default)
 		if targetOS == "mac" {
-			// Fallback to brew on macOS if apt is specified
-			return fmt.Sprintf("brew install %s", pkgStr)
+			// Fallback to brew on macOS if apt is specified — use brewCmd() for Rosetta 2 support
+			return fmt.Sprintf("%s install %s", brewCmd(), pkgStr)
 		}
 
 		cmd := fmt.Sprintf("apt-get install -y %s", pkgStr)
@@ -244,11 +234,7 @@ func (h *InstallHandler) buildUninstallCommand(rule parser.Rule) string {
 		return ""
 	}
 
-	// Determine target OS
 	targetOS := getOSName()
-	if len(rule.OSList) > 0 {
-		targetOS = strings.TrimSpace(rule.OSList[0])
-	}
 
 	// Group packages by package manager
 	packagesByManager := make(map[string][]string)
@@ -315,14 +301,14 @@ func (h *InstallHandler) buildUninstallCommandForManager(manager string, pkgName
 		return ""
 
 	case "homebrew", "brew":
-		// Homebrew uninstall
-		return fmt.Sprintf("brew uninstall -y %s", pkgStr)
+		// Homebrew uninstall — use brewCmd() for Rosetta 2 support
+		return fmt.Sprintf("%s uninstall -y %s", brewCmd(), pkgStr)
 
 	case "apt", "apt-get", "default":
 		// apt-get (Linux default)
 		if targetOS == "mac" {
-			// Fallback to brew on macOS if apt is specified
-			return fmt.Sprintf("brew uninstall -y %s", pkgStr)
+			// Fallback to brew on macOS if apt is specified — use brewCmd() for Rosetta 2 support
+			return fmt.Sprintf("%s uninstall -y %s", brewCmd(), pkgStr)
 		}
 
 		cmd := fmt.Sprintf("apt-get remove -y %s", pkgStr)
@@ -341,7 +327,8 @@ func (h *InstallHandler) buildUninstallCommandForManager(manager string, pkgName
 	}
 }
 
-func getOSName() string {
+// getOSName returns the current OS name. Defined as a var to allow stubbing in tests.
+var getOSName = func() string {
 	return internal.OSName()
 }
 
@@ -497,14 +484,15 @@ func (h *InstallHandler) IsInstalled(status *Status, blueprintFile, osName strin
 	return true
 }
 
-// NeedsSudo returns true if package installation/uninstallation requires sudo privileges
+// NeedsSudo returns true if package installation/uninstallation requires sudo privileges.
+// On macOS, brew may internally invoke sudo (e.g. when installing casks), so we signal
+// sudo is needed when there are packages to install on macOS.
 func (h *InstallHandler) NeedsSudo() bool {
-	// Only package managers on Linux require sudo
-	if getOSName() != "linux" {
-		return false
+	if getOSName() == "mac" {
+		return len(h.Rule.Packages) > 0
 	}
 
-	// Check the command that will be executed
+	// On Linux, check the command that will be executed
 	var cmd string
 	if h.Rule.Action == "uninstall" {
 		cmd = h.buildUninstallCommand(h.Rule)

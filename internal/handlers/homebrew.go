@@ -43,11 +43,13 @@ func (h *HomebrewHandler) Up() (string, error) {
 		return "", fmt.Errorf("failed to ensure homebrew is installed: %w", err)
 	}
 
-	// Filter out already-installed formulas and casks
+	// Filter out already-installed formulas and casks.
+	// Some packages (e.g. orbstack) are stored in Caskroom even when installed
+	// via a plain `homebrew <name>` rule — check both formula and cask lists.
 	brew := brewCmd()
 	var missingFormulas []string
 	for _, f := range h.Rule.HomebrewPackages {
-		if !isBrewFormulaInstalled(brew, f) {
+		if !isBrewFormulaInstalled(brew, f) && !isBrewCaskInstalled(brew, f) {
 			missingFormulas = append(missingFormulas, f)
 		}
 	}
@@ -199,17 +201,19 @@ func (h *HomebrewHandler) ensureHomebrewInstalled() error {
 }
 
 // isBrewFormulaInstalled checks if a formula is already installed.
+// Uses sh -c to support multi-word brew invocations (e.g. under Rosetta 2).
 // Overridable for testing.
 var isBrewFormulaInstalled = func(brew, formula string) bool {
-	cmd := exec.Command(brew, "list", "--versions", formula)
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("%s list --versions %s", brew, formula))
 	cmd.Stdin = nil
 	return cmd.Run() == nil
 }
 
 // isBrewCaskInstalled checks if a cask is already installed.
+// Uses sh -c to support multi-word brew invocations (e.g. under Rosetta 2).
 // Overridable for testing.
 var isBrewCaskInstalled = func(brew, cask string) bool {
-	cmd := exec.Command(brew, "list", "--cask", cask)
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("%s list --cask %s", brew, cask))
 	cmd.Stdin = nil
 	return cmd.Run() == nil
 }
@@ -328,11 +332,11 @@ func (h *HomebrewHandler) buildUninstallCommand() string {
 	return strings.Join(cmds, " && ")
 }
 
-// NeedsSudo returns true if homebrew installation requires sudo privileges
+// NeedsSudo returns true if homebrew installation requires sudo privileges.
+// On macOS, cask installations frequently invoke sudo internally (e.g. to move
+// apps to /Applications), so we signal sudo is needed whenever casks are present.
 func (h *HomebrewHandler) NeedsSudo() bool {
-	// Homebrew on Linux might need sudo for dependencies, but not for brew itself
-	// On macOS, homebrew handles its own permissions
-	return false
+	return len(h.Rule.HomebrewCasks) > 0
 }
 
 // GetDependencyKey returns the unique key for this rule in dependency resolution
@@ -504,5 +508,3 @@ func removeHomebrewStatus(brews []HomebrewStatus, formula string, blueprint stri
 	}
 	return result
 }
-
-
