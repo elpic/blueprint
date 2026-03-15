@@ -2,13 +2,15 @@ package engine
 
 import (
 	"fmt"
-	"github.com/elpic/blueprint/internal"
-	handlerskg "github.com/elpic/blueprint/internal/handlers"
-	"github.com/elpic/blueprint/internal/parser"
-	"github.com/elpic/blueprint/internal/ui"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/elpic/blueprint/internal"
+	gitpkg "github.com/elpic/blueprint/internal/git"
+	handlerskg "github.com/elpic/blueprint/internal/handlers"
+	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/ui"
 )
 
 func getOSName() string {
@@ -186,6 +188,31 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 	}
 
 	return sorted, nil
+}
+
+// resolveBlueprintFile resolves a blueprint file path or git URL to a local path.
+// If input is a git URL the repo is cloned to a temp directory and the setup file is located.
+// The caller must call cleanup() when done (safe to call even on error — it is a no-op then).
+func resolveBlueprintFile(input string, verbose bool) (setupPath string, cleanup func(), err error) {
+	cleanup = func() {}
+
+	if gitpkg.IsGitURL(input) {
+		tempDir, setupFile, cloneErr := gitpkg.CloneRepository(input, verbose)
+		if cloneErr != nil {
+			return "", cleanup, fmt.Errorf("error cloning repository: %w", cloneErr)
+		}
+		cleanup = func() { _ = gitpkg.CleanupRepository(tempDir) }
+
+		setupPath, err = gitpkg.FindSetupFile(tempDir, setupFile)
+		if err != nil {
+			cleanup()
+			cleanup = func() {}
+			return "", func() {}, fmt.Errorf("error finding setup file: %w", err)
+		}
+		return setupPath, cleanup, nil
+	}
+
+	return input, cleanup, nil
 }
 
 func getBlueprintDir() (string, error) {
