@@ -257,14 +257,11 @@ func PrintDiff(blueprintFile string) {
 	removeRules := getAutoUninstallRules(desiredRules, blueprintFile, currentOS)
 
 	// Additions: rules in the blueprint that have no matching status entry.
-	// Each handler owns this check via the InstalledChecker interface.
 	var addRules []parser.Rule
 	for _, rule := range desiredRules {
 		handler := handlerskg.NewHandler(rule, "", nil)
-		if checker, ok := handler.(handlerskg.InstalledChecker); ok {
-			if !checker.IsInstalled(&status, blueprintFile, currentOS) {
-				addRules = append(addRules, rule)
-			}
+		if handler != nil && !handler.IsInstalled(&status, blueprintFile, currentOS) {
+			addRules = append(addRules, rule)
 		}
 	}
 
