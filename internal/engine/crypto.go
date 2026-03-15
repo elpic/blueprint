@@ -108,8 +108,8 @@ func readPassword() (string, error) {
 }
 
 func promptForSudoPasswordWithOS(rules []parser.Rule, currentOS string) error {
-	// Check if we're on Linux and not root
-	if runtime.GOOS != "linux" {
+	// Only supported on Unix-like systems (Linux and macOS)
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		return nil
 	}
 
