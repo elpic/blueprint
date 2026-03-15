@@ -2,12 +2,12 @@ package engine
 
 import (
 	"fmt"
-	gitpkg "github.com/elpic/blueprint/internal/git"
-	"github.com/elpic/blueprint/internal/parser"
-	"github.com/elpic/blueprint/internal/ui"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/ui"
 )
 
 type ExecutionRecord struct {
@@ -54,12 +54,11 @@ func (p *passwordStore) snapshot() map[string]string {
 var passwordCache = &passwordStore{m: make(map[string]string)}
 
 func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID string, skipDecrypt bool) {
-	var setupPath string
-	var err error
 	var runNumber int
 
 	// Get next run number (only for non-dry runs)
 	if !dry {
+		var err error
 		runNumber, err = getNextRunNumber()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to get run number: %v\n", err)
@@ -67,26 +66,12 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 		}
 	}
 
-	// Check if input is a git URL
-	if gitpkg.IsGitURL(file) {
-		// Clone the repository (show progress in dry run mode, hide in apply mode)
-		tempDir, setupFile, err := gitpkg.CloneRepository(file, dry)
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			return
-		}
-		defer func() { _ = gitpkg.CleanupRepository(tempDir) }()
-
-		// Find setup file in the cloned repo
-		setupPath, err = gitpkg.FindSetupFile(tempDir, setupFile)
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			return
-		}
-	} else {
-		// Local file
-		setupPath = file
+	setupPath, cleanup, err := resolveBlueprintFile(file, dry)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
 	}
+	defer cleanup()
 
 	// Parse the setup file (with include support for both local and git repositories)
 	var rules []parser.Rule
