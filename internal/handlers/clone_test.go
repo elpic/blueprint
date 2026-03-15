@@ -446,6 +446,52 @@ func TestCloneHandlerDisplayStatusURLPreservation(t *testing.T) {
 }
 
 
+func TestCloneIsInstalledMatchesSHA(t *testing.T) {
+	origLocal := localSHA
+	origRemote := remoteHeadSHA
+	defer func() {
+		localSHA = origLocal
+		remoteHeadSHA = origRemote
+	}()
+
+	status := Status{
+		Clones: []CloneStatus{
+			{Path: "~/projects/repo", Blueprint: "/tmp/test.bp", OS: "mac"},
+		},
+	}
+	rule := parser.Rule{
+		Action:    "clone",
+		CloneURL:  "https://github.com/user/repo.git",
+		ClonePath: "~/projects/repo",
+	}
+	h := NewCloneHandler(rule, "")
+
+	// SHAs match → installed
+	localSHA = func(string) string { return "abc123" }
+	remoteHeadSHA = func(string, string) string { return "abc123" }
+	if !h.IsInstalled(&status, "/tmp/test.bp", "mac") {
+		t.Error("IsInstalled() = false, want true when SHAs match")
+	}
+
+	// SHAs differ → not installed (stale)
+	remoteHeadSHA = func(string, string) string { return "def456" }
+	if h.IsInstalled(&status, "/tmp/test.bp", "mac") {
+		t.Error("IsInstalled() = true, want false when SHAs differ")
+	}
+
+	// Remote unreachable → trust status entry
+	remoteHeadSHA = func(string, string) string { return "" }
+	if !h.IsInstalled(&status, "/tmp/test.bp", "mac") {
+		t.Error("IsInstalled() = false, want true when remote SHA unavailable")
+	}
+
+	// Not in status → false regardless
+	remoteHeadSHA = func(string, string) string { return "abc123" }
+	if h.IsInstalled(&Status{}, "/tmp/test.bp", "mac") {
+		t.Error("IsInstalled() = true, want false when not in status")
+	}
+}
+
 func TestCloneHandlerGetDependencyKey(t *testing.T) {
 	tests := []struct {
 		name     string

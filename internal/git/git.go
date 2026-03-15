@@ -293,6 +293,22 @@ func CleanupRepository(path string) error {
 	return os.RemoveAll(path)
 }
 
+// LocalSHA reads the HEAD SHA of a local repository at the given path using go-git.
+// Returns empty string if the path is not a valid git repository.
+func LocalSHA(path string) string {
+	return gitSHA(path)
+}
+
+// RemoteHeadSHA returns the SHA of the remote HEAD (or branch tip) for the given URL and branch.
+// Returns empty string if the check fails (network unavailable, auth issue, etc.).
+func RemoteHeadSHA(url, branch string) string {
+	ref := "HEAD"
+	if branch != "" {
+		ref = "refs/heads/" + branch
+	}
+	return remoteRef(url, ref)
+}
+
 // gitSHA reads the HEAD SHA of a repository at the given path using go-git.
 func gitSHA(path string) string {
 	repo, err := git.PlainOpen(path)
