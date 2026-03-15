@@ -475,10 +475,19 @@ func TestGPGKeyHandlerIntegration(t *testing.T) {
 		t.Fatal("Failed to create handlers")
 	}
 
+	// Stub isKeyringInstalled to simulate installed keyrings
+	origIsKeyringInstalled := isKeyringInstalled
+	defer func() { isKeyringInstalled = origIsKeyringInstalled }()
+	installedKeyrings := map[string]bool{}
+	isKeyringInstalled = func(path string) bool {
+		return installedKeyrings[path]
+	}
+
 	// Test updating status with both handlers
 	status := &Status{}
 
 	// Simulate wez installation
+	installedKeyrings[wezHandler.keyringPath()] = true
 	wezRecords := []ExecutionRecord{
 		{
 			Status:  "success",
@@ -497,6 +506,7 @@ func TestGPGKeyHandlerIntegration(t *testing.T) {
 	}
 
 	// Simulate docker installation
+	installedKeyrings[dockerHandler.keyringPath()] = true
 	dockerRecords := []ExecutionRecord{
 		{
 			Status:  "success",

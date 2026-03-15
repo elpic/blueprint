@@ -70,16 +70,17 @@ func TestOllamaHandlerGetCommand(t *testing.T) {
 
 func TestOllamaHandlerUpdateStatus(t *testing.T) {
 	t.Run("install adds models to status", func(t *testing.T) {
+		origIsOllamaModelInstalled := isOllamaModelInstalled
+		defer func() { isOllamaModelInstalled = origIsOllamaModelInstalled }()
+		isOllamaModelInstalled = func(model string) bool { return true }
+
 		handler := NewOllamaHandler(parser.Rule{
 			Action:       "install",
 			OllamaModels: []string{"llama3", "codellama"},
 		}, "")
 
 		status := &Status{}
-		cmd := handler.buildCommand()
-		records := []ExecutionRecord{
-			{Command: cmd, Status: "success"},
-		}
+		records := []ExecutionRecord{}
 
 		err := handler.UpdateStatus(status, records, "/tmp/test.bp", "mac")
 		if err != nil {
