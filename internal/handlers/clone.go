@@ -10,6 +10,16 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
+// localSHA returns the HEAD SHA of a local repository. Var for test stubbing.
+var localSHA = func(path string) string {
+	return gitpkg.LocalSHA(path)
+}
+
+// remoteHeadSHA returns the remote HEAD SHA for a URL+branch. Var for test stubbing.
+var remoteHeadSHA = func(url, branch string) string {
+	return gitpkg.RemoteHeadSHA(url, branch)
+}
+
 // CloneHandler handles git repository cloning and cleanup
 type CloneHandler struct {
 	BaseHandler
@@ -259,13 +269,23 @@ func (h *CloneHandler) FindUninstallRules(status *Status, currentRules []parser.
 	return rules
 }
 
-// IsInstalled returns true if the clone path in this rule is already in status.
+// IsInstalled returns true if the clone path is recorded in status AND the local
+// repository SHA matches the current remote HEAD. If the remote SHA cannot be
+// determined (network unavailable, auth issue) it falls back to path-only check.
 func (h *CloneHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
 	normalizedBlueprint := normalizePath(blueprintFile)
 	for _, clone := range status.Clones {
-		if clone.Path == h.Rule.ClonePath && normalizePath(clone.Blueprint) == normalizedBlueprint && clone.OS == osName {
+		if clone.Path != h.Rule.ClonePath || normalizePath(clone.Blueprint) != normalizedBlueprint || clone.OS != osName {
+			continue
+		}
+		// Found a matching status entry — now check SHA currency.
+		remoteSHA := remoteHeadSHA(h.Rule.CloneURL, h.Rule.Branch)
+		if remoteSHA == "" {
+			// Cannot reach remote — trust the status entry as-is.
 			return true
 		}
+		localSHAVal := localSHA(expandPath(h.Rule.ClonePath))
+		return localSHAVal == remoteSHA
 	}
 	return false
 }
