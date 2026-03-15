@@ -43,11 +43,13 @@ func (h *HomebrewHandler) Up() (string, error) {
 		return "", fmt.Errorf("failed to ensure homebrew is installed: %w", err)
 	}
 
-	// Filter out already-installed formulas and casks
+	// Filter out already-installed formulas and casks.
+	// Some packages (e.g. orbstack) are stored in Caskroom even when installed
+	// via a plain `homebrew <name>` rule — check both formula and cask lists.
 	brew := brewCmd()
 	var missingFormulas []string
 	for _, f := range h.Rule.HomebrewPackages {
-		if !isBrewFormulaInstalled(brew, f) {
+		if !isBrewFormulaInstalled(brew, f) && !isBrewCaskInstalled(brew, f) {
 			missingFormulas = append(missingFormulas, f)
 		}
 	}

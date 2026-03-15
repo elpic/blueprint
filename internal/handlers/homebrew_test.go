@@ -147,9 +147,10 @@ func TestHomebrewUpInstallsMissingOnly(t *testing.T) {
 		executeCommandWithCache = origExec
 	}()
 
-	// git installed, curl not; wezterm cask installed
-	isBrewFormulaInstalled = func(brew, formula string) bool { return formula == "git" }
-	isBrewCaskInstalled = func(brew, cask string) bool { return true }
+	// pkg-a is installed as a formula; pkg-b is not; cask-app is installed as a cask
+	// (simulates a package that lives in Caskroom rather than Cellar)
+	isBrewFormulaInstalled = func(brew, name string) bool { return name == "pkg-a" }
+	isBrewCaskInstalled = func(brew, name string) bool { return name == "cask-app" }
 
 	var ranCmd string
 	executeCommandWithCache = func(cmd string) (string, error) {
@@ -159,21 +160,21 @@ func TestHomebrewUpInstallsMissingOnly(t *testing.T) {
 
 	rule := parser.Rule{
 		Action:           "install",
-		HomebrewPackages: []string{"git", "curl"},
-		HomebrewCasks:    []string{"wezterm"},
+		HomebrewPackages: []string{"pkg-a", "pkg-b"},
+		HomebrewCasks:    []string{"cask-app"},
 	}
 	h := NewHomebrewHandler(rule, "")
 	_, err := h.Up()
 	if err != nil {
 		t.Fatalf("Up() error: %v", err)
 	}
-	if !strings.Contains(ranCmd, "curl") {
-		t.Errorf("expected command to install curl, got %q", ranCmd)
+	if !strings.Contains(ranCmd, "pkg-b") {
+		t.Errorf("expected command to install pkg-b, got %q", ranCmd)
 	}
-	if strings.Contains(ranCmd, "git") {
-		t.Errorf("should not reinstall already-installed git, got %q", ranCmd)
+	if strings.Contains(ranCmd, "pkg-a") {
+		t.Errorf("should not reinstall already-installed pkg-a, got %q", ranCmd)
 	}
-	if strings.Contains(ranCmd, "wezterm") {
-		t.Errorf("should not reinstall already-installed wezterm cask, got %q", ranCmd)
+	if strings.Contains(ranCmd, "cask-app") {
+		t.Errorf("should not reinstall already-installed cask-app, got %q", ranCmd)
 	}
 }

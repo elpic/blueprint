@@ -142,10 +142,9 @@ func CloneRepository(input string, verbose bool) (string, string, error) {
 		fmt.Printf("To: %s\n", tmpDir)
 	}
 
-	// For SSH URLs use the system git binary so that ~/.ssh/config, the SSH
-	// agent, and known_hosts work exactly as they do when running git manually.
-	// go-git's SSH transport cannot talk to the SSH agent reliably.
-	if strings.HasPrefix(params.URL, "git@") {
+	// Try go-git first; fall back to system git if go-git fails (e.g. SSH agent/passphrase issues).
+	if err = tryClone(tmpDir, params.URL, params.Branch, verbose); err != nil {
+		_ = os.RemoveAll(tmpDir) // clean up any partial clone before retrying
 		args := []string{"clone"}
 		if !verbose {
 			args = append(args, "--quiet")
@@ -158,12 +157,6 @@ func CloneRepository(input string, verbose bool) (string, string, error) {
 		cloneCmd.Stdout = os.Stdout
 		cloneCmd.Stderr = os.Stderr
 		if err = cloneCmd.Run(); err != nil {
-			_ = os.RemoveAll(tmpDir)
-			return "", "", fmt.Errorf("failed to clone repository: %w", err)
-		}
-	} else {
-		err = tryClone(tmpDir, params.URL, params.Branch, verbose)
-		if err != nil {
 			_ = os.RemoveAll(tmpDir)
 			return "", "", fmt.Errorf("failed to clone repository: %w", err)
 		}
@@ -367,8 +360,7 @@ func remoteRef(url, ref string) string {
 }
 
 // CloneOrUpdateRepository clones a repository to a specific path or updates it if already exists.
-// Uses the system git binary so that ~/.ssh/config, SSH agent, and host key verification work
-// exactly as they do when running git manually.
+// Tries go-git first; falls back to the system git binary if go-git fails (e.g. SSH agent issues).
 // Returns: (oldSHA, newSHA, status_message, error)
 // status_message can be: "Cloned", "Updated", "Already up to date"
 func CloneOrUpdateRepository(url, path, branch string) (string, string, string, error) {
@@ -404,23 +396,39 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 			return oldSHA, oldSHA, "Already up to date", nil
 		}
 
-		// Open existing repo and fetch via go-git
+		// Try go-git fetch first; fall back to system git on failure.
+		fetched := false
+		{
+			goRepo, openErr := git.PlainOpen(path)
+			if openErr == nil {
+				fetchOpts := &git.FetchOptions{
+					RemoteName: "origin",
+					Progress:   io.Discard,
+				}
+				if auth, authErr := repoAuth(url); authErr == nil {
+					fetchOpts.Auth = auth
+				}
+				fetchErr := goRepo.Fetch(fetchOpts)
+				if fetchErr == nil || fetchErr == git.NoErrAlreadyUpToDate {
+					fetched = true
+				}
+			}
+		}
+		if !fetched {
+			// go-git failed (e.g. SSH agent/passphrase issues) — use system git
+			fetchArgs := []string{"-C", path, "fetch", "--quiet", "origin"}
+			fetchCmd := exec.Command("git", fetchArgs...) // #nosec G204
+			fetchCmd.Stdout = io.Discard
+			fetchCmd.Stderr = os.Stderr
+			if fetchErr := fetchCmd.Run(); fetchErr != nil {
+				return oldSHA, "", "", fmt.Errorf("failed to fetch: %w", fetchErr)
+			}
+		}
+
+		// Open the repo for local ref resolution and reset (no auth needed — local only)
 		repo, err := git.PlainOpen(path)
 		if err != nil {
 			return oldSHA, "", "", fmt.Errorf("failed to open repository: %w", err)
-		}
-
-		fetchOpts := &git.FetchOptions{
-			RemoteName: "origin",
-			Progress:   io.Discard,
-		}
-		if auth, authErr := repoAuth(url); authErr == nil {
-			fetchOpts.Auth = auth
-		}
-
-		fetchErr := repo.Fetch(fetchOpts)
-		if fetchErr != nil && fetchErr != git.NoErrAlreadyUpToDate {
-			return oldSHA, "", "", fmt.Errorf("failed to fetch: %w", fetchErr)
 		}
 
 		// Resolve the target ref to reset to
@@ -461,9 +469,21 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 		return oldSHA, newSHA, "Already up to date", nil
 	}
 
-	// Clone via go-git
-	if err := tryClone(path, url, branch, false); err != nil {
-		return "", "", "", fmt.Errorf("failed to clone: %w", err)
+	// Try go-git clone first; fall back to system git on failure.
+	if cloneErr := tryClone(path, url, branch, false); cloneErr != nil {
+		// go-git failed (e.g. SSH agent/passphrase issues) — use system git
+		_ = os.RemoveAll(path) // clean up any partial clone
+		args := []string{"clone", "--quiet"}
+		if branch != "" {
+			args = append(args, "--branch", branch)
+		}
+		args = append(args, url, path)
+		cloneCmd := exec.Command("git", args...) // #nosec G204
+		cloneCmd.Stdout = io.Discard
+		cloneCmd.Stderr = os.Stderr
+		if err := cloneCmd.Run(); err != nil {
+			return "", "", "", fmt.Errorf("failed to clone: %w", err)
+		}
 	}
 
 	newSHA := gitSHA(path)
