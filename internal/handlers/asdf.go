@@ -24,10 +24,22 @@ var (
 	asdfVersionMutex sync.Mutex
 )
 
-// asdfInstalledCheck returns true if asdf is installed at /usr/local/bin/asdf.
+// asdfInstalledCheck returns true if asdf is available on the system.
+// Checks known install locations and falls back to PATH lookup.
 // Defined as a var to allow stubbing in tests.
 var asdfInstalledCheck = func() bool {
-	_, err := os.Stat("/usr/local/bin/asdf")
+	knownPaths := []string{
+		"/usr/local/bin/asdf",          // Linux direct install
+		"/opt/homebrew/bin/asdf",       // macOS Apple Silicon (Homebrew)
+		"/usr/local/homebrew/bin/asdf", // macOS Intel (Homebrew)
+	}
+	for _, p := range knownPaths {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	// Fall back to PATH lookup (covers ~/.asdf/bin/asdf etc.)
+	_, err := exec.LookPath("asdf")
 	return err == nil
 }
 
@@ -221,21 +233,24 @@ func (h *AsdfHandler) getInstalledAsdfVersion() (string, error) {
 	return versionStr, nil
 }
 
-// removeOldAsdf removes the old asdf installation from /usr/local/bin
+// removeOldAsdf removes the old asdf installation.
+// On macOS uses brew uninstall; on Linux removes from /usr/local/bin.
 func (h *AsdfHandler) removeOldAsdf() error {
-	asdfPath := "/usr/local/bin/asdf"
-
-	// Try to remove without sudo first
-	if err := os.Remove(asdfPath); err == nil {
+	if runtime.GOOS == "darwin" {
+		if _, err := executeCommandWithCache("brew uninstall asdf 2>/dev/null || true"); err != nil {
+			return fmt.Errorf("failed to uninstall asdf via brew: %w", err)
+		}
 		return nil
 	}
 
-	// If that fails, try with sudo
+	asdfPath := "/usr/local/bin/asdf"
+	if err := os.Remove(asdfPath); err == nil {
+		return nil
+	}
 	removeCmd := fmt.Sprintf("sudo rm -f %s", asdfPath)
 	if _, err := executeCommandWithCache(removeCmd); err != nil {
 		return fmt.Errorf("failed to remove old asdf: %w", err)
 	}
-
 	return nil
 }
 
