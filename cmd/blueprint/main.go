@@ -35,7 +35,7 @@ func parseFlags(args []string) (skipGroup, skipID, onlyID string, skipDecrypt bo
 
 var knownCommands = map[string]bool{
 	"plan": true, "apply": true, "encrypt": true,
-	"status": true, "history": true, "ps": true, "slow": true,
+	"status": true, "history": true, "ps": true, "slow": true, "diff": true,
 }
 
 func isKnownCommand(cmd string) bool {
@@ -43,12 +43,12 @@ func isKnownCommand(cmd string) bool {
 }
 
 func unknownCommandMessage(cmd string) string {
-	return fmt.Sprintf("unknown command: %q\nUsage: blueprint <plan|apply|encrypt|status|history|ps|slow> [<file>]", cmd)
+	return fmt.Sprintf("unknown command: %q\nUsage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff> [<file>]", cmd)
 }
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: blueprint <plan|apply|encrypt|status|history|ps|slow> [<file|run_number>]")
+		fmt.Println("Usage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff> [<file|run_number>]")
 		os.Exit(1)
 	}
 
@@ -100,6 +100,12 @@ func main() {
 		engine.PrintStatus()
 	case "ps":
 		engine.PrintPS()
+	case "diff":
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: blueprint diff <file.bp>")
+			os.Exit(1)
+		}
+		engine.PrintDiff(os.Args[2])
 	case "slow":
 		topN := 10
 		for i := 2; i < len(os.Args); i++ {

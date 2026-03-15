@@ -255,5 +255,17 @@ func (h *CloneHandler) FindUninstallRules(status *Status, currentRules []parser.
 		}
 	}
 
+
 	return rules
+}
+
+// IsInstalled returns true if the clone path in this rule is already in status.
+func (h *CloneHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+	for _, clone := range status.Clones {
+		if clone.Path == h.Rule.ClonePath && normalizePath(clone.Blueprint) == normalizedBlueprint && clone.OS == osName {
+			return true
+		}
+	}
+	return false
 }

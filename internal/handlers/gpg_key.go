@@ -62,7 +62,7 @@ func (h *GPGKeyHandler) sourcesListPath() string {
 }
 
 // isKeyringInstalled returns true if the keyring file already exists on disk.
-func isKeyringInstalled(path string) bool {
+var isKeyringInstalled = func(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
@@ -225,15 +225,8 @@ func (h *GPGKeyHandler) UpdateStatus(status *Status, records []ExecutionRecord, 
 	blueprint = normalizePath(blueprint)
 
 	if h.Rule.Action == "gpg-key" {
-		commandExecuted := false
-		for _, record := range records {
-			if record.Status == "success" && strings.Contains(record.Command, "gpg-key") && strings.Contains(record.Command, h.Rule.GPGKeyring) {
-				commandExecuted = true
-				break
-			}
-		}
-
-		if commandExecuted {
+		// Record if the keyring file is present on disk (handles both fresh install and skip)
+		if isKeyringInstalled(h.keyringPath()) {
 			status.GPGKeys = removeGPGKeyStatus(status.GPGKeys, h.Rule.GPGKeyring, blueprint, osName)
 			status.GPGKeys = append(status.GPGKeys, GPGKeyStatus{
 				Keyring:   h.Rule.GPGKeyring,
@@ -346,4 +339,15 @@ func (h *GPGKeyHandler) FindUninstallRules(status *Status, currentRules []parser
 	}
 
 	return rules
+}
+
+// IsInstalled returns true if the GPG keyring in this rule is already in status.
+func (h *GPGKeyHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+	for _, gpg := range status.GPGKeys {
+		if gpg.Keyring == h.Rule.GPGKeyring && normalizePath(gpg.Blueprint) == normalizedBlueprint && gpg.OS == osName {
+			return true
+		}
+	}
+	return false
 }

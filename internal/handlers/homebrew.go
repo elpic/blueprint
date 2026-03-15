@@ -95,15 +95,14 @@ func (h *HomebrewHandler) UpdateStatus(status *Status, records []ExecutionRecord
 	blueprint = normalizePath(blueprint)
 
 	switch h.Rule.Action {
-	case "install":
-		cmd := h.buildCommand()
-		_, commandExecuted := commandSuccessfullyExecuted(cmd, records)
+	case "homebrew":
+		brew := brewCmd()
 
-		if commandExecuted {
-			// Update formula status
-			for _, formulaStr := range h.Rule.HomebrewPackages {
-				parts := strings.Split(formulaStr, "@")
-				formula := parts[0]
+		// Record each formula/cask if installed (either just installed or already present)
+		for _, formulaStr := range h.Rule.HomebrewPackages {
+			parts := strings.Split(formulaStr, "@")
+			formula := parts[0]
+			if isBrewFormulaInstalled(brew, formula) {
 				status.Brews = removeHomebrewStatus(status.Brews, formula, blueprint, osName)
 				version := "latest"
 				if versionStr, err := h.getInstalledFormulaVersion(formula); err == nil && versionStr != "" {
@@ -117,9 +116,10 @@ func (h *HomebrewHandler) UpdateStatus(status *Status, records []ExecutionRecord
 					OS:          osName,
 				})
 			}
+		}
 
-			// Update cask status
-			for _, cask := range h.Rule.HomebrewCasks {
+		for _, cask := range h.Rule.HomebrewCasks {
+			if isBrewCaskInstalled(brew, cask) {
 				status.Brews = removeHomebrewStatus(status.Brews, caskKey(cask), blueprint, osName)
 				status.Brews = append(status.Brews, HomebrewStatus{
 					Formula:     caskKey(cask),
@@ -464,6 +464,32 @@ func (h *HomebrewHandler) FindUninstallRules(status *Status, currentRules []pars
 		})
 	}
 	return rules
+}
+
+// IsInstalled returns true if all homebrew formulas and casks in this rule are already in status.
+func (h *HomebrewHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+
+	// Build set of stored formula keys for this blueprint+OS
+	stored := make(map[string]bool)
+	for _, brew := range status.Brews {
+		if normalizePath(brew.Blueprint) == normalizedBlueprint && brew.OS == osName {
+			stored[brew.Formula] = true
+		}
+	}
+
+	for _, formulaStr := range h.Rule.HomebrewPackages {
+		parts := strings.Split(formulaStr, "@")
+		if !stored[parts[0]] {
+			return false
+		}
+	}
+	for _, cask := range h.Rule.HomebrewCasks {
+		if !stored[caskKey(cask)] {
+			return false
+		}
+	}
+	return true
 }
 
 // removeHomebrewStatus removes a homebrew formula from the status brews list

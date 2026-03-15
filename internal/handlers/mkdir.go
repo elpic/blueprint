@@ -288,3 +288,14 @@ func (h *MkdirHandler) FindUninstallRules(status *Status, currentRules []parser.
 
 	return rules
 }
+
+// IsInstalled returns true if the mkdir path in this rule is already in status.
+func (h *MkdirHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+	for _, mkdir := range status.Mkdirs {
+		if mkdir.Path == h.Rule.Mkdir && normalizePath(mkdir.Blueprint) == normalizedBlueprint && mkdir.OS == osName {
+			return true
+		}
+	}
+	return false
+}

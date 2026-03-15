@@ -340,3 +340,14 @@ func (h *KnownHostsHandler) FindUninstallRules(status *Status, currentRules []pa
 
 	return rules
 }
+
+// IsInstalled returns true if the known host in this rule is already in status.
+func (h *KnownHostsHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+	for _, host := range status.KnownHosts {
+		if host.Host == h.Rule.KnownHosts && normalizePath(host.Blueprint) == normalizedBlueprint && host.OS == osName {
+			return true
+		}
+	}
+	return false
+}

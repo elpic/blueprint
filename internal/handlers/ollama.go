@@ -75,16 +75,10 @@ func (h *OllamaHandler) UpdateStatus(status *Status, records []ExecutionRecord, 
 	blueprint = normalizePath(blueprint)
 
 	switch h.Rule.Action {
-	case "install":
-		cmd := h.buildCommand()
-		_, commandExecuted := commandSuccessfullyExecuted(cmd, records)
-
-		if commandExecuted {
-			for _, model := range h.Rule.OllamaModels {
-				// Remove existing entry if present
+	case "ollama":
+		for _, model := range h.Rule.OllamaModels {
+			if isOllamaModelInstalled(model) {
 				status.Ollamas = removeOllamaStatus(status.Ollamas, model, blueprint, osName)
-
-				// Add new entry
 				status.Ollamas = append(status.Ollamas, OllamaStatus{
 					Model:       model,
 					InstalledAt: time.Now().Format(time.RFC3339),
@@ -128,6 +122,17 @@ func (h *OllamaHandler) ensureOllamaInstalled() error {
 func (h *OllamaHandler) isOllamaInstalled() bool {
 	cmd := exec.Command("which", "ollama")
 	return cmd.Run() == nil
+}
+
+// isOllamaModelInstalled checks if a model is present in `ollama list` output.
+var isOllamaModelInstalled = func(model string) bool {
+	cmd := exec.Command("ollama", "list")
+	cmd.Stdin = nil
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), model)
 }
 
 // buildCommand builds the install command based on model list
@@ -261,6 +266,24 @@ func (h *OllamaHandler) FindUninstallRules(status *Status, currentRules []parser
 		})
 	}
 	return rules
+}
+
+// IsInstalled returns true if all ollama models in this rule are already in status.
+func (h *OllamaHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+	for _, model := range h.Rule.OllamaModels {
+		found := false
+		for _, s := range status.Ollamas {
+			if s.Model == model && normalizePath(s.Blueprint) == normalizedBlueprint && s.OS == osName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 // removeOllamaStatus removes an ollama model from the status ollamas list

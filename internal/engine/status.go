@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/elpic/blueprint/internal"
+	gitpkg "github.com/elpic/blueprint/internal/git"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
@@ -212,6 +213,87 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 
 // normalizePath normalizes a file path to allow comparison of relative and absolute paths
 // It converts to absolute path and normalizes separators
+
+// PrintDiff compares the desired state in the blueprint file against the installed state
+// in status.json and prints what would be added or removed on the next apply.
+func PrintDiff(blueprintFile string) {
+	// Resolve git URLs the same way RunWithSkip does
+	setupPath := blueprintFile
+	if gitpkg.IsGitURL(blueprintFile) {
+		tempDir, setupFile, err := gitpkg.CloneRepository(blueprintFile, false)
+		if err != nil {
+			fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error cloning repository: %v", err)))
+			return
+		}
+		defer func() { _ = gitpkg.CleanupRepository(tempDir) }()
+		setupPath, err = gitpkg.FindSetupFile(tempDir, setupFile)
+		if err != nil {
+			fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error finding setup file: %v", err)))
+			return
+		}
+	}
+
+	rules, err := parser.ParseFile(setupPath)
+	if err != nil {
+		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error parsing blueprint: %v", err)))
+		return
+	}
+
+	currentOS := getOSName()
+	desiredRules := filterRulesByOS(rules)
+
+	statusPath, err := getStatusPath()
+	if err != nil {
+		fmt.Printf("%s\n", ui.FormatError("Error getting status path"))
+		return
+	}
+
+	var status handlerskg.Status
+	if data, err := readBlueprintFile(statusPath); err == nil {
+		_ = json.Unmarshal(data, &status)
+	}
+
+	// Removals: resources in status but no longer in the blueprint
+	removeRules := getAutoUninstallRules(desiredRules, blueprintFile, currentOS)
+
+	// Additions: rules in the blueprint that have no matching status entry.
+	// Each handler owns this check via the InstalledChecker interface.
+	var addRules []parser.Rule
+	for _, rule := range desiredRules {
+		handler := handlerskg.NewHandler(rule, "", nil)
+		if checker, ok := handler.(handlerskg.InstalledChecker); ok {
+			if !checker.IsInstalled(&status, blueprintFile, currentOS) {
+				addRules = append(addRules, rule)
+			}
+		}
+	}
+
+	fmt.Printf("\n%s\n", ui.FormatHighlight("=== Blueprint Diff ==="))
+
+	hasChanges := false
+
+	if len(addRules) > 0 {
+		hasChanges = true
+		fmt.Printf("\n%s\n", ui.FormatSuccess("+ will install:"))
+		for _, r := range addRules {
+			fmt.Printf("  %s %s\n", ui.FormatSuccess("+"), ui.FormatInfo(r.DisplaySummary()))
+		}
+	}
+
+	if len(removeRules) > 0 {
+		hasChanges = true
+		fmt.Printf("\n%s\n", ui.FormatError("- will remove:"))
+		for _, r := range removeRules {
+			fmt.Printf("  %s %s\n", ui.FormatError("-"), ui.FormatInfo(r.DisplaySummary()))
+		}
+	}
+
+	if !hasChanges {
+		fmt.Printf("\n%s\n", ui.FormatSuccess("Everything is up to date."))
+	}
+
+	fmt.Printf("\n")
+}
 
 func PrintStatus() {
 	statusPath, err := getStatusPath()

@@ -620,6 +620,30 @@ func (h *AsdfHandler) FindUninstallRules(status *Status, currentRules []parser.R
 	return rules
 }
 
+// IsInstalled returns true if all asdf packages in this rule are already in status.
+func (h *AsdfHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+	for _, pkg := range h.Rule.AsdfPackages {
+		parts := strings.SplitN(pkg, "@", 2)
+		plugin := parts[0]
+		version := ""
+		if len(parts) == 2 {
+			version = parts[1]
+		}
+		found := false
+		for _, s := range status.Asdfs {
+			if s.Plugin == plugin && s.Version == version && normalizePath(s.Blueprint) == normalizedBlueprint && s.OS == osName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
 // succeededAsdfUninstall checks if asdf uninstall was successful
 func succeededAsdfUninstall(records []ExecutionRecord) bool {
 	for _, record := range records {

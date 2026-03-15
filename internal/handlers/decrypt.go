@@ -270,3 +270,14 @@ func (h *DecryptHandler) FindUninstallRules(status *Status, currentRules []parse
 
 	return rules
 }
+
+// IsInstalled returns true if the decrypt path in this rule is already in status.
+func (h *DecryptHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
+	normalizedBlueprint := normalizePath(blueprintFile)
+	for _, decrypt := range status.Decrypts {
+		if decrypt.DestPath == h.Rule.DecryptPath && normalizePath(decrypt.Blueprint) == normalizedBlueprint && decrypt.OS == osName {
+			return true
+		}
+	}
+	return false
+}

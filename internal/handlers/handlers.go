@@ -268,6 +268,15 @@ type StatusProvider interface {
 	FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule
 }
 
+// InstalledChecker is an optional interface that handlers can implement to report
+// whether the resource they manage is already recorded in the current status.
+// Used by the diff engine to determine what rules would be newly installed.
+type InstalledChecker interface {
+	// IsInstalled returns true if every resource managed by this rule already has
+	// a matching entry in status for the given blueprint file and OS.
+	IsInstalled(status *Status, blueprintFile, osName string) bool
+}
+
 // BaseHandler contains common fields for all handlers
 type BaseHandler struct {
 	Rule     parser.Rule
