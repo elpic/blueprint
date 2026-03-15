@@ -206,7 +206,6 @@ func resolveBlueprintFile(input string, verbose bool) (setupPath string, cleanup
 		setupPath, err = gitpkg.FindSetupFile(tempDir, setupFile)
 		if err != nil {
 			cleanup()
-			cleanup = func() {}
 			return "", func() {}, fmt.Errorf("error finding setup file: %w", err)
 		}
 		return setupPath, cleanup, nil
