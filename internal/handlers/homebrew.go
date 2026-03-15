@@ -328,11 +328,11 @@ func (h *HomebrewHandler) buildUninstallCommand() string {
 	return strings.Join(cmds, " && ")
 }
 
-// NeedsSudo returns true if homebrew installation requires sudo privileges
+// NeedsSudo returns true if homebrew installation requires sudo privileges.
+// On macOS, cask installations frequently invoke sudo internally (e.g. to move
+// apps to /Applications), so we signal sudo is needed whenever casks are present.
 func (h *HomebrewHandler) NeedsSudo() bool {
-	// Homebrew on Linux might need sudo for dependencies, but not for brew itself
-	// On macOS, homebrew handles its own permissions
-	return false
+	return len(h.Rule.HomebrewCasks) > 0
 }
 
 // GetDependencyKey returns the unique key for this rule in dependency resolution
@@ -504,5 +504,3 @@ func removeHomebrewStatus(brews []HomebrewStatus, formula string, blueprint stri
 	}
 	return result
 }
-
-

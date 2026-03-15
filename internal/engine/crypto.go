@@ -13,6 +13,7 @@ import (
 	"os/user"
 	"runtime"
 	"strconv"
+	"strings"
 )
 
 func EncryptFile(filePath string, passwordID string) {
@@ -149,8 +150,13 @@ func promptForSudoPasswordWithOS(rules []parser.Rule, currentOS string) error {
 		if err != nil {
 			return fmt.Errorf("failed to read sudo password: %w", err)
 		}
-		// Cache the sudo password
+		// Cache the sudo password for blueprint-level sudo commands
 		passwordCache.set("sudo", password)
+		// Pre-warm the system sudo session so child processes (e.g. brew) that
+		// call sudo internally reuse the authenticated session without re-prompting.
+		warmCmd := exec.Command("sudo", "-S", "-v")
+		warmCmd.Stdin = strings.NewReader(password + "\n")
+		_ = warmCmd.Run() // ignore error — worst case sudo prompts mid-run
 	}
 
 	return nil

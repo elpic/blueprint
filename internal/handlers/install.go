@@ -497,14 +497,15 @@ func (h *InstallHandler) IsInstalled(status *Status, blueprintFile, osName strin
 	return true
 }
 
-// NeedsSudo returns true if package installation/uninstallation requires sudo privileges
+// NeedsSudo returns true if package installation/uninstallation requires sudo privileges.
+// On macOS, brew may internally invoke sudo (e.g. when installing casks), so we signal
+// sudo is needed when there are packages to install on macOS.
 func (h *InstallHandler) NeedsSudo() bool {
-	// Only package managers on Linux require sudo
-	if getOSName() != "linux" {
-		return false
+	if getOSName() == "mac" {
+		return len(h.Rule.Packages) > 0
 	}
 
-	// Check the command that will be executed
+	// On Linux, check the command that will be executed
 	var cmd string
 	if h.Rule.Action == "uninstall" {
 		cmd = h.buildUninstallCommand(h.Rule)
