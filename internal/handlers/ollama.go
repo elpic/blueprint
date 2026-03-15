@@ -75,7 +75,7 @@ func (h *OllamaHandler) UpdateStatus(status *Status, records []ExecutionRecord, 
 	blueprint = normalizePath(blueprint)
 
 	switch h.Rule.Action {
-	case "install":
+	case "ollama":
 		for _, model := range h.Rule.OllamaModels {
 			if isOllamaModelInstalled(model) {
 				status.Ollamas = removeOllamaStatus(status.Ollamas, model, blueprint, osName)

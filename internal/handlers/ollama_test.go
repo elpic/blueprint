@@ -75,7 +75,7 @@ func TestOllamaHandlerUpdateStatus(t *testing.T) {
 		isOllamaModelInstalled = func(model string) bool { return true }
 
 		handler := NewOllamaHandler(parser.Rule{
-			Action:       "install",
+			Action:       "ollama",
 			OllamaModels: []string{"llama3", "codellama"},
 		}, "")
 
@@ -126,8 +126,12 @@ func TestOllamaHandlerUpdateStatus(t *testing.T) {
 	})
 
 	t.Run("install does not duplicate existing models", func(t *testing.T) {
+		origIsOllamaModelInstalled := isOllamaModelInstalled
+		defer func() { isOllamaModelInstalled = origIsOllamaModelInstalled }()
+		isOllamaModelInstalled = func(model string) bool { return true }
+
 		handler := NewOllamaHandler(parser.Rule{
-			Action:       "install",
+			Action:       "ollama",
 			OllamaModels: []string{"llama3"},
 		}, "")
 
@@ -138,12 +142,7 @@ func TestOllamaHandlerUpdateStatus(t *testing.T) {
 			},
 		}
 
-		cmd := handler.buildCommand()
-		records := []ExecutionRecord{
-			{Command: cmd, Status: "success"},
-		}
-
-		err := handler.UpdateStatus(status, records, "/tmp/test.bp", "mac")
+		err := handler.UpdateStatus(status, nil, "/tmp/test.bp", "mac")
 		if err != nil {
 			t.Fatalf("UpdateStatus() error = %v", err)
 		}

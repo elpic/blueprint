@@ -95,7 +95,7 @@ func (h *HomebrewHandler) UpdateStatus(status *Status, records []ExecutionRecord
 	blueprint = normalizePath(blueprint)
 
 	switch h.Rule.Action {
-	case "install":
+	case "homebrew":
 		brew := brewCmd()
 
 		// Record each formula/cask if installed (either just installed or already present)
