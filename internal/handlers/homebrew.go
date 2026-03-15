@@ -199,17 +199,19 @@ func (h *HomebrewHandler) ensureHomebrewInstalled() error {
 }
 
 // isBrewFormulaInstalled checks if a formula is already installed.
+// Uses sh -c to support multi-word brew invocations (e.g. under Rosetta 2).
 // Overridable for testing.
 var isBrewFormulaInstalled = func(brew, formula string) bool {
-	cmd := exec.Command(brew, "list", "--versions", formula)
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("%s list --versions %s", brew, formula))
 	cmd.Stdin = nil
 	return cmd.Run() == nil
 }
 
 // isBrewCaskInstalled checks if a cask is already installed.
+// Uses sh -c to support multi-word brew invocations (e.g. under Rosetta 2).
 // Overridable for testing.
 var isBrewCaskInstalled = func(brew, cask string) bool {
-	cmd := exec.Command(brew, "list", "--cask", cask)
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("%s list --cask %s", brew, cask))
 	cmd.Stdin = nil
 	return cmd.Run() == nil
 }

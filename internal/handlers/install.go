@@ -202,14 +202,14 @@ func (h *InstallHandler) buildInstallCommandForManager(manager string, pkgNames 
 		return ""
 
 	case "homebrew", "brew":
-		// Homebrew (macOS and Linux)
-		return fmt.Sprintf("brew install %s", pkgStr)
+		// Homebrew (macOS and Linux) — use brewCmd() to handle Rosetta 2 on Apple Silicon
+		return fmt.Sprintf("%s install %s", brewCmd(), pkgStr)
 
 	case "apt", "apt-get", "default":
 		// apt-get (Linux default)
 		if targetOS == "mac" {
-			// Fallback to brew on macOS if apt is specified
-			return fmt.Sprintf("brew install %s", pkgStr)
+			// Fallback to brew on macOS if apt is specified — use brewCmd() for Rosetta 2 support
+			return fmt.Sprintf("%s install %s", brewCmd(), pkgStr)
 		}
 
 		cmd := fmt.Sprintf("apt-get install -y %s", pkgStr)
@@ -301,14 +301,14 @@ func (h *InstallHandler) buildUninstallCommandForManager(manager string, pkgName
 		return ""
 
 	case "homebrew", "brew":
-		// Homebrew uninstall
-		return fmt.Sprintf("brew uninstall -y %s", pkgStr)
+		// Homebrew uninstall — use brewCmd() for Rosetta 2 support
+		return fmt.Sprintf("%s uninstall -y %s", brewCmd(), pkgStr)
 
 	case "apt", "apt-get", "default":
 		// apt-get (Linux default)
 		if targetOS == "mac" {
-			// Fallback to brew on macOS if apt is specified
-			return fmt.Sprintf("brew uninstall -y %s", pkgStr)
+			// Fallback to brew on macOS if apt is specified — use brewCmd() for Rosetta 2 support
+			return fmt.Sprintf("%s uninstall -y %s", brewCmd(), pkgStr)
 		}
 
 		cmd := fmt.Sprintf("apt-get remove -y %s", pkgStr)
