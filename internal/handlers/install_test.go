@@ -14,6 +14,7 @@ func TestInstallHandlerGetCommand(t *testing.T) {
 	tests := []struct {
 		name     string
 		rule     parser.Rule
+		mockOS   string
 		expected string
 	}{
 		{
@@ -21,8 +22,8 @@ func TestInstallHandlerGetCommand(t *testing.T) {
 			rule: parser.Rule{
 				Action:   "install",
 				Packages: []parser.Package{{Name: "curl"}},
-				OSList:   []string{"mac"},
 			},
+			mockOS:   "mac",
 			expected: "brew install curl",
 		},
 		{
@@ -34,8 +35,8 @@ func TestInstallHandlerGetCommand(t *testing.T) {
 					{Name: "curl"},
 					{Name: "wget"},
 				},
-				OSList: []string{"mac"},
 			},
+			mockOS:   "mac",
 			expected: "brew install git curl wget",
 		},
 		{
@@ -43,8 +44,8 @@ func TestInstallHandlerGetCommand(t *testing.T) {
 			rule: parser.Rule{
 				Action:   "install",
 				Packages: []parser.Package{{Name: "curl"}},
-				OSList:   []string{"linux"},
 			},
+			mockOS:   "linux",
 			expected: "sudo apt-get install -y curl",
 		},
 		{
@@ -52,14 +53,18 @@ func TestInstallHandlerGetCommand(t *testing.T) {
 			rule: parser.Rule{
 				Action:   "uninstall",
 				Packages: []parser.Package{{Name: "curl"}},
-				OSList:   []string{"mac"},
 			},
+			mockOS:   "mac",
 			expected: "brew uninstall -y curl",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			orig := getOSName
+			defer func() { getOSName = orig }()
+			getOSName = func() string { return tt.mockOS }
+
 			handler := NewInstallHandler(tt.rule, "")
 			cmd := handler.GetCommand()
 			if cmd != tt.expected {
@@ -97,10 +102,11 @@ func TestInstallHandlerBuildCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rule := parser.Rule{
-				Packages: tt.packages,
-				OSList:   []string{tt.osName},
-			}
+			orig := getOSName
+			defer func() { getOSName = orig }()
+			getOSName = func() string { return tt.osName }
+
+			rule := parser.Rule{Packages: tt.packages}
 			handler := NewInstallHandler(rule, "")
 			cmd := handler.buildCommand()
 			if cmd != tt.expected {
@@ -225,6 +231,10 @@ func TestInstallHandlerUpdateStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			orig := getOSName
+			defer func() { getOSName = orig }()
+			getOSName = func() string { return "linux" }
+
 			handler := NewInstallHandler(tt.rule, "")
 			status := tt.initialStatus
 
@@ -252,7 +262,6 @@ func TestInstallHandlerUpdateStatus(t *testing.T) {
 		})
 	}
 }
-
 
 func TestInstallHandlerGetDependencyKey(t *testing.T) {
 	tests := []struct {

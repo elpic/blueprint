@@ -103,14 +103,8 @@ func needsSudo(cmd string) bool {
 
 // shouldAddSudo checks if sudo should be added for package installation on this OS
 func (h *InstallHandler) shouldAddSudo() bool {
-	// Determine target OS
-	targetOS := getOSName()
-	if len(h.Rule.OSList) > 0 {
-		targetOS = strings.TrimSpace(h.Rule.OSList[0])
-	}
-
 	// Only Linux requires sudo for package managers
-	if targetOS != "linux" {
+	if getOSName() != "linux" {
 		return false
 	}
 
@@ -133,11 +127,7 @@ func (h *InstallHandler) buildCommand() string {
 		return ""
 	}
 
-	// Determine target OS
 	targetOS := getOSName()
-	if len(h.Rule.OSList) > 0 {
-		targetOS = strings.TrimSpace(h.Rule.OSList[0])
-	}
 
 	// Group packages by package manager
 	packagesByManager := h.groupPackagesByManager()
@@ -244,11 +234,7 @@ func (h *InstallHandler) buildUninstallCommand(rule parser.Rule) string {
 		return ""
 	}
 
-	// Determine target OS
 	targetOS := getOSName()
-	if len(rule.OSList) > 0 {
-		targetOS = strings.TrimSpace(rule.OSList[0])
-	}
 
 	// Group packages by package manager
 	packagesByManager := make(map[string][]string)
@@ -341,7 +327,8 @@ func (h *InstallHandler) buildUninstallCommandForManager(manager string, pkgName
 	}
 }
 
-func getOSName() string {
+// getOSName returns the current OS name. Defined as a var to allow stubbing in tests.
+var getOSName = func() string {
 	return internal.OSName()
 }
 
