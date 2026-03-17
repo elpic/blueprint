@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -38,9 +39,34 @@ func NewShellHandler(rule parser.Rule, basePath string) *ShellHandler {
 	}
 }
 
+// validateShellName validates shell names to prevent command injection
+func validateShellName(name string) error {
+	// Only allow safe characters in shell names
+	validChars := regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+	if !validChars.MatchString(name) {
+		return fmt.Errorf("invalid shell name: contains unsafe characters")
+	}
+	if strings.Contains(name, "..") {
+		return fmt.Errorf("invalid shell name: path traversal not allowed")
+	}
+	return nil
+}
+
 // Up sets the default login shell using chsh
 func (h *ShellHandler) Up() (string, error) {
 	shellName := h.Rule.ShellName
+
+	// Always validate shell name for path traversal attacks, even if absolute
+	if strings.Contains(shellName, "..") {
+		return "", fmt.Errorf("shell name validation failed: path traversal not allowed")
+	}
+
+	// Validate shell name to prevent command injection
+	if !filepath.IsAbs(shellName) {
+		if err := validateShellName(shellName); err != nil {
+			return "", fmt.Errorf("shell name validation failed: %w", err)
+		}
+	}
 
 	// Resolve shell path
 	shellPath, err := h.resolveShellPath(shellName)
@@ -74,8 +100,8 @@ func (h *ShellHandler) Up() (string, error) {
 		return fmt.Sprintf("Shell already set to %s for user %s", shellPath, currentUser.Username), nil
 	}
 
-	// Change shell using chsh
-	cmd := exec.Command("chsh", "-s", shellPath)
+	// Change shell using chsh (with path sanitization)
+	cmd := exec.Command("chsh", "-s", filepath.Clean(shellPath))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("failed to change shell: %w (output: %s)", err, string(output))
@@ -220,9 +246,14 @@ func (h *ShellHandler) IsInstalled(status *Status, blueprintFile, osName string)
 
 // resolveShellPath resolves a shell name to its full path
 func (h *ShellHandler) resolveShellPath(shellName string) (string, error) {
-	// If it's already an absolute path, use it as-is
+	// Always check for path traversal attempts
+	if strings.Contains(shellName, "..") {
+		return "", fmt.Errorf("invalid shell name: path traversal not allowed")
+	}
+
+	// If it's already an absolute path, clean and return it
 	if filepath.IsAbs(shellName) {
-		return shellName, nil
+		return filepath.Clean(shellName), nil
 	}
 
 	// Common shell paths to check
@@ -241,13 +272,16 @@ func (h *ShellHandler) resolveShellPath(shellName string) (string, error) {
 		}
 	}
 
-	// Try using 'which' command as fallback
+	// Try using 'which' command as fallback (with name validation)
+	if err := validateShellName(shellName); err != nil {
+		return "", fmt.Errorf("invalid shell name for 'which' command: %w", err)
+	}
 	cmd := exec.Command("which", shellName)
 	output, err := cmd.Output()
 	if err == nil {
 		path := strings.TrimSpace(string(output))
 		if path != "" {
-			return path, nil
+			return filepath.Clean(path), nil
 		}
 	}
 
@@ -292,8 +326,26 @@ func (h *ShellHandler) validateShellInEtcShells(shellPath string) error {
 	return fmt.Errorf("shell '%s' is not listed in /etc/shells - it may not be allowed as a login shell", shellPath)
 }
 
+// validateUsername validates usernames to prevent command injection
+func validateUsername(username string) error {
+	// Only allow safe characters in usernames (alphanumeric, dash, underscore, dot)
+	validChars := regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
+	if !validChars.MatchString(username) {
+		return fmt.Errorf("invalid username: contains unsafe characters")
+	}
+	if strings.Contains(username, "..") {
+		return fmt.Errorf("invalid username: path traversal not allowed")
+	}
+	return nil
+}
+
 // getCurrentShell gets the current shell for the specified user
 func (h *ShellHandler) getCurrentShell(username string) (string, error) {
+	// Validate username to prevent command injection
+	if err := validateUsername(username); err != nil {
+		return "", fmt.Errorf("username validation failed: %w", err)
+	}
+
 	// Try using dscl on macOS first
 	if h.isMacOS() {
 		cmd := exec.Command("dscl", ".", "read", "/Users/"+username, "UserShell")
@@ -329,6 +381,10 @@ func (h *ShellHandler) getCurrentShell(username string) (string, error) {
 
 // getShellFromPasswd reads /etc/passwd to get the user's shell
 func (h *ShellHandler) getShellFromPasswd(username string) (string, error) {
+	// Validate username to prevent injection attacks
+	if err := validateUsername(username); err != nil {
+		return "", fmt.Errorf("username validation failed: %w", err)
+	}
 	content, err := os.ReadFile("/etc/passwd")
 	if err != nil {
 		return "", fmt.Errorf("failed to read /etc/passwd: %w", err)
