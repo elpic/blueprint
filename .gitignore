@@ -24,3 +24,9 @@ vendor/
 opencode.json
 .opencode/
 .env
+
+# Coverage files (should never be committed)
+coverage.out
+coverage.html
+*.coverage
+.coverage/
