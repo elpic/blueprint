@@ -6,8 +6,8 @@ blueprint-*
 # Claude Code
 .claude/settings.local.json
 
-# Local task tracking
-.tasks/
+# Agent brain (local agent data, task tracking)
+.brain/
 
 # IDE and Editor files
 .vscode/
@@ -19,3 +19,8 @@ blueprint-*
 
 # Go build cache
 vendor/
+
+# Opencode
+opencode.json
+.opencode/
+.env
