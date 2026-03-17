@@ -174,6 +174,7 @@ type Status struct {
 	Runs       []RunStatus        `json:"runs"`
 	Dotfiles   []DotfilesStatus   `json:"dotfiles"`
 	Schedules  []ScheduleStatus   `json:"schedules"`
+	Shells     []ShellStatus      `json:"shells"`
 }
 
 // Handler is the interface that all command handlers must implement
@@ -335,6 +336,8 @@ func RuleKey(rule parser.Rule) string {
 			return "schedule-" + rule.ScheduleSource
 		}
 		return "schedule"
+	case "shell":
+		return rule.ShellName
 	default:
 		return rule.Action
 	}
@@ -398,6 +401,9 @@ func DetectRuleType(rule parser.Rule) string {
 	if rule.ScheduleSource != "" {
 		return "schedule"
 	}
+	if rule.ShellName != "" {
+		return "shell"
+	}
 	return ""
 }
 
@@ -447,6 +453,8 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 		return NewSudoersHandler(rule, basePath)
 	case "schedule":
 		return NewScheduleHandler(rule, basePath)
+	case "shell":
+		return NewShellHandler(rule, basePath)
 	default:
 		return nil
 	}
@@ -473,6 +481,7 @@ func GetStatusProviderHandlers() []Handler {
 		NewDotfilesHandler(parser.Rule{}, ""),
 		NewSudoersHandler(parser.Rule{}, ""),
 		NewScheduleHandler(parser.Rule{}, ""),
+		NewShellHandler(parser.Rule{}, ""),
 	}
 }
 

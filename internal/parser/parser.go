@@ -17,7 +17,7 @@ type Package struct {
 
 type Rule struct {
 	ID       string // Unique identifier for this rule
-	Action   string // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "mise", "homebrew", "ollama", "known_hosts", "gpg-key", "sudoers", or "schedule"
+	Action   string // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "mise", "homebrew", "ollama", "known_hosts", "gpg-key", "sudoers", "schedule", or "shell"
 	Packages []Package
 	OSList   []string
 	After    []string // List of IDs or package names this rule depends on
@@ -88,6 +88,9 @@ type Rule struct {
 
 	// Run-sh-specific fields
 	RunShURL string // URL to the script to download and execute
+
+	// Shell-specific fields
+	ShellName string // Shell name or path to set as default login shell
 }
 
 // DisplaySummary returns a short human-readable description of the rule for diff/plan output.
@@ -129,6 +132,8 @@ func (r Rule) DisplaySummary() string {
 		return r.SudoersUser
 	case "schedule":
 		return r.ScheduleSource
+	case "shell":
+		return r.ShellName
 	default:
 		return r.Action
 	}
@@ -251,6 +256,8 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 			rule, err = parseSudoersRule(line)
 		case strings.HasPrefix(line, "schedule"):
 			rule, err = parseScheduleRule(line)
+		case strings.HasPrefix(line, "shell "):
+			rule, err = parseShellRule(line)
 		default:
 			return nil, fmt.Errorf("line %d: unknown directive %q", lineNum+1, line)
 		}
@@ -693,5 +700,25 @@ func parseScheduleRule(line string) (*Rule, error) {
 		SchedulePreset: schedulePreset,
 		ScheduleCron:   scheduleCron,
 		ScheduleSource: scheduleSource,
+	}, nil
+}
+
+func parseShellRule(line string) (*Rule, error) {
+	f := parseFields(strings.TrimPrefix(line, "shell "))
+	tokens := f.tokens
+	if len(tokens) == 0 {
+		return nil, lineError(line, "shell requires a shell name")
+	}
+	shellName := tokens[0]
+	id := f.word("id:")
+	if id == "" {
+		id = fmt.Sprintf("shell-%s", shellName)
+	}
+	return &Rule{
+		ID:        id,
+		Action:    "shell",
+		ShellName: shellName,
+		OSList:    f.osFilter,
+		After:     f.list("after:"),
 	}, nil
 }
