@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -100,8 +101,10 @@ func (h *ShellHandler) Up() (string, error) {
 		return fmt.Sprintf("Shell already set to %s for user %s", shellPath, currentUser.Username), nil
 	}
 
-	// Change shell using chsh (with path sanitization)
-	cmd := exec.Command("chsh", "-s", filepath.Clean(shellPath))
+	// Change shell using chsh (with path sanitization and timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "chsh", "-s", filepath.Clean(shellPath))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("failed to change shell: %w (output: %s)", err, string(output))
@@ -272,11 +275,13 @@ func (h *ShellHandler) resolveShellPath(shellName string) (string, error) {
 		}
 	}
 
-	// Try using 'which' command as fallback (with name validation)
+	// Try using 'which' command as fallback (with name validation and timeout)
 	if err := validateShellName(shellName); err != nil {
 		return "", fmt.Errorf("invalid shell name for 'which' command: %w", err)
 	}
-	cmd := exec.Command("which", shellName)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "which", shellName)
 	output, err := cmd.Output()
 	if err == nil {
 		path := strings.TrimSpace(string(output))
@@ -346,9 +351,13 @@ func (h *ShellHandler) getCurrentShell(username string) (string, error) {
 		return "", fmt.Errorf("username validation failed: %w", err)
 	}
 
+	// Create a timeout context for external commands
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	// Try using dscl on macOS first
 	if h.isMacOS() {
-		cmd := exec.Command("dscl", ".", "read", "/Users/"+username, "UserShell")
+		cmd := exec.CommandContext(ctx, "dscl", ".", "read", "/Users/"+username, "UserShell")
 		output, err := cmd.Output()
 		if err == nil {
 			// Parse output like "UserShell: /bin/zsh"
@@ -365,7 +374,7 @@ func (h *ShellHandler) getCurrentShell(username string) (string, error) {
 	}
 
 	// Try getent (works on Linux and some Unix systems)
-	cmd := exec.Command("getent", "passwd", username)
+	cmd := exec.CommandContext(ctx, "getent", "passwd", username)
 	output, err := cmd.Output()
 	if err == nil {
 		// Parse passwd entry: username:password:uid:gid:gecos:home:shell
