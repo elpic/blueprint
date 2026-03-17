@@ -1,6 +1,6 @@
 # Shell Handler
 
-The shell handler allows you to declaratively set your default login shell using the `shell: <shell-name>` syntax.
+The shell handler allows you to declaratively set your default login shell using the `shell <shell-name>` syntax.
 
 ## Syntax
 
@@ -169,23 +169,41 @@ Error: failed to change shell: permission denied
 - The shell handler only changes the shell for the current user
 - Validates shells against `/etc/shells` when available
 - Does not require sudo for normal operation
-- Cannot automatically revert shell changes (for safety)
+- Tracks previous shell for automatic rollback capability
 
 ## Status and Tracking
 
 The shell handler tracks:
 - Which shell was set
+- Previous shell (for rollback)
 - For which user
 - When the change was made
 - From which blueprint file
 
 Use `blueprint ps` to see current shell status.
 
+## Automatic Rollback
+
+The shell handler now supports automatic rollback when shells are removed from blueprints:
+
+1. **Rollback Tracking**: Records the previous shell when making changes
+2. **Automatic Uninstall**: Generates uninstall rules when shells are removed from blueprints
+3. **Safety Validation**: Validates that previous shell is still available before rollback
+
+### Rollback Example
+```bash
+# Initial blueprint with shell
+shell zsh
+
+# Remove shell from blueprint - automatic rollback will occur
+# The handler will revert to the shell you had before setting zsh
+```
+
 ## Limitations
 
-1. **No Automatic Uninstall**: Shell changes cannot be automatically reverted for safety reasons
-2. **User-Specific**: Only changes the shell for the current user
-3. **Session Restart Required**: New shell takes effect on next login/session
+1. **User-Specific**: Only changes the shell for the current user
+2. **Session Restart Required**: New shell takes effect on next login/session
+3. **Previous Shell Required**: Rollback only works for shells installed after implementing rollback tracking
 
 ## Integration with Other Handlers
 
