@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,22 +13,25 @@ import (
 	"strings"
 	"time"
 
+	"github.com/elpic/blueprint/internal"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
 )
 
 // ShellStatus tracks a shell change
 type ShellStatus struct {
-	Shell     string `json:"shell"`
-	User      string `json:"user"`
-	ChangedAt string `json:"changed_at"`
-	Blueprint string `json:"blueprint"`
-	OS        string `json:"os"`
+	Shell         string `json:"shell"`          // Current shell (what we set)
+	PreviousShell string `json:"previous_shell"` // Shell before our change
+	User          string `json:"user"`
+	ChangedAt     string `json:"changed_at"`
+	Blueprint     string `json:"blueprint"`
+	OS            string `json:"os"`
 }
 
 // ShellHandler handles setting the default login shell
 type ShellHandler struct {
 	BaseHandler
+	previousShell string // Temporary storage for previous shell during execution
 }
 
 // NewShellHandler creates a new shell handler
@@ -101,6 +105,10 @@ func (h *ShellHandler) Up() (string, error) {
 		return fmt.Sprintf("Shell already set to %s for user %s", shellPath, currentUser.Username), nil
 	}
 
+	// Store the current shell as the previous shell before making changes
+	// This will be used for rollback in Down()
+	h.previousShell = currentShell
+
 	// Change shell using chsh (with path sanitization and timeout)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -113,22 +121,81 @@ func (h *ShellHandler) Up() (string, error) {
 	return fmt.Sprintf("Changed default shell to %s for user %s", shellPath, currentUser.Username), nil
 }
 
-// Down reverts the shell change (not implemented as it's not safe to assume the previous shell)
+// Down reverts the shell change using stored previous shell information
 func (h *ShellHandler) Down() (string, error) {
-	return "Shell changes cannot be automatically reverted", fmt.Errorf("shell uninstall not supported - shell changes cannot be safely reverted")
+	// Load current status to find the previous shell
+	status := h.loadCurrentStatus()
+
+	// Get current user
+	currentUser, err := user.Current()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current user: %w", err)
+	}
+
+	// Find the shell status entry for this user and blueprint
+	var shellStatus *ShellStatus
+	normalizedBlueprint := normalizePath(h.BasePath)
+	for i, shell := range status.Shells {
+		if shell.User == currentUser.Username &&
+			normalizePath(shell.Blueprint) == normalizedBlueprint &&
+			shell.OS == runtime.GOOS {
+			shellStatus = &status.Shells[i]
+			break
+		}
+	}
+
+	if shellStatus == nil {
+		return "", fmt.Errorf("no shell status found for user %s and blueprint %s", currentUser.Username, h.BasePath)
+	}
+
+	if shellStatus.PreviousShell == "" {
+		return "", fmt.Errorf("no previous shell recorded - cannot revert (this may be an older status entry without rollback support)")
+	}
+
+	// Validate that the previous shell still exists and is valid
+	if err := h.validateShell(shellStatus.PreviousShell); err != nil {
+		return "", fmt.Errorf("previous shell %s is no longer valid: %w", shellStatus.PreviousShell, err)
+	}
+
+	// Check if previous shell is still in /etc/shells
+	if err := h.validateShellInEtcShells(shellStatus.PreviousShell); err != nil {
+		return "", fmt.Errorf("previous shell %s is not in /etc/shells: %w", shellStatus.PreviousShell, err)
+	}
+
+	// Check if we're already using the previous shell (idempotency)
+	currentShell, err := h.getCurrentShell(currentUser.Username)
+	if err != nil {
+		return "", fmt.Errorf("failed to get current shell: %w", err)
+	}
+
+	if currentShell == shellStatus.PreviousShell {
+		return fmt.Sprintf("Shell already reverted to %s for user %s", shellStatus.PreviousShell, currentUser.Username), nil
+	}
+
+	// Revert shell using chsh (with path sanitization and timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "chsh", "-s", filepath.Clean(shellStatus.PreviousShell))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to revert shell: %w (output: %s)", err, string(output))
+	}
+
+	return fmt.Sprintf("Reverted shell to %s for user %s", shellStatus.PreviousShell, currentUser.Username), nil
 }
 
 // GetCommand returns the actual command that will be executed
 func (h *ShellHandler) GetCommand() string {
 	shellName := h.Rule.ShellName
 
-	// For display purposes, show the basic chsh command
-	shellPath, _ := h.resolveShellPath(shellName)
-
 	if h.Rule.Action == "uninstall" {
-		return "# Shell changes cannot be automatically reverted"
+		// For uninstall, we show a generic message since the actual previous shell
+		// is determined at execution time from status
+		return "chsh -s <previous_shell>"
 	}
 
+	// For display purposes, show the basic chsh command
+	shellPath, _ := h.resolveShellPath(shellName)
 	return fmt.Sprintf("chsh -s %s", shellPath)
 }
 
@@ -161,20 +228,56 @@ func (h *ShellHandler) UpdateStatus(status *Status, records []ExecutionRecord, b
 				return fmt.Errorf("failed to resolve shell path: %w", err)
 			}
 
+			// Get previous shell from existing status (if any) to preserve rollback info
+			var previousShell string
+			existingEntry := findShellStatus(status.Shells, currentUser.Username, blueprint, osName)
+			if existingEntry != nil {
+				// Preserve existing PreviousShell if we're updating an entry
+				previousShell = existingEntry.PreviousShell
+			} else {
+				// New entry - capture the previous shell from temporary storage
+				// The Up() method stored this in h.previousShell
+				previousShell = h.previousShell
+			}
+
 			// Remove existing entry if present
 			status.Shells = removeShellStatus(status.Shells, currentUser.Username, blueprint, osName)
 
-			// Add new entry
+			// Add new entry with previous shell information
 			status.Shells = append(status.Shells, ShellStatus{
-				Shell:     shellPath,
-				User:      currentUser.Username,
-				ChangedAt: time.Now().Format(time.RFC3339),
-				Blueprint: blueprint,
-				OS:        osName,
+				Shell:         shellPath,
+				PreviousShell: previousShell,
+				User:          currentUser.Username,
+				ChangedAt:     time.Now().Format(time.RFC3339),
+				Blueprint:     blueprint,
+				OS:            osName,
 			})
 		}
+	} else if h.Rule.Action == "uninstall" {
+		// Handle shell uninstall/rollback
+		shellRollbackExecuted := false
+		for _, record := range records {
+			if record.Status == "success" {
+				// For uninstall, check if any chsh command was executed successfully
+				// This handles the Down() method execution
+				if strings.Contains(record.Command, "chsh -s") {
+					shellRollbackExecuted = true
+					break
+				}
+			}
+		}
+
+		if shellRollbackExecuted {
+			// Get current user
+			currentUser, err := user.Current()
+			if err != nil {
+				return fmt.Errorf("failed to get current user: %w", err)
+			}
+
+			// Remove the shell status entry since we've successfully rolled back
+			status.Shells = removeShellStatus(status.Shells, currentUser.Username, blueprint, osName)
+		}
 	}
-	// Note: We don't handle uninstall because shell changes cannot be safely reverted
 
 	return nil
 }
@@ -228,7 +331,7 @@ func (h *ShellHandler) IsInstalled(status *Status, blueprintFile, osName string)
 			normalizePath(shell.Blueprint) == normalizedBlueprint &&
 			shell.OS == osName {
 
-			// Also verify the shell is actually set
+			// Cross-validate: verify the shell recorded in status matches the actual current shell
 			currentShell, err := h.getCurrentShell(currentUser.Username)
 			if err != nil {
 				return false
@@ -240,7 +343,11 @@ func (h *ShellHandler) IsInstalled(status *Status, blueprintFile, osName string)
 				return false
 			}
 
-			return currentShell == expectedShell
+			// For maximum accuracy, check both status record and actual shell
+			statusMatches := currentShell == shell.Shell
+			expectedMatches := currentShell == expectedShell
+
+			return statusMatches && expectedMatches
 		}
 	}
 
@@ -414,8 +521,50 @@ func (h *ShellHandler) getShellFromPasswd(username string) (string, error) {
 
 // FindUninstallRules compares shell status against current rules and returns uninstall rules
 func (h *ShellHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
-	// Shell changes cannot be automatically uninstalled, so return no rules
-	return []parser.Rule{}
+	var uninstallRules []parser.Rule
+	normalizedBlueprint := normalizePath(blueprintFile)
+
+	// Get current user
+	currentUser, err := user.Current()
+	if err != nil {
+		return uninstallRules
+	}
+
+	// Check each shell status entry
+	for _, shell := range status.Shells {
+		if shell.User == currentUser.Username &&
+			normalizePath(shell.Blueprint) == normalizedBlueprint &&
+			shell.OS == osName {
+
+			// Check if this shell is still in the current rules
+			stillInRules := false
+			for _, rule := range currentRules {
+				if rule.Action == "shell" {
+					// Try to resolve the shell path for comparison
+					expectedShell, err := h.resolveShellPath(rule.ShellName)
+					if err == nil && expectedShell == shell.Shell {
+						stillInRules = true
+						break
+					}
+					// Also check direct shell name match (for cases where resolution fails)
+					if rule.ShellName == shell.Shell {
+						stillInRules = true
+						break
+					}
+				}
+			}
+
+			// If this shell is no longer in the rules and has rollback info, create uninstall rule
+			if !stillInRules && shell.PreviousShell != "" {
+				uninstallRules = append(uninstallRules, parser.Rule{
+					Action:    "uninstall",
+					ShellName: shell.Shell, // The shell we want to uninstall/revert
+				})
+			}
+		}
+	}
+
+	return uninstallRules
 }
 
 // NeedsSudo returns false because chsh typically works without sudo for the current user
@@ -429,6 +578,40 @@ func (h *ShellHandler) isMacOS() bool {
 	return runtime.GOOS == "darwin"
 }
 
+// loadCurrentStatus loads the current status from the status file
+func (h *ShellHandler) loadCurrentStatus() Status {
+	var status Status
+	statusPath, err := h.getStatusPath()
+	if err != nil {
+		return status
+	}
+
+	data, err := os.ReadFile(statusPath)
+	if err != nil {
+		return status
+	}
+
+	_ = json.Unmarshal(data, &status)
+	return status
+}
+
+// getStatusPath returns the path to the status file in ~/.blueprint/
+func (h *ShellHandler) getStatusPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	blueprintDir := filepath.Join(homeDir, ".blueprint")
+
+	// Create directory if it doesn't exist
+	if err := os.MkdirAll(blueprintDir, internal.DirectoryPermission); err != nil {
+		return "", fmt.Errorf("failed to create .blueprint directory: %w", err)
+	}
+
+	return filepath.Join(blueprintDir, "status.json"), nil
+}
+
 // removeShellStatus removes a shell entry from the status shells list
 func removeShellStatus(shells []ShellStatus, user string, blueprint string, osName string) []ShellStatus {
 	var result []ShellStatus
@@ -440,4 +623,16 @@ func removeShellStatus(shells []ShellStatus, user string, blueprint string, osNa
 		}
 	}
 	return result
+}
+
+// findShellStatus finds a shell entry in the status shells list and returns it
+func findShellStatus(shells []ShellStatus, user string, blueprint string, osName string) *ShellStatus {
+	normalizedBlueprint := normalizePath(blueprint)
+	for i, shell := range shells {
+		normalizedStoredBlueprint := normalizePath(shell.Blueprint)
+		if shell.User == user && normalizedStoredBlueprint == normalizedBlueprint && shell.OS == osName {
+			return &shells[i]
+		}
+	}
+	return nil
 }
