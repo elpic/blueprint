@@ -205,13 +205,35 @@ func (h *ShellHandler) UpdateStatus(status *Status, records []ExecutionRecord, b
 	blueprint = normalizePath(blueprint)
 
 	if h.Rule.Action == "shell" {
-		// Check if shell change was executed successfully
-		expectedCmd := h.GetCommand()
+		// Check if shell change was executed successfully and extract the shell path
 		shellExecuted := false
+		var executedShellPath string
 		for _, record := range records {
-			if record.Status == "success" && record.Command == expectedCmd {
-				shellExecuted = true
-				break
+			if record.Status == "success" {
+				// Check if this is a chsh command that matches our shell
+				// This is more flexible than exact command matching
+				if strings.HasPrefix(record.Command, "chsh -s ") {
+					cmdShell := strings.TrimPrefix(record.Command, "chsh -s ")
+					// Check if the shell in the command matches what we expect
+					expectedShell, err := h.resolveShellPath(h.Rule.ShellName)
+					if err == nil && cmdShell == expectedShell {
+						shellExecuted = true
+						executedShellPath = cmdShell
+						break
+					}
+					// Also check if the command shell matches our rule shell name directly
+					if cmdShell == h.Rule.ShellName {
+						shellExecuted = true
+						executedShellPath = cmdShell
+						break
+					}
+					// Check basename match (e.g., "/bin/zsh" matches "zsh")
+					if filepath.Base(cmdShell) == h.Rule.ShellName {
+						shellExecuted = true
+						executedShellPath = cmdShell
+						break
+					}
+				}
 			}
 		}
 
@@ -222,11 +244,8 @@ func (h *ShellHandler) UpdateStatus(status *Status, records []ExecutionRecord, b
 				return fmt.Errorf("failed to get current user: %w", err)
 			}
 
-			// Resolve shell path for status
-			shellPath, err := h.resolveShellPath(h.Rule.ShellName)
-			if err != nil {
-				return fmt.Errorf("failed to resolve shell path: %w", err)
-			}
+			// Use the shell path from the executed command rather than trying to resolve it again
+			shellPath := executedShellPath
 
 			// Get previous shell from existing status (if any) to preserve rollback info
 			var previousShell string
@@ -548,6 +567,11 @@ func (h *ShellHandler) FindUninstallRules(status *Status, currentRules []parser.
 					}
 					// Also check direct shell name match (for cases where resolution fails)
 					if rule.ShellName == shell.Shell {
+						stillInRules = true
+						break
+					}
+					// Also check if shell name is a basename of the stored shell path (e.g., "zsh" matches "/bin/zsh")
+					if filepath.Base(shell.Shell) == rule.ShellName {
 						stillInRules = true
 						break
 					}
