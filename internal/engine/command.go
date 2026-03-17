@@ -110,6 +110,9 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 	// Set up the handler package with our executeCommand function
 	handlerskg.SetExecuteCommandFunc(executeCommand)
 
+	// Load current status once — used for idempotency checks before Up()/Down()
+	currentStatus := loadCurrentStatus()
+
 	// Sort rules by dependencies
 	sortedRules, err := resolveDependencies(rules)
 	if err != nil {
@@ -175,12 +178,20 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 				ra.SetCurrentRecords(toHandlerRecords(records))
 			}
 
-			// Execute handler
+			// Execute handler — skip if already in desired state
 			start := time.Now()
 			if isUninstall {
-				output, err = handler.Down()
+				if !handler.IsInstalled(&currentStatus, blueprint, osName) {
+					output = "not installed"
+				} else {
+					output, err = handler.Down()
+				}
 			} else {
-				output, err = handler.Up()
+				if handler.IsInstalled(&currentStatus, blueprint, osName) {
+					output = "already installed"
+				} else {
+					output, err = handler.Up()
+				}
 			}
 			durationMs = time.Since(start).Milliseconds()
 		} else {
