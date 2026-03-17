@@ -115,6 +115,22 @@ func saveHistory(records []ExecutionRecord) error {
 }
 
 // saveStatus saves the current status of installed packages and clones to ~/.blueprint/status.json
+// loadCurrentStatus reads and returns the current status from disk.
+// Returns an empty Status if the file doesn't exist or can't be parsed.
+func loadCurrentStatus() handlerskg.Status {
+	var status handlerskg.Status
+	statusPath, err := getStatusPath()
+	if err != nil {
+		return status
+	}
+	data, err := readBlueprintFile(statusPath)
+	if err != nil {
+		return status
+	}
+	_ = json.Unmarshal(data, &status)
+	return status
+}
+
 func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string, osName string) error {
 	statusPath, err := getStatusPath()
 	if err != nil {
