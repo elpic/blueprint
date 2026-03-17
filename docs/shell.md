@@ -5,15 +5,15 @@ The shell handler allows you to declaratively set your default login shell using
 ## Syntax
 
 ```
-shell <shell-name> [id:<id>] [on:<os-list>] [after:<dependency-list>]
+shell <shell-name> [id: <id>] [on: [<os-list>]] [after: <dependency-list>]
 ```
 
 ### Parameters
 
 - `<shell-name>`: The name or path of the shell to set as default
-- `id:<id>`: Optional unique identifier for dependency resolution
-- `on:<os-list>`: Optional OS filter (e.g., `on:mac,linux`)
-- `after:<dependency-list>`: Optional dependencies that must be installed first
+- `id: <id>`: Optional unique identifier for dependency resolution
+- `on: [<os-list>]`: Optional OS filter (e.g., `on: [mac, linux]`)
+- `after: <dependency-list>`: Optional dependencies that must be installed first
 
 ## Examples
 
@@ -42,13 +42,13 @@ shell /opt/homebrew/bin/zsh
 
 ```bash
 # Only apply on macOS
-shell zsh on:mac
+shell zsh on: [mac]
 
 # Only apply on Linux systems
-shell bash on:linux
+shell bash on: [linux]
 
 # Apply on both macOS and Linux
-shell zsh on:mac,linux
+shell zsh on: [mac, linux]
 ```
 
 ### With Dependencies
@@ -56,23 +56,23 @@ shell zsh on:mac,linux
 ```bash
 # Install fish first, then set it as shell
 install fish
-shell fish after:fish
+shell fish after: fish
 
 # With explicit IDs
-install fish id:my-fish
-shell fish id:set-fish after:my-fish
+install fish id: my-fish
+shell fish id: set-fish after: my-fish
 ```
 
 ### Complex Example
 
 ```bash
 # Install modern shells on different platforms
-install fish on:mac,linux
-homebrew fish on:mac
-install zsh on:linux
+install fish on: [mac, linux]
+homebrew fish on: [mac]
+install zsh on: [linux]
 
 # Set fish as default shell after installation
-shell fish after:fish on:mac,linux
+shell fish after: fish on: [mac, linux]
 ```
 
 ## How It Works
@@ -121,7 +121,7 @@ install fish        # Linux
 homebrew fish       # macOS
 
 # Then set as default
-shell fish after:fish
+shell fish after: fish
 ```
 
 ### Bash
@@ -193,30 +193,30 @@ Use `blueprint ps` to see current shell status.
 ```bash
 # Install a modern shell, then set it as default
 install fish
-shell fish after:fish
+shell fish after: fish
 ```
 
 ### Platform-Specific Shells
 ```bash
 # Different shells for different platforms
-homebrew fish on:mac
-install fish on:linux
+homebrew fish on: [mac]
+install fish on: [linux]
 
-shell fish after:fish
+shell fish after: fish
 ```
 
 ### Development Environment
 ```bash
 # Complete development setup
 install git vim curl
-homebrew fish on:mac
-install fish on:linux
+homebrew fish on: [mac]
+install fish on: [linux]
 
 # Configure shell after tools are available
-shell fish after:fish,git
+shell fish after: fish, git
 
 # Clone dotfiles that might configure the shell
-clone https://github.com/user/dotfiles.git to:~/dotfiles after:fish
+clone https://github.com/user/dotfiles.git to: ~/dotfiles after: fish
 ```
 
 ## Troubleshooting
