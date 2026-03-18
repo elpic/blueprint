@@ -54,7 +54,7 @@ func TestMkdirHandlerGetCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewMkdirHandler(tt.rule, "")
+			handler := NewMkdirHandlerLegacy(tt.rule, "")
 			cmd := handler.GetCommand()
 			if cmd != tt.expected {
 				t.Errorf("GetCommand() = %q, want %q", cmd, tt.expected)
@@ -107,7 +107,7 @@ func TestMkdirHandlerUp(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewMkdirHandler(tt.rule, "")
+			handler := NewMkdirHandlerLegacy(tt.rule, "")
 			output, err := handler.Up()
 
 			if (err != nil) != tt.shouldErr {
@@ -170,7 +170,7 @@ func TestMkdirHandlerDown(t *testing.T) {
 				_ = os.MkdirAll(testDir, 0755)
 			}
 
-			handler := NewMkdirHandler(tt.rule, "")
+			handler := NewMkdirHandlerLegacy(tt.rule, "")
 			output, err := handler.Down()
 
 			if (err != nil) != tt.shouldErr {
@@ -244,7 +244,7 @@ func TestMkdirHandlerUpdateStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewMkdirHandler(tt.rule, "")
+			handler := NewMkdirHandlerLegacy(tt.rule, "")
 			status := tt.initialStatus
 
 			err := handler.UpdateStatus(&status, tt.records, "/tmp/test.bp", "mac")
@@ -309,7 +309,7 @@ func TestMkdirHandlerDisplayInfo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewMkdirHandler(tt.rule, "")
+			handler := NewMkdirHandlerLegacy(tt.rule, "")
 
 			// Capture stdout
 			old := os.Stdout
@@ -362,7 +362,7 @@ func TestMkdirHandlerGetDependencyKey(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewMkdirHandler(tt.rule, "")
+			handler := NewMkdirHandlerLegacy(tt.rule, "")
 			got := handler.GetDependencyKey()
 			if got != tt.expected {
 				t.Errorf("GetDependencyKey() = %q, want %q", got, tt.expected)

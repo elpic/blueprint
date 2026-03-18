@@ -107,7 +107,7 @@ func TestKeyProviderInterface(t *testing.T) {
 		},
 		{
 			name:    "MkdirHandler implements KeyProvider",
-			handler: NewMkdirHandler(parser.Rule{Mkdir: "path"}, ""),
+			handler: NewMkdirHandlerLegacy(parser.Rule{Mkdir: "path"}, ""),
 		},
 		{
 			name:    "KnownHostsHandler implements KeyProvider",
@@ -202,7 +202,7 @@ func TestDisplayProviderInterface(t *testing.T) {
 		},
 		{
 			name:              "MkdirHandler provides path display",
-			handler:           NewMkdirHandler(parser.Rule{Mkdir: "~/projects"}, ""),
+			handler:           NewMkdirHandlerLegacy(parser.Rule{Mkdir: "~/projects"}, ""),
 			expectedFormatted: "~/projects",
 			isUninstall:       false,
 		},
@@ -324,7 +324,7 @@ func TestStateProviderInterface(t *testing.T) {
 		},
 		{
 			name:            "MkdirHandler provides mkdir state",
-			handler:         NewMkdirHandler(parser.Rule{Mkdir: "~/projects"}, ""),
+			handler:         NewMkdirHandlerLegacy(parser.Rule{Mkdir: "~/projects"}, ""),
 			expectedSummary: "~/projects",
 			isUninstall:     false,
 			expectedKeys:    []string{"summary", "path"},
@@ -467,7 +467,7 @@ func TestStatusProviderInterface(t *testing.T) {
 		},
 		{
 			name:              "MkdirHandler implements StatusProvider",
-			handler:           NewMkdirHandler(parser.Rule{Mkdir: "~/projects"}, ""),
+			handler:           NewMkdirHandlerLegacy(parser.Rule{Mkdir: "~/projects"}, ""),
 			currentRules:      []parser.Rule{},
 			expectedRuleCount: 0,
 		},
