@@ -1,0 +1,38 @@
+# Sample blueprint file for testing
+# This file provides test data for unit and integration tests
+
+# Package installations
+install:
+  packages:
+    - curl
+    - git
+    - wget
+
+install:
+  packages:
+    - docker
+  package_manager: snap
+  os: linux
+
+# Git repositories
+clone:
+  url: https://github.com/user/repo.git
+  path: ~/projects/repo
+  branch: main
+
+clone:
+  url: https://github.com/user/dotfiles.git
+  path: ~/.dotfiles
+
+# Directory creation
+mkdir: ~/projects
+mkdir: ~/.config/app
+
+# File operations
+decrypt:
+  file: secrets.gpg
+  path: ~/.secrets/config
+
+download:
+  url: https://example.com/script.sh
+  path: ~/bin/script.sh
