@@ -558,7 +558,7 @@ func copyRepositoryContents(sourcePath, destPath string) error {
 	}
 
 	// Create destination directory if it doesn't exist
-	if err := os.MkdirAll(destPath, 0755); err != nil {
+	if err := os.MkdirAll(destPath, 0750); err != nil {
 		return fmt.Errorf("failed to create destination directory: %w", err)
 	}
 
@@ -600,7 +600,7 @@ func copyRepositoryContents(sourcePath, destPath string) error {
 // copyFile copies a file from source to destination with the specified permissions
 func copyFile(src, dest string, mode os.FileMode) error {
 	// Ensure destination directory exists
-	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dest), 0750); err != nil {
 		return err
 	}
 
