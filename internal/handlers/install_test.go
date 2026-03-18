@@ -65,7 +65,7 @@ func TestInstallHandlerGetCommand(t *testing.T) {
 			defer func() { getOSName = orig }()
 			getOSName = func() string { return tt.mockOS }
 
-			handler := NewInstallHandler(tt.rule, "")
+			handler := NewInstallHandlerLegacy(tt.rule, "")
 			cmd := handler.GetCommand()
 			if cmd != tt.expected {
 				t.Errorf("GetCommand() = %q, want %q", cmd, tt.expected)
@@ -107,7 +107,7 @@ func TestInstallHandlerBuildCommand(t *testing.T) {
 			getOSName = func() string { return tt.osName }
 
 			rule := parser.Rule{Packages: tt.packages}
-			handler := NewInstallHandler(rule, "")
+			handler := NewInstallHandlerLegacy(rule, "")
 			cmd := handler.buildCommand()
 			if cmd != tt.expected {
 				t.Errorf("buildCommand() = %q, want %q", cmd, tt.expected)
@@ -235,7 +235,7 @@ func TestInstallHandlerUpdateStatus(t *testing.T) {
 			defer func() { getOSName = orig }()
 			getOSName = func() string { return "linux" }
 
-			handler := NewInstallHandler(tt.rule, "")
+			handler := NewInstallHandlerLegacy(tt.rule, "")
 			status := tt.initialStatus
 
 			err := handler.UpdateStatus(&status, tt.records, "/tmp/test.bp", "linux")
@@ -288,7 +288,7 @@ func TestInstallHandlerGetDependencyKey(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewInstallHandler(tt.rule, "")
+			handler := NewInstallHandlerLegacy(tt.rule, "")
 			got := handler.GetDependencyKey()
 			if got != tt.expected {
 				t.Errorf("GetDependencyKey() = %q, want %q", got, tt.expected)
@@ -340,7 +340,7 @@ func TestInstallHandlerDisplayInfo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewInstallHandler(tt.rule, "")
+			handler := NewInstallHandlerLegacy(tt.rule, "")
 
 			// Capture stdout
 			old := os.Stdout

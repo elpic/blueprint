@@ -8,6 +8,7 @@ import (
 	"github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/platform"
+	"github.com/elpic/blueprint/internal/platform/mocks"
 )
 
 // RuleBuilder provides a fluent interface for building parser.Rule objects in tests.
@@ -354,5 +355,54 @@ func FailedCommand(command, errorMsg string) handlers.ExecutionRecord {
 		WithCommand(command).
 		WithError(errorMsg).
 		AsError(errorMsg).
+		Build()
+}
+
+// MockContainerBuilder provides a fluent interface for building test containers with mocks.
+type MockContainerBuilder struct {
+	systemProvider *mocks.MockSystemProvider
+}
+
+// NewMockContainer creates a new mock container builder.
+func NewMockContainer() *MockContainerBuilder {
+	return &MockContainerBuilder{
+		systemProvider: mocks.NewMockSystemProvider(),
+	}
+}
+
+// WithOS sets the OS name and returns the builder for chaining.
+func (b *MockContainerBuilder) WithOS(osName string) *MockContainerBuilder {
+	b.systemProvider.WithOS(osName)
+	return b
+}
+
+// WithUser sets the user information and returns the builder for chaining.
+func (b *MockContainerBuilder) WithUser(username, uid, gid, homeDir string) *MockContainerBuilder {
+	b.systemProvider.WithUser(username, uid, gid, homeDir)
+	return b
+}
+
+// WithCommandResult configures a command result and returns the builder for chaining.
+func (b *MockContainerBuilder) WithCommandResult(cmd string, result *platform.ExecuteResult) *MockContainerBuilder {
+	b.systemProvider.WithCommandResult(cmd, result)
+	return b
+}
+
+// WithFile configures a file in the mock filesystem and returns the builder for chaining.
+func (b *MockContainerBuilder) WithFile(path string, content []byte) *MockContainerBuilder {
+	b.systemProvider.WithFile(path, content)
+	return b
+}
+
+// WithDirectory configures a directory in the mock filesystem and returns the builder for chaining.
+func (b *MockContainerBuilder) WithDirectory(path string) *MockContainerBuilder {
+	b.systemProvider.WithDirectory(path)
+	return b
+}
+
+// Build returns a configured mock Container.
+func (b *MockContainerBuilder) Build() platform.Container {
+	return platform.NewTestContainer().
+		WithSystemProvider(b.systemProvider).
 		Build()
 }

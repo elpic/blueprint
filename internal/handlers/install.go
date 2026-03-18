@@ -2,13 +2,12 @@ package handlers
 
 import (
 	"fmt"
-	"os/user"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/elpic/blueprint/internal"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
 	"github.com/elpic/blueprint/internal/ui"
 )
 
@@ -18,13 +17,19 @@ type InstallHandler struct {
 }
 
 // NewInstallHandler creates a new install handler
-func NewInstallHandler(rule parser.Rule, basePath string) *InstallHandler {
+func NewInstallHandler(rule parser.Rule, basePath string, container platform.Container) *InstallHandler {
 	return &InstallHandler{
 		BaseHandler: BaseHandler{
-			Rule:     rule,
-			BasePath: basePath,
+			Rule:      rule,
+			BasePath:  basePath,
+			Container: container,
 		},
 	}
+}
+
+// NewInstallHandlerLegacy creates a new install handler without container (for backward compatibility)
+func NewInstallHandlerLegacy(rule parser.Rule, basePath string) *InstallHandler {
+	return NewInstallHandler(rule, basePath, platform.NewContainer())
 }
 
 // Up installs the packages
@@ -103,22 +108,16 @@ func needsSudo(cmd string) bool {
 
 // shouldAddSudo checks if sudo should be added for package installation on this OS
 func (h *InstallHandler) shouldAddSudo() bool {
+	// Use injected dependencies for OS and user detection
+	osDetector := h.Container.SystemProvider().OS()
+
 	// Only Linux requires sudo for package managers
-	if getOSName() != "linux" {
+	if osDetector.Name() != "linux" {
 		return false
 	}
 
-	// Check if current user is root
-	currentUser, err := user.Current()
-	if err == nil {
-		uid, err := strconv.Atoi(currentUser.Uid)
-		if err == nil && uid == 0 {
-			// Already root, no sudo needed
-			return false
-		}
-	}
-
-	return true
+	// Check if current user is root using injected dependency
+	return !osDetector.IsRoot()
 }
 
 // buildCommand builds the install command based on OS and package manager
@@ -127,7 +126,8 @@ func (h *InstallHandler) buildCommand() string {
 		return ""
 	}
 
-	targetOS := getOSName()
+	// Use injected OS detector instead of hardcoded getOSName
+	targetOS := h.Container.SystemProvider().OS().Name()
 
 	// Group packages by package manager
 	packagesByManager := h.groupPackagesByManager()
@@ -234,7 +234,7 @@ func (h *InstallHandler) buildUninstallCommand(rule parser.Rule) string {
 		return ""
 	}
 
-	targetOS := getOSName()
+	targetOS := h.Container.SystemProvider().OS().Name()
 
 	// Group packages by package manager
 	packagesByManager := make(map[string][]string)
@@ -328,6 +328,7 @@ func (h *InstallHandler) buildUninstallCommandForManager(manager string, pkgName
 }
 
 // getOSName returns the current OS name. Defined as a var to allow stubbing in tests.
+// DEPRECATED: Use dependency injection via Container.SystemProvider().OS().Name() instead
 var getOSName = func() string {
 	return internal.OSName()
 }
@@ -488,7 +489,9 @@ func (h *InstallHandler) IsInstalled(status *Status, blueprintFile, osName strin
 // On macOS, brew may internally invoke sudo (e.g. when installing casks), so we signal
 // sudo is needed when there are packages to install on macOS.
 func (h *InstallHandler) NeedsSudo() bool {
-	if getOSName() == "mac" {
+	osName := h.Container.SystemProvider().OS().Name()
+
+	if osName == "mac" {
 		return len(h.Rule.Packages) > 0
 	}
 

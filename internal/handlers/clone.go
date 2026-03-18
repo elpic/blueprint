@@ -2,11 +2,11 @@ package handlers
 
 import (
 	"fmt"
-	"os"
 	"time"
 
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
 	"github.com/elpic/blueprint/internal/ui"
 )
 
@@ -26,19 +26,25 @@ type CloneHandler struct {
 }
 
 // NewCloneHandler creates a new clone handler
-func NewCloneHandler(rule parser.Rule, basePath string) *CloneHandler {
+func NewCloneHandler(rule parser.Rule, basePath string, container platform.Container) *CloneHandler {
 	return &CloneHandler{
 		BaseHandler: BaseHandler{
-			Rule:     rule,
-			BasePath: basePath,
+			Rule:      rule,
+			BasePath:  basePath,
+			Container: container,
 		},
 	}
 }
 
+// NewCloneHandlerLegacy creates a new clone handler without container (for backward compatibility)
+func NewCloneHandlerLegacy(rule parser.Rule, basePath string) *CloneHandler {
+	return NewCloneHandler(rule, basePath, platform.NewContainer())
+}
+
 // Up clones or updates the repository using go-git library
 func (h *CloneHandler) Up() (string, error) {
-	// Expand home directory if needed
-	clonePath := expandPath(h.Rule.ClonePath)
+	// Expand home directory if needed using injected filesystem provider
+	clonePath := h.Container.SystemProvider().Filesystem().ExpandPath(h.Rule.ClonePath)
 
 	// Use go-git library to clone or update repository
 	oldSHA, newSHA, status, err := gitpkg.CloneOrUpdateRepository(
@@ -81,11 +87,11 @@ func (h *CloneHandler) Up() (string, error) {
 
 // Down removes the cloned repository
 func (h *CloneHandler) Down() (string, error) {
-	clonePath := expandPath(h.Rule.ClonePath)
+	clonePath := h.Container.SystemProvider().Filesystem().ExpandPath(h.Rule.ClonePath)
 
-	// Remove directory if it exists
-	if _, err := os.Stat(clonePath); err == nil {
-		err := os.RemoveAll(clonePath)
+	// Remove directory if it exists using injected filesystem provider
+	if h.Container.SystemProvider().Filesystem().Exists(clonePath) {
+		err := h.Container.SystemProvider().Filesystem().RemoveDirectory(clonePath)
 		if err != nil {
 			return "", fmt.Errorf("failed to remove directory %s: %w", clonePath, err)
 		}
@@ -136,8 +142,8 @@ func (h *CloneHandler) UpdateStatus(status *Status, records []ExecutionRecord, b
 		}
 	} else if h.Rule.Action == "uninstall" && DetectRuleType(h.Rule) == "clone" {
 		// Check if clone was removed by checking if directory doesn't exist
-		expandedPath := expandPath(h.Rule.ClonePath)
-		if _, err := os.Stat(expandedPath); os.IsNotExist(err) {
+		expandedPath := h.Container.SystemProvider().Filesystem().ExpandPath(h.Rule.ClonePath)
+		if !h.Container.SystemProvider().Filesystem().Exists(expandedPath) {
 			// Directory has been removed, update status
 			status.Clones = removeCloneStatus(status.Clones, h.Rule.ClonePath, blueprint, osName)
 		}
@@ -265,7 +271,6 @@ func (h *CloneHandler) FindUninstallRules(status *Status, currentRules []parser.
 		}
 	}
 
-
 	return rules
 }
 
@@ -284,7 +289,7 @@ func (h *CloneHandler) IsInstalled(status *Status, blueprintFile, osName string)
 			// Cannot reach remote — trust the status entry as-is.
 			return true
 		}
-		localSHAVal := localSHA(expandPath(h.Rule.ClonePath))
+		localSHAVal := localSHA(h.Container.SystemProvider().Filesystem().ExpandPath(h.Rule.ClonePath))
 		return localSHAVal == remoteSHA
 	}
 	return false

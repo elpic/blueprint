@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
 )
 
 // ExecutionRecord represents a single command execution
@@ -274,8 +275,9 @@ type StatusProvider interface {
 
 // BaseHandler contains common fields for all handlers
 type BaseHandler struct {
-	Rule     parser.Rule
-	BasePath string // For resolving relative paths
+	Rule      parser.Rule
+	BasePath  string             // For resolving relative paths
+	Container platform.Container // Dependency injection container
 }
 
 // getDependencyKey is a helper function that centralizes the ID check logic.
@@ -404,6 +406,9 @@ func DetectRuleType(rule parser.Rule) string {
 // NewHandler creates a handler for the given rule
 // Returns nil if the action is not recognized
 func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+	// Create production container
+	container := platform.NewContainer()
+
 	action := rule.Action
 
 	// For uninstall actions, detect the actual rule type from the rule's content
@@ -416,9 +421,9 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 
 	switch action {
 	case "install":
-		return NewInstallHandler(rule, basePath)
+		return NewInstallHandler(rule, basePath, container)
 	case "clone":
-		return NewCloneHandler(rule, basePath)
+		return NewCloneHandler(rule, basePath, container)
 	case "decrypt":
 		return NewDecryptHandler(rule, basePath, passwordCache)
 	case "mkdir":
@@ -457,8 +462,8 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 // Used by engine for getAutoUninstallRules and other status-related operations
 func GetStatusProviderHandlers() []Handler {
 	return []Handler{
-		NewInstallHandler(parser.Rule{}, ""),
-		NewCloneHandler(parser.Rule{}, ""),
+		NewInstallHandlerLegacy(parser.Rule{}, ""),
+		NewCloneHandlerLegacy(parser.Rule{}, ""),
 		NewDecryptHandler(parser.Rule{}, "", nil),
 		NewAsdfHandler(parser.Rule{}, ""),
 		NewMiseHandler(parser.Rule{}, ""),

@@ -60,6 +60,7 @@ func (m *MockSystemProvider) WithOS(name string) *MockSystemProvider {
 // WithUser configures the current user and returns the system provider for chaining.
 func (m *MockSystemProvider) WithUser(username, uid, gid, homeDir string) *MockSystemProvider {
 	m.osDetector.WithUser(username, uid, gid, homeDir)
+	m.filesystem.WithHomeDir(homeDir) // Sync the home directory for path expansion
 	return m
 }
 
@@ -267,6 +268,7 @@ type MockFilesystemProvider struct {
 	permissions map[string]os.FileMode
 	symlinks    map[string]string
 	fileInfo    map[string]platform.FileInfo
+	homeDir     string // For path expansion
 }
 
 // NewMockFilesystemProvider creates a new mock filesystem provider.
@@ -277,6 +279,7 @@ func NewMockFilesystemProvider() *MockFilesystemProvider {
 		permissions: make(map[string]os.FileMode),
 		symlinks:    make(map[string]string),
 		fileInfo:    make(map[string]platform.FileInfo),
+		homeDir:     "/Users/testuser", // Default home dir
 	}
 }
 
@@ -424,7 +427,7 @@ func (m *MockFilesystemProvider) TempDirectory(prefix string) (string, error) {
 // ExpandPath expands paths (simple implementation for testing).
 func (m *MockFilesystemProvider) ExpandPath(path string) string {
 	if len(path) > 0 && path[0] == '~' {
-		return "/Users/testuser" + path[1:]
+		return m.homeDir + path[1:]
 	}
 	return path
 }
@@ -445,6 +448,12 @@ func (m *MockFilesystemProvider) WithFile(path string, content []byte) *MockFile
 // WithDirectory configures a directory in the mock filesystem and returns the provider for chaining.
 func (m *MockFilesystemProvider) WithDirectory(path string) *MockFilesystemProvider {
 	m.directories[path] = true
+	return m
+}
+
+// WithHomeDir sets the home directory for path expansion and returns the provider for chaining.
+func (m *MockFilesystemProvider) WithHomeDir(homeDir string) *MockFilesystemProvider {
+	m.homeDir = homeDir
 	return m
 }
 

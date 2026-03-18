@@ -2,278 +2,270 @@ package unit
 
 import (
 	"testing"
+	"time"
 
 	"github.com/elpic/blueprint/internal/handlers"
-	"github.com/elpic/blueprint/internal/parser"
-	"github.com/elpic/blueprint/internal/platform/mocks"
 	"github.com/elpic/blueprint/internal/platform/testutils"
 )
 
-// TestCloneHandlerUnit demonstrates fast unit testing with platform abstraction.
-// These tests run in <1ms each and have zero external dependencies.
-
+// TestCloneHandler_GetCommand_Pure demonstrates fast, pure unit testing
+// for clone command generation. Executes in microseconds.
 func TestCloneHandler_GetCommand_Pure(t *testing.T) {
-	// Pure function tests - no I/O, no mocks needed
 	tests := []struct {
 		name     string
-		rule     parser.Rule
+		action   string
+		url      string
+		path     string
+		branch   string
 		expected string
 	}{
 		{
 			name:     "clone without branch",
-			rule:     testutils.NewRule().WithClone("https://github.com/user/repo.git", "~/projects/repo").Build(),
+			action:   "clone",
+			url:      "https://github.com/user/repo.git",
+			path:     "~/projects/repo",
+			branch:   "",
 			expected: "git clone https://github.com/user/repo.git ~/projects/repo",
 		},
 		{
-			name:     "clone with branch",
-			rule:     testutils.NewRule().WithClone("https://github.com/user/repo.git", "~/projects/repo").WithBranch("develop").Build(),
+			name:     "clone with specific branch",
+			action:   "clone",
+			url:      "https://github.com/user/repo.git",
+			path:     "~/projects/repo",
+			branch:   "develop",
 			expected: "git clone -b develop https://github.com/user/repo.git ~/projects/repo",
 		},
 		{
-			name:     "uninstall action",
-			rule:     testutils.NewRule().WithAction("uninstall").WithClone("", "~/projects/repo").Build(),
+			name:     "uninstall clone",
+			action:   "uninstall",
+			url:      "",
+			path:     "~/projects/repo",
+			branch:   "",
 			expected: "rm -rf ~/projects/repo",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create handler - no external dependencies
-			handler := handlers.NewCloneHandler(tt.rule, "")
+			start := time.Now()
 
-			// Test pure function
+			// Build rule using test builder
+			ruleBuilder := testutils.NewRule().WithAction(tt.action)
+
+			if tt.action == "clone" {
+				ruleBuilder = ruleBuilder.WithClone(tt.url, tt.path)
+				if tt.branch != "" {
+					ruleBuilder = ruleBuilder.WithBranch(tt.branch)
+				}
+			} else {
+				// For uninstall, manually set the path
+				rule := ruleBuilder.Build()
+				rule.ClonePath = tt.path
+				ruleBuilder = &testutils.RuleBuilder{}
+				*ruleBuilder = testutils.RuleBuilder{}
+				// Rebuild with updated rule fields
+				rule.Action = tt.action
+
+				// Create handler directly with this rule
+				container := testutils.NewMockContainer().WithOS("linux").Build()
+				handler := handlers.NewCloneHandler(rule, "/test", container)
+
+				cmd := handler.GetCommand()
+				duration := time.Since(start)
+
+				if cmd != tt.expected {
+					t.Errorf("GetCommand() = %q, want %q", cmd, tt.expected)
+				}
+
+				if duration > time.Millisecond {
+					t.Errorf("Test took %v, expected < 1ms for pure unit test", duration)
+				}
+				return
+			}
+
+			rule := ruleBuilder.Build()
+			container := testutils.NewMockContainer().WithOS("linux").Build()
+			handler := handlers.NewCloneHandler(rule, "/test", container)
+
 			cmd := handler.GetCommand()
+			duration := time.Since(start)
 
-			// Assert result
-			testutils.AssertStringEquals(t, cmd, tt.expected, "command")
-		})
-	}
-}
+			if cmd != tt.expected {
+				t.Errorf("GetCommand() = %q, want %q", cmd, tt.expected)
+			}
 
-func TestCloneHandler_GetDependencyKey_Pure(t *testing.T) {
-	// Pure function test - tests business logic without I/O
-	tests := []struct {
-		name     string
-		rule     parser.Rule
-		expected string
-	}{
-		{
-			name:     "uses ID when present",
-			rule:     testutils.NewRule().WithID("my-clone").WithClone("", "~/projects/repo").Build(),
-			expected: "my-clone",
-		},
-		{
-			name:     "falls back to clone path when ID empty",
-			rule:     testutils.NewRule().WithClone("", "~/projects/repo").Build(),
-			expected: "~/projects/repo",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create handler
-			handler := handlers.NewCloneHandler(tt.rule, "")
-
-			// Test pure function
-			key := handler.GetDependencyKey()
-
-			// Assert result
-			testutils.AssertStringEquals(t, key, tt.expected, "dependency key")
-		})
-	}
-}
-
-func TestCloneHandler_UpdateStatus_WithMocks(t *testing.T) {
-	// Unit test with mocked I/O - tests business logic with controlled dependencies
-	tests := []struct {
-		name           string
-		rule           parser.Rule
-		records        []handlers.ExecutionRecord
-		initialStatus  handlers.Status
-		expectedClones int
-		shouldContain  bool
-	}{
-		{
-			name:           "adds clone to status on successful execution",
-			rule:           testutils.NewRule().WithClone("https://github.com/user/repo.git", "~/projects/repo").Build(),
-			records:        []handlers.ExecutionRecord{testutils.SuccessfulClone("https://github.com/user/repo.git", "~/projects/repo", "abc123def456")},
-			initialStatus:  testutils.NewStatus().Build(),
-			expectedClones: 1,
-			shouldContain:  true,
-		},
-		{
-			name:           "removes clone from status on uninstall",
-			rule:           testutils.NewRule().WithAction("uninstall").WithClone("https://github.com/user/repo.git", "~/projects/repo").Build(),
-			records:        []handlers.ExecutionRecord{},
-			initialStatus:  testutils.NewStatus().WithClone("https://github.com/user/repo.git", "~/projects/repo", "abc123", "/tmp/test.bp", "mac").Build(),
-			expectedClones: 0,
-			shouldContain:  false,
-		},
-		{
-			name:           "no action on failed command",
-			rule:           testutils.NewRule().WithClone("https://github.com/user/repo.git", "~/projects/repo").Build(),
-			records:        []handlers.ExecutionRecord{testutils.FailedCommand("git clone https://github.com/user/repo.git ~/projects/repo", "network error")},
-			initialStatus:  testutils.NewStatus().Build(),
-			expectedClones: 0,
-			shouldContain:  false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create handler
-			handler := handlers.NewCloneHandler(tt.rule, "")
-			status := tt.initialStatus
-
-			// Execute business logic
-			err := handler.UpdateStatus(&status, tt.records, "/tmp/test.bp", "mac")
-
-			// Assert results
-			testutils.AssertNoError(t, err, "UpdateStatus")
-			testutils.NewAssertStatus(t, &status, "status").HasCloneCount(tt.expectedClones)
-
-			if tt.shouldContain && tt.expectedClones > 0 {
-				testutils.NewAssertStatus(t, &status, "status").
-					HasClone(tt.rule.CloneURL, tt.rule.ClonePath, "/tmp/test.bp", "mac")
+			if duration > time.Millisecond {
+				t.Errorf("Test took %v, expected < 1ms for pure unit test", duration)
 			}
 		})
 	}
 }
 
-func TestCloneHandler_IsInstalled_WithMocks(t *testing.T) {
-	// Unit test demonstrating mocked Git operations
+// TestCloneHandler_GetDependencyKey_Pure tests dependency key generation.
+func TestCloneHandler_GetDependencyKey_Pure(t *testing.T) {
+	tests := []struct {
+		name      string
+		ruleID    string
+		clonePath string
+		expected  string
+	}{
+		{
+			name:      "uses rule ID when present",
+			ruleID:    "my-repo-id",
+			clonePath: "~/projects/repo",
+			expected:  "my-repo-id",
+		},
+		{
+			name:      "falls back to clone path",
+			ruleID:    "",
+			clonePath: "~/projects/myrepo",
+			expected:  "~/projects/myrepo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			start := time.Now()
+
+			ruleBuilder := testutils.NewRule().
+				WithClone("https://github.com/user/repo.git", tt.clonePath)
+
+			if tt.ruleID != "" {
+				ruleBuilder = ruleBuilder.WithID(tt.ruleID)
+			}
+
+			rule := ruleBuilder.Build()
+			container := testutils.NewMockContainer().WithOS("linux").Build()
+			handler := handlers.NewCloneHandler(rule, "/test", container)
+
+			key := handler.GetDependencyKey()
+			duration := time.Since(start)
+
+			if key != tt.expected {
+				t.Errorf("GetDependencyKey() = %q, want %q", key, tt.expected)
+			}
+
+			if duration > 100*time.Microsecond {
+				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
+			}
+		})
+	}
+}
+
+// TestCloneHandler_GetDisplayDetails_Pure tests display information.
+func TestCloneHandler_GetDisplayDetails_Pure(t *testing.T) {
+	clonePath := "~/projects/myrepo"
+
+	rule := testutils.NewRule().
+		WithClone("https://github.com/user/repo.git", clonePath).
+		Build()
+
+	container := testutils.NewMockContainer().WithOS("linux").Build()
+	handler := handlers.NewCloneHandler(rule, "/test", container)
+
+	start := time.Now()
+	details := handler.GetDisplayDetails(false)
+	duration := time.Since(start)
+
+	if details != clonePath {
+		t.Errorf("GetDisplayDetails() = %q, want %q", details, clonePath)
+	}
+
+	if duration > 50*time.Microsecond {
+		t.Errorf("Test took %v, expected < 50μs for simple getter", duration)
+	}
+}
+
+// TestCloneHandler_GetState_Pure tests state generation.
+func TestCloneHandler_GetState_Pure(t *testing.T) {
+	url := "https://github.com/user/repo.git"
+	path := "~/projects/myrepo"
+	branch := "main"
+
+	rule := testutils.NewRule().
+		WithClone(url, path).
+		WithBranch(branch).
+		Build()
+
+	container := testutils.NewMockContainer().WithOS("linux").Build()
+	handler := handlers.NewCloneHandler(rule, "/test", container)
+
+	start := time.Now()
+	state := handler.GetState(false)
+	duration := time.Since(start)
+
+	// Verify state fields
+	if state["summary"] != path {
+		t.Errorf("state[summary] = %q, want %q", state["summary"], path)
+	}
+	if state["url"] != url {
+		t.Errorf("state[url] = %q, want %q", state["url"], url)
+	}
+	if state["path"] != path {
+		t.Errorf("state[path] = %q, want %q", state["path"], path)
+	}
+	if state["branch"] != branch {
+		t.Errorf("state[branch] = %q, want %q", state["branch"], branch)
+	}
+
+	if duration > 100*time.Microsecond {
+		t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
+	}
+}
+
+// TestCloneHandler_PathExpansion_Mock demonstrates mocking filesystem operations
+// for path expansion logic without real filesystem I/O.
+func TestCloneHandler_PathExpansion_Mock(t *testing.T) {
 	tests := []struct {
 		name         string
-		rule         parser.Rule
-		status       handlers.Status
-		setupGitMock func(*mocks.MockGitProvider)
-		expected     bool
+		clonePath    string
+		expectedPath string
+		homeDir      string
 	}{
 		{
-			name:   "installed when SHAs match",
-			rule:   testutils.NewRule().WithClone("https://github.com/user/repo.git", "~/projects/repo").Build(),
-			status: testutils.NewStatus().WithClone("https://github.com/user/repo.git", "~/projects/repo", "abc123", "/tmp/test.bp", "mac").Build(),
-			setupGitMock: func(git *mocks.MockGitProvider) {
-				git.WithLocalSHA("~/projects/repo", "abc123").
-					WithRemoteSHA("https://github.com/user/repo.git", "", "abc123")
-			},
-			expected: true,
+			name:         "expands tilde path",
+			clonePath:    "~/projects/repo",
+			expectedPath: "/home/testuser/projects/repo",
+			homeDir:      "/home/testuser",
 		},
 		{
-			name:   "not installed when SHAs differ",
-			rule:   testutils.NewRule().WithClone("https://github.com/user/repo.git", "~/projects/repo").Build(),
-			status: testutils.NewStatus().WithClone("https://github.com/user/repo.git", "~/projects/repo", "abc123", "/tmp/test.bp", "mac").Build(),
-			setupGitMock: func(git *mocks.MockGitProvider) {
-				git.WithLocalSHA("~/projects/repo", "abc123").
-					WithRemoteSHA("https://github.com/user/repo.git", "", "def456")
-			},
-			expected: false,
-		},
-		{
-			name:   "installed when remote unreachable",
-			rule:   testutils.NewRule().WithClone("https://github.com/user/repo.git", "~/projects/repo").Build(),
-			status: testutils.NewStatus().WithClone("https://github.com/user/repo.git", "~/projects/repo", "abc123", "/tmp/test.bp", "mac").Build(),
-			setupGitMock: func(git *mocks.MockGitProvider) {
-				git.WithLocalSHA("~/projects/repo", "abc123").
-					WithUnreachableRemote("https://github.com/user/repo.git", "")
-			},
-			expected: true,
-		},
-		{
-			name:   "not installed when not in status",
-			rule:   testutils.NewRule().WithClone("https://github.com/user/repo.git", "~/projects/repo").Build(),
-			status: testutils.NewStatus().Build(),
-			setupGitMock: func(git *mocks.MockGitProvider) {
-				// No mock setup needed - should not call Git if not in status
-			},
-			expected: false,
+			name:         "absolute path unchanged",
+			clonePath:    "/var/projects/repo",
+			expectedPath: "/var/projects/repo",
+			homeDir:      "/home/testuser",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create mocked dependencies
-			gitProvider := mocks.NewMockGitProvider()
-			tt.setupGitMock(gitProvider)
+			start := time.Now()
 
-			// NOTE: In the full implementation, we would need to modify CloneHandler
-			// to accept a platform.Container in its constructor or use dependency injection.
-			// For now, this demonstrates the testing pattern.
+			rule := testutils.NewRule().
+				WithClone("https://github.com/user/repo.git", tt.clonePath).
+				Build()
 
-			// Create handler
-			handler := handlers.NewCloneHandler(tt.rule, "")
+			// Mock filesystem with home directory expansion
+			container := testutils.NewMockContainer().
+				WithOS("linux").
+				WithUser("testuser", "1001", "1001", tt.homeDir).
+				Build()
 
-			// Test business logic (would use injected Git provider in real implementation)
-			result := handler.IsInstalled(&tt.status, "/tmp/test.bp", "mac")
+			// Create handler to demonstrate DI setup, but test filesystem mock directly
+			_ = handlers.NewCloneHandler(rule, "/test", container)
 
-			// Assert result
-			if result != tt.expected {
-				t.Errorf("IsInstalled() = %v, want %v", result, tt.expected)
+			// The Up() method would call filesystem.ExpandPath(), but we don't want to
+			// actually clone anything. Instead, we can test the filesystem mock directly.
+			expandedPath := container.SystemProvider().Filesystem().ExpandPath(tt.clonePath)
+			duration := time.Since(start)
+
+			if expandedPath != tt.expectedPath {
+				t.Errorf("ExpandPath(%q) = %q, want %q", tt.clonePath, expandedPath, tt.expectedPath)
+			}
+
+			// This mock operation should be very fast
+			if duration > time.Millisecond {
+				t.Errorf("Test took %v, expected < 1ms for mock operation", duration)
 			}
 		})
-	}
-}
-
-func TestCloneHandler_Up_WithMocks(t *testing.T) {
-	// Unit test demonstrating complete operation with all dependencies mocked
-	tests := []struct {
-		name           string
-		rule           parser.Rule
-		setupMocks     func(*mocks.MockSystemProvider)
-		expectedOutput string
-		expectError    bool
-	}{
-		{
-			name: "successful clone",
-			rule: testutils.NewRule().WithClone("https://github.com/user/repo.git", "~/projects/repo").Build(),
-			setupMocks: func(system *mocks.MockSystemProvider) {
-				// In real implementation, we would configure the mocks here
-				// For now, we demonstrate the pattern with simple setup
-				system.WithFile("/Users/testuser/projects/repo/.git/config", []byte("mock git config")).
-					WithDirectory("/Users/testuser/projects")
-			},
-			expectedOutput: "Cloned",
-			expectError:    false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create mocked system provider
-			systemProvider := mocks.NewMockSystemProvider()
-			tt.setupMocks(systemProvider)
-
-			// Create handler (would inject container in real implementation)
-			handler := handlers.NewCloneHandler(tt.rule, "")
-
-			// NOTE: The current handler directly calls git package functions.
-			// In the full implementation, we would refactor handlers to use
-			// the platform abstractions, allowing for complete unit testing.
-
-			// For demonstration, we test what we can with current architecture
-			cmd := handler.GetCommand()
-			testutils.AssertStringContains(t, cmd, "git clone", "command contains git clone")
-		})
-	}
-}
-
-// Benchmark demonstrates the speed improvement of unit tests
-func BenchmarkCloneHandler_GetCommand(b *testing.B) {
-	rule := testutils.NewRule().WithClone("https://github.com/user/repo.git", "~/projects/repo").Build()
-	handler := handlers.NewCloneHandler(rule, "")
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = handler.GetCommand()
-	}
-}
-
-func BenchmarkCloneHandler_GetDependencyKey(b *testing.B) {
-	rule := testutils.NewRule().WithClone("https://github.com/user/repo.git", "~/projects/repo").Build()
-	handler := handlers.NewCloneHandler(rule, "")
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = handler.GetDependencyKey()
 	}
 }

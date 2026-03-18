@@ -49,7 +49,7 @@ func TestCloneHandlerGetCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewCloneHandler(tt.rule, "")
+			handler := NewCloneHandlerLegacy(tt.rule, "")
 			cmd := handler.GetCommand()
 			if cmd != tt.expected {
 				t.Errorf("GetCommand() = %q, want %q", cmd, tt.expected)
@@ -103,7 +103,7 @@ func TestCloneHandlerDown(t *testing.T) {
 				_ = os.MkdirAll(testRepo, 0755)
 			}
 
-			handler := NewCloneHandler(tt.rule, "")
+			handler := NewCloneHandlerLegacy(tt.rule, "")
 			output, err := handler.Down()
 
 			if (err != nil) != tt.shouldErr {
@@ -190,7 +190,7 @@ func TestCloneHandlerUpdateStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewCloneHandler(tt.rule, "")
+			handler := NewCloneHandlerLegacy(tt.rule, "")
 			status := tt.initialStatus
 
 			err := handler.UpdateStatus(&status, tt.records, "/tmp/test.bp", "mac")
@@ -249,7 +249,7 @@ func TestCloneHandlerDisplayInfo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewCloneHandler(tt.rule, "")
+			handler := NewCloneHandlerLegacy(tt.rule, "")
 
 			// Capture stdout
 			old := os.Stdout
@@ -445,7 +445,6 @@ func TestCloneHandlerDisplayStatusURLPreservation(t *testing.T) {
 	}
 }
 
-
 func TestCloneIsInstalledMatchesSHA(t *testing.T) {
 	origLocal := localSHA
 	origRemote := remoteHeadSHA
@@ -464,7 +463,7 @@ func TestCloneIsInstalledMatchesSHA(t *testing.T) {
 		CloneURL:  "https://github.com/user/repo.git",
 		ClonePath: "~/projects/repo",
 	}
-	h := NewCloneHandler(rule, "")
+	h := NewCloneHandlerLegacy(rule, "")
 
 	// SHAs match → installed
 	localSHA = func(string) string { return "abc123" }
@@ -517,7 +516,7 @@ func TestCloneHandlerGetDependencyKey(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewCloneHandler(tt.rule, "")
+			handler := NewCloneHandlerLegacy(tt.rule, "")
 			got := handler.GetDependencyKey()
 			if got != tt.expected {
 				t.Errorf("GetDependencyKey() = %q, want %q", got, tt.expected)
