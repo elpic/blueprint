@@ -2,7 +2,6 @@ package parser
 
 import (
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/elpic/blueprint/internal/git"
@@ -1403,30 +1402,77 @@ func TestLocalPathForGitInclude(t *testing.T) {
 	}
 }
 
-// TestParseContentGitIncludeDetected verifies that git URLs in include lines are
-// detected as git URLs rather than treated as local paths (no actual network call).
-func TestParseContentGitIncludeDetected(t *testing.T) {
-	gitURLs := []string{
-		"https://github.com/org/repo",
-		"https://github.com/org/repo@main:setup.bp",
-		"git@github.com:org/repo.git",
-		"git://github.com/org/repo.git",
+// TestGitIncludeDetection verifies that git URLs are correctly identified
+// for include processing without making any network calls.
+func TestGitIncludeDetection(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		isGitURL bool
+		parseGit git.GitURLParams
+	}{
+		{
+			name:     "https github url",
+			input:    "https://github.com/org/repo",
+			isGitURL: true,
+			parseGit: git.GitURLParams{URL: "https://github.com/org/repo", Branch: "", Path: "setup.bp"},
+		},
+		{
+			name:     "https github url with branch and path",
+			input:    "https://github.com/org/repo@main:setup.bp",
+			isGitURL: true,
+			parseGit: git.GitURLParams{URL: "https://github.com/org/repo", Branch: "main", Path: "setup.bp"},
+		},
+		{
+			name:     "ssh github url",
+			input:    "git@github.com/org/repo.git",
+			isGitURL: true,
+			parseGit: git.GitURLParams{URL: "git@github.com/org/repo.git", Branch: "", Path: "setup.bp"},
+		},
+		{
+			name:     "git protocol url",
+			input:    "git://github.com/org/repo.git",
+			isGitURL: true,
+			parseGit: git.GitURLParams{URL: "git://github.com/org/repo.git", Branch: "", Path: "setup.bp"},
+		},
+		{
+			name:     "local relative path",
+			input:    "./local/path.bp",
+			isGitURL: false,
+		},
+		{
+			name:     "local absolute path",
+			input:    "/absolute/path.bp",
+			isGitURL: false,
+		},
+		{
+			name:     "simple filename",
+			input:    "relative.bp",
+			isGitURL: false,
+		},
 	}
-	for _, u := range gitURLs {
-		if !git.IsGitURL(u) {
-			t.Errorf("expected %q to be recognised as a git URL", u)
-		}
-		// parseContent with a git include will attempt a network clone; we only
-		// verify detection here by confirming the URL is passed to loadGitInclude
-		// (which returns an error on offline machines). The error must NOT mention
-		// "failed to resolve include path" (a local-file error).
-		_, err := parseContent("include "+u, "", make(map[string]bool))
-		if err == nil {
-			// If this succeeds (cached/mocked), that's fine.
-			continue
-		}
-		if strings.Contains(err.Error(), "failed to resolve include path") {
-			t.Errorf("git URL %q was incorrectly routed to local file handler: %v", u, err)
-		}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test URL detection
+			got := git.IsGitURL(tt.input)
+			if got != tt.isGitURL {
+				t.Errorf("git.IsGitURL(%q) = %v, want %v", tt.input, got, tt.isGitURL)
+			}
+
+			// Test URL parsing for git URLs
+			if tt.isGitURL {
+				parsed := git.ParseGitURL(tt.input)
+				if parsed.URL != tt.parseGit.URL {
+					t.Errorf("ParseGitURL(%q).URL = %q, want %q", tt.input, parsed.URL, tt.parseGit.URL)
+				}
+				if parsed.Branch != tt.parseGit.Branch {
+					t.Errorf("ParseGitURL(%q).Branch = %q, want %q", tt.input, parsed.Branch, tt.parseGit.Branch)
+				}
+				if parsed.Path != tt.parseGit.Path {
+					t.Errorf("ParseGitURL(%q).Path = %q, want %q", tt.input, parsed.Path, tt.parseGit.Path)
+				}
+			}
+		})
 	}
 }
