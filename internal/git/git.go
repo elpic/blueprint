@@ -523,9 +523,7 @@ func generateRepositoryID(url, branch string) string {
 // normalizeGitURL normalizes a git URL for consistent identification
 func normalizeGitURL(url string) string {
 	// Remove .git suffix if present
-	if strings.HasSuffix(url, ".git") {
-		url = url[:len(url)-4]
-	}
+	url = strings.TrimSuffix(url, ".git")
 
 	// Convert SSH to HTTPS for normalization (for ID generation only)
 	if strings.HasPrefix(url, "git@") {
@@ -611,14 +609,24 @@ func copyFile(src, dest string, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer srcFile.Close()
+	defer func() {
+		if closeErr := srcFile.Close(); closeErr != nil {
+			// Log the error but don't override the main error
+			fmt.Fprintf(os.Stderr, "Warning: failed to close source file: %v\n", closeErr)
+		}
+	}()
 
 	// Create destination file
 	destFile, err := os.Create(dest)
 	if err != nil {
 		return err
 	}
-	defer destFile.Close()
+	defer func() {
+		if closeErr := destFile.Close(); closeErr != nil {
+			// Log the error but don't override the main error
+			fmt.Fprintf(os.Stderr, "Warning: failed to close destination file: %v\n", closeErr)
+		}
+	}()
 
 	// Copy contents
 	if _, err := io.Copy(destFile, srcFile); err != nil {

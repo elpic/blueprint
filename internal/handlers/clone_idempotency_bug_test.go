@@ -205,7 +205,7 @@ func TestCloneIdempotencyBug(t *testing.T) {
 			blueprint string
 			expected  bool
 		}{
-			{"Exact match", "/home/user/config/blueprint.bp", false},                         // Won't match due to normalization
+			{"Exact match", "/home/user/config/blueprint.bp", true},                          // Should match after normalization
 			{"Same path different format", "/home/user/config/../config/blueprint.bp", true}, // Should match
 			{"Relative path", "blueprint.bp", false},                                         // Won't match
 		}
