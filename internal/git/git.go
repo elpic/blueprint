@@ -1,6 +1,7 @@
 package git
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -504,4 +505,219 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 
 	newSHA := gitSHA(path)
 	return "", newSHA, "Cloned", nil
+}
+
+// generateRepositoryID creates a unique ID for a repository based on URL and branch
+func generateRepositoryID(url, branch string) string {
+	normalizedURL := normalizeGitURL(url)
+	key := normalizedURL
+	if branch != "" {
+		key += "@" + branch
+	}
+
+	hasher := sha256.New()
+	hasher.Write([]byte(key))
+	return fmt.Sprintf("%x", hasher.Sum(nil))[:16] // Use first 16 chars of hash
+}
+
+// normalizeGitURL normalizes a git URL for consistent identification
+func normalizeGitURL(url string) string {
+	// Remove .git suffix if present
+	if strings.HasSuffix(url, ".git") {
+		url = url[:len(url)-4]
+	}
+
+	// Convert SSH to HTTPS for normalization (for ID generation only)
+	if strings.HasPrefix(url, "git@") {
+		// git@github.com:user/repo -> https://github.com/user/repo
+		parts := strings.Split(url, ":")
+		if len(parts) >= 2 {
+			host := strings.TrimPrefix(parts[0], "git@")
+			path := strings.Join(parts[1:], ":")
+			url = "https://" + host + "/" + path
+		}
+	}
+
+	return strings.ToLower(url)
+}
+
+// getRepositoryStoragePath returns the path where a repository should be stored
+func getRepositoryStoragePath(url, branch string) (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	repoID := generateRepositoryID(url, branch)
+	return filepath.Join(homeDir, ".blueprint", "repos", repoID), nil
+}
+
+// copyRepositoryContents copies the contents of a repository (excluding .git) from source to destination
+func copyRepositoryContents(sourcePath, destPath string) error {
+	// Ensure destination parent directory exists
+	if err := os.MkdirAll(filepath.Dir(destPath), 0750); err != nil {
+		return fmt.Errorf("failed to create parent directory: %w", err)
+	}
+
+	// Create destination directory if it doesn't exist
+	if err := os.MkdirAll(destPath, 0755); err != nil {
+		return fmt.Errorf("failed to create destination directory: %w", err)
+	}
+
+	// Walk the source directory and copy all files except .git
+	return filepath.Walk(sourcePath, func(srcPath string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip .git directory entirely
+		if info.IsDir() && info.Name() == ".git" {
+			return filepath.SkipDir
+		}
+
+		// Calculate relative path from source
+		relPath, err := filepath.Rel(sourcePath, srcPath)
+		if err != nil {
+			return err
+		}
+
+		// Skip the source root directory itself
+		if relPath == "." {
+			return nil
+		}
+
+		// Calculate destination path
+		destItemPath := filepath.Join(destPath, relPath)
+
+		if info.IsDir() {
+			// Create directory
+			return os.MkdirAll(destItemPath, info.Mode())
+		} else {
+			// Copy file
+			return copyFile(srcPath, destItemPath, info.Mode())
+		}
+	})
+}
+
+// copyFile copies a file from source to destination with the specified permissions
+func copyFile(src, dest string, mode os.FileMode) error {
+	// Ensure destination directory exists
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		return err
+	}
+
+	// Open source file
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	// Create destination file
+	destFile, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	// Copy contents
+	if _, err := io.Copy(destFile, srcFile); err != nil {
+		return err
+	}
+
+	// Set file permissions
+	return os.Chmod(dest, mode)
+}
+
+// GetCleanRepositorySHA returns the SHA of a repository from clean storage
+// Made as a variable for test stubbing
+var GetCleanRepositorySHA = func(url, branch string) string {
+	storagePath, err := getRepositoryStoragePath(url, branch)
+	if err != nil {
+		return ""
+	}
+	return gitSHA(storagePath)
+}
+
+// CloneOrUpdateRepositoryTwoStage variable for test stubbing
+var CloneOrUpdateRepositoryTwoStage = cloneOrUpdateRepositoryTwoStageImpl
+
+// cloneOrUpdateRepositoryTwoStageImpl implements the actual two-stage clone logic
+func cloneOrUpdateRepositoryTwoStageImpl(url, targetPath, branch string) (string, string, string, error) {
+	// Get storage path for clean repository
+	storagePath, err := getRepositoryStoragePath(url, branch)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to get storage path: %w", err)
+	}
+
+	// Expand target path
+	expandedTargetPath := targetPath
+	if strings.HasPrefix(targetPath, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", "", "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		expandedTargetPath = filepath.Join(homeDir, targetPath[2:])
+	}
+
+	// Check if target exists and get its current state
+	targetExists := false
+	if info, err := os.Stat(expandedTargetPath); err == nil && info.IsDir() {
+		targetExists = true
+	}
+
+	// Get old SHA from clean storage (not from potentially polluted target)
+	oldStorageSHA := ""
+	if storageInfo, err := os.Stat(storagePath); err == nil && storageInfo.IsDir() {
+		oldStorageSHA = gitSHA(storagePath)
+	}
+
+	// Clone/update the clean repository in storage
+	_, newStorageSHA, storageStatus, err := CloneOrUpdateRepository(url, storagePath, branch)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to clone/update to storage: %w", err)
+	}
+
+	// Determine if we need to update the target
+	needsUpdate := false
+	switch storageStatus {
+	case "Cloned":
+		needsUpdate = true
+	case "Updated":
+		needsUpdate = true
+	case "Already up to date":
+		// Check if target exists and has the right content
+		if !targetExists {
+			needsUpdate = true
+		} else {
+			// Target exists, but we need to check if it has the right content
+			// Since we can't reliably check SHA of potentially polluted target,
+			// we'll rely on the storage being up to date and assume target needs sync
+			// This could be optimized with content comparison in the future
+			needsUpdate = false
+		}
+	}
+
+	// Copy from storage to target if needed
+	if needsUpdate {
+		if err := copyRepositoryContents(storagePath, expandedTargetPath); err != nil {
+			return oldStorageSHA, newStorageSHA, "", fmt.Errorf("failed to copy to target: %w", err)
+		}
+	}
+
+	// Determine the appropriate status message
+	var status string
+	if !targetExists {
+		status = "Cloned"
+	} else if needsUpdate {
+		if oldStorageSHA != newStorageSHA {
+			status = "Updated"
+		} else {
+			status = "Synced" // Content was resynced but repo SHA didn't change
+		}
+	} else {
+		status = "Already up to date"
+	}
+
+	return oldStorageSHA, newStorageSHA, status, nil
 }

@@ -1,0 +1,11 @@
+# Minimal Oh-My-Zsh + Antigen Setup Blueprint
+# This fixes the "antigen.zsh not found" error
+
+# 1. Install zsh shell
+install zsh on: [linux]
+
+# 2. Clone oh-my-zsh to standard location
+clone https://github.com/ohmyzsh/ohmyzsh.git to: ~/.oh-my-zsh id: ohmyzsh on: [linux]
+
+# 3. Download antigen.zsh to the oh-my-zsh directory  
+download https://git.io/antigen to: ~/.oh-my-zsh/antigen.zsh id: antigen after: ohmyzsh on: [linux]
