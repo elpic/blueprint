@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
 	"github.com/elpic/blueprint/internal/ui"
 )
 
@@ -18,14 +19,20 @@ type MkdirHandler struct {
 	BaseHandler
 }
 
-// NewMkdirHandler creates a new mkdir handler
-func NewMkdirHandler(rule parser.Rule, basePath string) *MkdirHandler {
+// NewMkdirHandler creates a new mkdir handler with dependency injection
+func NewMkdirHandler(rule parser.Rule, basePath string, container platform.Container) *MkdirHandler {
 	return &MkdirHandler{
 		BaseHandler: BaseHandler{
-			Rule:     rule,
-			BasePath: basePath,
+			Rule:      rule,
+			BasePath:  basePath,
+			Container: container,
 		},
 	}
+}
+
+// NewMkdirHandlerLegacy creates a new mkdir handler without container (for backward compatibility)
+func NewMkdirHandlerLegacy(rule parser.Rule, basePath string) *MkdirHandler {
+	return NewMkdirHandler(rule, basePath, platform.NewContainer())
 }
 
 // Up creates the directory with optional permissions
@@ -243,7 +250,11 @@ func (h *MkdirHandler) DisplayStatusFromStatus(status *Status) {
 
 // GetDependencyKey returns the unique key for this rule in dependency resolution
 func (h *MkdirHandler) GetDependencyKey() string {
-	return getDependencyKey(h.Rule, h.Rule.Mkdir)
+	fallback := "mkdir"
+	if h.Rule.Mkdir != "" {
+		fallback = h.Rule.Mkdir
+	}
+	return getDependencyKey(h.Rule, fallback)
 }
 
 // GetDisplayDetails returns the mkdir path to display during execution

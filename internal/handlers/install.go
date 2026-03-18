@@ -103,7 +103,7 @@ func (h *InstallHandler) UpdateStatus(status *Status, records []ExecutionRecord,
 
 // needsSudo checks if a command needs sudo
 func needsSudo(cmd string) bool {
-	return strings.Contains(cmd, "brew") || strings.Contains(cmd, "apt-get") || strings.Contains(cmd, "snap")
+	return strings.Contains(cmd, "sudo")
 }
 
 // shouldAddSudo checks if sudo should be added for package installation on this OS
@@ -118,6 +118,37 @@ func (h *InstallHandler) shouldAddSudo() bool {
 
 	// Check if current user is root using injected dependency
 	return !osDetector.IsRoot()
+}
+
+// getBrewCommand returns the appropriate brew command using dependency injection
+func (h *InstallHandler) getBrewCommand() string {
+	osDetector := h.Container.SystemProvider().OS()
+	processExecutor := h.Container.SystemProvider().Process()
+	filesystemProvider := h.Container.SystemProvider().Filesystem()
+
+	if osDetector.Name() != "mac" {
+		// On Linux brew is often not on PATH — check known locations first
+		knownBrewPaths := []string{
+			"/home/linuxbrew/.linuxbrew/bin/brew",
+			"/opt/homebrew/bin/brew",
+			"/usr/local/bin/brew",
+		}
+
+		for _, p := range knownBrewPaths {
+			if filesystemProvider.Exists(p) {
+				return p
+			}
+		}
+		return "brew"
+	}
+
+	// On Mac, check for Rosetta 2 using dependency injection
+	result, err := processExecutor.Execute("sysctl -n sysctl.proc_translated", platform.ExecuteOptions{})
+	if err == nil && strings.TrimSpace(result.Stdout) == "1" {
+		return "/usr/bin/arch -arm64 /opt/homebrew/bin/brew"
+	}
+
+	return "brew"
 }
 
 // buildCommand builds the install command based on OS and package manager
@@ -202,14 +233,14 @@ func (h *InstallHandler) buildInstallCommandForManager(manager string, pkgNames 
 		return ""
 
 	case "homebrew", "brew":
-		// Homebrew (macOS and Linux) — use brewCmd() to handle Rosetta 2 on Apple Silicon
-		return fmt.Sprintf("%s install %s", brewCmd(), pkgStr)
+		// Homebrew (macOS and Linux) — use dependency injection for brew command
+		return fmt.Sprintf("%s install %s", h.getBrewCommand(), pkgStr)
 
 	case "apt", "apt-get", "default":
 		// apt-get (Linux default)
 		if targetOS == "mac" {
-			// Fallback to brew on macOS if apt is specified — use brewCmd() for Rosetta 2 support
-			return fmt.Sprintf("%s install %s", brewCmd(), pkgStr)
+			// Fallback to brew on macOS if apt is specified — use dependency injection for brew command
+			return fmt.Sprintf("%s install %s", h.getBrewCommand(), pkgStr)
 		}
 
 		cmd := fmt.Sprintf("apt-get install -y %s", pkgStr)
@@ -301,14 +332,14 @@ func (h *InstallHandler) buildUninstallCommandForManager(manager string, pkgName
 		return ""
 
 	case "homebrew", "brew":
-		// Homebrew uninstall — use brewCmd() for Rosetta 2 support
-		return fmt.Sprintf("%s uninstall -y %s", brewCmd(), pkgStr)
+		// Homebrew uninstall — use dependency injection for brew command
+		return fmt.Sprintf("%s uninstall -y %s", h.getBrewCommand(), pkgStr)
 
 	case "apt", "apt-get", "default":
 		// apt-get (Linux default)
 		if targetOS == "mac" {
-			// Fallback to brew on macOS if apt is specified — use brewCmd() for Rosetta 2 support
-			return fmt.Sprintf("%s uninstall -y %s", brewCmd(), pkgStr)
+			// Fallback to brew on macOS if apt is specified — use dependency injection for brew command
+			return fmt.Sprintf("%s uninstall -y %s", h.getBrewCommand(), pkgStr)
 		}
 
 		cmd := fmt.Sprintf("apt-get remove -y %s", pkgStr)
@@ -486,16 +517,9 @@ func (h *InstallHandler) IsInstalled(status *Status, blueprintFile, osName strin
 }
 
 // NeedsSudo returns true if package installation/uninstallation requires sudo privileges.
-// On macOS, brew may internally invoke sudo (e.g. when installing casks), so we signal
-// sudo is needed when there are packages to install on macOS.
+// This checks if the actual command that will be executed contains "sudo".
 func (h *InstallHandler) NeedsSudo() bool {
-	osName := h.Container.SystemProvider().OS().Name()
-
-	if osName == "mac" {
-		return len(h.Rule.Packages) > 0
-	}
-
-	// On Linux, check the command that will be executed
+	// Check the command that will be executed
 	var cmd string
 	if h.Rule.Action == "uninstall" {
 		cmd = h.buildUninstallCommand(h.Rule)

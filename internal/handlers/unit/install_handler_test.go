@@ -58,11 +58,22 @@ func TestInstallHandler_BuildCommand_Pure(t *testing.T) {
 				WithPackages(tt.packages...).
 				Build()
 
-			// Create mock container with OS detection
-			container := testutils.NewMockContainer().
+			// Create mock container with OS detection and command mocking
+			containerBuilder := testutils.NewMockContainer().
 				WithOS(tt.osName).
-				WithUser("testuser", "1001", "1001", "/home/testuser").
-				Build()
+				WithUser("testuser", "1001", "1001", "/home/testuser")
+
+			// For Mac tests, mock the sysctl command to avoid I/O
+			if tt.osName == "mac" {
+				// Mock sysctl command to return non-Rosetta (Intel) result
+				sysctlResult := testutils.NewExecuteResult().
+					WithStdout("0\n"). // Not running under Rosetta
+					AsSuccess().
+					Build()
+				containerBuilder = containerBuilder.WithCommandResult("sysctl -n sysctl.proc_translated", sysctlResult)
+			}
+
+			container := containerBuilder.Build()
 
 			// Create handler with dependency injection
 			handler := handlers.NewInstallHandler(rule, "/test/path", container)
@@ -191,6 +202,8 @@ func TestInstallHandler_GetDisplayDetails_Pure(t *testing.T) {
 				WithPackages(tt.packages...).
 				Build()
 
+				// Create minimal container - using Linux so no brew command mocking needed
+			// Create minimal container - using Linux so no brew command mocking needed
 			container := testutils.NewMockContainer().WithOS("linux").Build()
 			handler := handlers.NewInstallHandler(rule, "/test", container)
 

@@ -427,7 +427,7 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 	case "decrypt":
 		return NewDecryptHandler(rule, basePath, passwordCache)
 	case "mkdir":
-		return NewMkdirHandler(rule, basePath)
+		return NewMkdirHandler(rule, basePath, container)
 	case "asdf":
 		return NewAsdfHandler(rule, basePath)
 	case "mise":
@@ -469,7 +469,7 @@ func GetStatusProviderHandlers() []Handler {
 		NewMiseHandler(parser.Rule{}, ""),
 		NewHomebrewHandler(parser.Rule{}, ""),
 		NewOllamaHandler(parser.Rule{}, ""),
-		NewMkdirHandler(parser.Rule{}, ""),
+		NewMkdirHandlerLegacy(parser.Rule{}, ""),
 		NewKnownHostsHandler(parser.Rule{}, ""),
 		NewGPGKeyHandler(parser.Rule{}, ""),
 		NewDownloadHandler(parser.Rule{}, ""),
