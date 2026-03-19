@@ -5,6 +5,11 @@ on:
     branches:
       - main
 
+permissions:
+  pull-requests: write
+  actions: read
+  contents: read
+
 jobs:
   test:
     name: Run Tests
