@@ -212,6 +212,12 @@ type PackageManagerProvider interface {
 	GetDefaultManager() string
 }
 
+// CommandExecutor interface for executing commands - allows dependency injection
+// This replaces the old testMode pattern with clean dependency injection
+type CommandExecutor interface {
+	Execute(cmd string) (string, error)
+}
+
 // Container interface for dependency injection
 type Container interface {
 	// SystemProvider returns the system provider instance

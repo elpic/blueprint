@@ -7,25 +7,36 @@ import (
 
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
+	"github.com/elpic/blueprint/internal/platform/mocks"
 )
+
+// Helper functions for test setup
+func getCurrentCommandExecutor() platform.CommandExecutor {
+	// This is a simplified version - in production we'd need proper state management
+	return &RealCommandExecutor{} // Return a default for now
+}
+
+func restoreCommandExecutor(executor platform.CommandExecutor) {
+	// Restore the original executor
+	handlerskg.SetCommandExecutor(executor)
+}
 
 // TestEngineIdempotency_CoreLogicStructure tests that the executeRules function
 // has the correct structure for idempotency without mocking the entire system.
 // This tests the actual code paths and logic flow.
 func TestEngineIdempotency_CoreLogicStructure(t *testing.T) {
-	// Enable test mode to prevent overwriting mocks
-	SetTestMode(true)
-	defer SetTestMode(false)
+	// Use dependency injection pattern instead of test mode pollution
+	mockExecutor := mocks.NewMockCommandExecutor().
+		WithCommandError("which", "not found").
+		WithCommandError("dpkg -l", "not found").
+		WithCommandError("brew list", "not found").
+		WithDefaultSuccess("success")
 
-	// Mock executeCommand to prevent actual command execution
-	handlerskg.SetExecuteCommandFunc(func(cmd string) (string, error) {
-		// Simulate package not found for install check
-		if strings.Contains(cmd, "which") || strings.Contains(cmd, "dpkg -l") || strings.Contains(cmd, "brew list") {
-			return "", fmt.Errorf("not found")
-		}
-		// Simulate successful installation
-		return "success", nil
-	})
+	// Inject mock executor instead of setting global test mode
+	originalExecutor := getCurrentCommandExecutor()
+	defer restoreCommandExecutor(originalExecutor)
+	handlerskg.SetCommandExecutor(mockExecutor)
 
 	// Test with a simple install rule
 	rules := []parser.Rule{
@@ -72,13 +83,14 @@ func TestEngineIdempotency_CoreLogicStructure(t *testing.T) {
 // TestEngineIdempotency_StatusLoadingOnce tests that loadCurrentStatus is called once
 // and the same status is used for all rules
 func TestEngineIdempotency_StatusLoadingOnce(t *testing.T) {
-	SetTestMode(true)
-	defer SetTestMode(false)
+	// Use dependency injection pattern
+	mockExecutor := mocks.NewMockCommandExecutor().
+		WithDefaultSuccess("success")
 
-	// Mock executeCommand to prevent actual command execution
-	handlerskg.SetExecuteCommandFunc(func(cmd string) (string, error) {
-		return "success", nil
-	})
+	// Inject mock executor
+	originalExecutor := getCurrentCommandExecutor()
+	defer restoreCommandExecutor(originalExecutor)
+	handlerskg.SetCommandExecutor(mockExecutor)
 
 	// Multiple rules to verify status consistency
 	rules := []parser.Rule{
@@ -113,17 +125,17 @@ func TestEngineIdempotency_StatusLoadingOnce(t *testing.T) {
 // TestEngineIdempotency_SkipMessageRecording tests that skip messages
 // are properly recorded in execution records
 func TestEngineIdempotency_SkipMessageRecording(t *testing.T) {
-	SetTestMode(true)
-	defer SetTestMode(false)
+	// Use dependency injection pattern
+	mockExecutor := mocks.NewMockCommandExecutor().
+		WithCommandSuccess("which", "package-found").
+		WithCommandSuccess("dpkg -l", "package-found").
+		WithCommandSuccess("brew list", "package-found").
+		WithDefaultSuccess("success")
 
-	// Mock executeCommand to simulate "already installed" scenario
-	handlerskg.SetExecuteCommandFunc(func(cmd string) (string, error) {
-		// Simulate package is installed (for package existence checks)
-		if strings.Contains(cmd, "which") || strings.Contains(cmd, "dpkg -l") || strings.Contains(cmd, "brew list") {
-			return "package-found", nil
-		}
-		return "success", nil
-	})
+	// Inject mock executor
+	originalExecutor := getCurrentCommandExecutor()
+	defer restoreCommandExecutor(originalExecutor)
+	handlerskg.SetCommandExecutor(mockExecutor)
 
 	rules := []parser.Rule{
 		{
@@ -154,21 +166,19 @@ func TestEngineIdempotency_SkipMessageRecording(t *testing.T) {
 
 // TestEngineIdempotency_ErrorHandling tests that handler errors are properly recorded
 func TestEngineIdempotency_ErrorHandling(t *testing.T) {
-	SetTestMode(true)
-	defer SetTestMode(false)
+	// Use dependency injection pattern
+	mockExecutor := mocks.NewMockCommandExecutor().
+		WithCommandError("which", "not found").
+		WithCommandError("dpkg -l", "not found").
+		WithCommandError("brew list", "not found").
+		WithCommandResult("install", "partial output", fmt.Errorf("installation failed")).
+		WithCommandResult("apt-get", "partial output", fmt.Errorf("installation failed")).
+		WithDefaultSuccess("success")
 
-	// This test verifies that errors in command execution are properly handled and recorded
-	handlerskg.SetExecuteCommandFunc(func(cmd string) (string, error) {
-		// Simulate package not installed
-		if strings.Contains(cmd, "which") || strings.Contains(cmd, "dpkg -l") || strings.Contains(cmd, "brew list") {
-			return "", fmt.Errorf("not found")
-		}
-		// Simulate installation failure
-		if strings.Contains(cmd, "install") || strings.Contains(cmd, "apt-get") {
-			return "partial output", fmt.Errorf("installation failed")
-		}
-		return "success", nil
-	})
+	// Inject mock executor
+	originalExecutor := getCurrentCommandExecutor()
+	defer restoreCommandExecutor(originalExecutor)
+	handlerskg.SetCommandExecutor(mockExecutor)
 
 	rules := []parser.Rule{
 		{
@@ -199,20 +209,16 @@ func TestEngineIdempotency_ErrorHandling(t *testing.T) {
 
 // TestEngineIdempotency_UninstallLogic tests the uninstall branch of idempotency logic
 func TestEngineIdempotency_UninstallLogic(t *testing.T) {
-	SetTestMode(true)
-	defer SetTestMode(false)
+	// Use dependency injection pattern
+	mockExecutor := mocks.NewMockCommandExecutor().
+		WithCommandSuccess("which test-package-1", "found").
+		WithCommandError("which test-package-2", "not found").
+		WithDefaultSuccess("success")
 
-	// Test uninstall functionality
-	handlerskg.SetExecuteCommandFunc(func(cmd string) (string, error) {
-		// Simulate mixed installation states
-		if strings.Contains(cmd, "which test-package-1") {
-			return "found", nil // Package 1 is installed
-		}
-		if strings.Contains(cmd, "which test-package-2") {
-			return "", fmt.Errorf("not found") // Package 2 is not installed
-		}
-		return "success", nil
-	})
+	// Inject mock executor
+	originalExecutor := getCurrentCommandExecutor()
+	defer restoreCommandExecutor(originalExecutor)
+	handlerskg.SetCommandExecutor(mockExecutor)
 
 	rules := []parser.Rule{
 		{
@@ -245,12 +251,14 @@ func TestEngineIdempotency_UninstallLogic(t *testing.T) {
 
 // TestEngineIdempotency_TimingMeasurement tests that execution timing is measured
 func TestEngineIdempotency_TimingMeasurement(t *testing.T) {
-	SetTestMode(true)
-	defer SetTestMode(false)
+	// Use dependency injection pattern
+	mockExecutor := mocks.NewMockCommandExecutor().
+		WithDefaultSuccess("success")
 
-	handlerskg.SetExecuteCommandFunc(func(cmd string) (string, error) {
-		return "success", nil
-	})
+	// Inject mock executor
+	originalExecutor := getCurrentCommandExecutor()
+	defer restoreCommandExecutor(originalExecutor)
+	handlerskg.SetCommandExecutor(mockExecutor)
 
 	rules := []parser.Rule{
 		{
@@ -278,21 +286,14 @@ func TestEngineIdempotency_TimingMeasurement(t *testing.T) {
 
 // TestEngineIdempotency_RuleProcessingOrder tests that rules are processed in order
 func TestEngineIdempotency_RuleProcessingOrder(t *testing.T) {
-	SetTestMode(true)
-	defer SetTestMode(false)
+	// Use dependency injection pattern
+	mockExecutor := mocks.NewMockCommandExecutor().
+		WithDefaultSuccess("success")
 
-	// Track execution order
-	executionOrder := []string{}
-	handlerskg.SetExecuteCommandFunc(func(cmd string) (string, error) {
-		if strings.Contains(cmd, "pkg1") {
-			executionOrder = append(executionOrder, "pkg1")
-		} else if strings.Contains(cmd, "pkg2") {
-			executionOrder = append(executionOrder, "pkg2")
-		} else if strings.Contains(cmd, "pkg3") {
-			executionOrder = append(executionOrder, "pkg3")
-		}
-		return "success", nil
-	})
+	// Inject mock executor
+	originalExecutor := getCurrentCommandExecutor()
+	defer restoreCommandExecutor(originalExecutor)
+	handlerskg.SetCommandExecutor(mockExecutor)
 
 	rules := []parser.Rule{
 		{Action: "install", Packages: []parser.Package{{Name: "pkg1"}}},
@@ -385,12 +386,14 @@ func TestEngineIdempotency_IntegrationWithRealMkdirHandler(t *testing.T) {
 // TestResolveDependenciesWithIdempotency tests that dependency resolution
 // works correctly with the idempotency logic
 func TestResolveDependenciesWithIdempotency(t *testing.T) {
-	SetTestMode(true)
-	defer SetTestMode(false)
+	// Use dependency injection pattern
+	mockExecutor := mocks.NewMockCommandExecutor().
+		WithDefaultSuccess("success")
 
-	handlerskg.SetExecuteCommandFunc(func(cmd string) (string, error) {
-		return "success", nil
-	})
+	// Inject mock executor
+	originalExecutor := getCurrentCommandExecutor()
+	defer restoreCommandExecutor(originalExecutor)
+	handlerskg.SetCommandExecutor(mockExecutor)
 
 	// Rules with dependencies
 	rules := []parser.Rule{

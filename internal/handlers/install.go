@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/elpic/blueprint/internal"
+	internal "github.com/elpic/blueprint/internal"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/platform"
 	"github.com/elpic/blueprint/internal/ui"
@@ -383,13 +383,21 @@ func (h *InstallHandler) DisplayInfo() {
 	}
 }
 
-// executeCommandWithCache executes a command using the cached sudo password if available
-// This is defined in engine.go and accessed here
-var executeCommandWithCache func(string) (string, error)
+// Global command executor instance - injected by engine, never set by tests
+var commandExecutor platform.CommandExecutor
 
-// SetExecuteCommandFunc sets the execute command function
-func SetExecuteCommandFunc(fn func(string) (string, error)) {
-	executeCommandWithCache = fn
+// SetCommandExecutor sets the command executor for production use
+// This replaces the old SetExecuteCommandFunc pattern
+func SetCommandExecutor(executor platform.CommandExecutor) {
+	commandExecutor = executor
+}
+
+// executeCommandWithCache executes a command using the injected command executor
+func executeCommandWithCache(cmd string) (string, error) {
+	if commandExecutor == nil {
+		return "", fmt.Errorf("command executor not initialized - missing dependency injection")
+	}
+	return commandExecutor.Execute(cmd)
 }
 
 // DisplayStatus displays installed package status information

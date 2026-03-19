@@ -5,7 +5,23 @@ import (
 	"testing"
 
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
 )
+
+// customMockExecutor for test-specific behavior
+type customMockExecutor struct {
+	executeFunc func(string) (string, error)
+}
+
+// Ensure it implements platform.CommandExecutor
+var _ platform.CommandExecutor = (*customMockExecutor)(nil)
+
+func (c *customMockExecutor) Execute(cmd string) (string, error) {
+	if c.executeFunc != nil {
+		return c.executeFunc(cmd)
+	}
+	return "", nil
+}
 
 func TestHomebrewHandlerGetCommand(t *testing.T) {
 	// Mock brew command to return consistent path across environments
@@ -106,22 +122,29 @@ func TestHomebrewHandlerGetDisplayDetails(t *testing.T) {
 func TestHomebrewUpSkipsAlreadyInstalled(t *testing.T) {
 	origFormula := isBrewFormulaInstalled
 	origCask := isBrewCaskInstalled
-	origExec := executeCommandWithCache
 	defer func() {
 		isBrewFormulaInstalled = origFormula
 		isBrewCaskInstalled = origCask
-		executeCommandWithCache = origExec
 	}()
 
 	// All packages already installed
 	isBrewFormulaInstalled = func(brew, formula string) bool { return true }
 	isBrewCaskInstalled = func(brew, cask string) bool { return true }
 
+	// Use dependency injection pattern
 	executed := false
-	executeCommandWithCache = func(cmd string) (string, error) {
-		executed = true
-		return "", nil
+
+	// Create a custom executor that tracks execution
+	mockExecutor := &customMockExecutor{
+		executeFunc: func(cmd string) (string, error) {
+			executed = true
+			return "", nil
+		},
 	}
+
+	originalExecutor := commandExecutor
+	defer func() { commandExecutor = originalExecutor }()
+	commandExecutor = mockExecutor
 
 	rule := parser.Rule{
 		Action:           "install",
@@ -144,11 +167,9 @@ func TestHomebrewUpSkipsAlreadyInstalled(t *testing.T) {
 func TestHomebrewUpInstallsMissingOnly(t *testing.T) {
 	origFormula := isBrewFormulaInstalled
 	origCask := isBrewCaskInstalled
-	origExec := executeCommandWithCache
 	defer func() {
 		isBrewFormulaInstalled = origFormula
 		isBrewCaskInstalled = origCask
-		executeCommandWithCache = origExec
 	}()
 
 	// pkg-a is installed as a formula; pkg-b is not; cask-app is installed as a cask
@@ -156,11 +177,18 @@ func TestHomebrewUpInstallsMissingOnly(t *testing.T) {
 	isBrewFormulaInstalled = func(brew, name string) bool { return name == "pkg-a" }
 	isBrewCaskInstalled = func(brew, name string) bool { return name == "cask-app" }
 
+	// Use dependency injection pattern
 	var ranCmd string
-	executeCommandWithCache = func(cmd string) (string, error) {
-		ranCmd = cmd
-		return "", nil
+	mockExecutor := &customMockExecutor{
+		executeFunc: func(cmd string) (string, error) {
+			ranCmd = cmd
+			return "", nil
+		},
 	}
+
+	originalExecutor := commandExecutor
+	defer func() { commandExecutor = originalExecutor }()
+	commandExecutor = mockExecutor
 
 	rule := parser.Rule{
 		Action:           "install",

@@ -14,11 +14,12 @@ import (
 	"time"
 )
 
-var testMode = false
+// RealCommandExecutor implements platform.CommandExecutor for production use
+type RealCommandExecutor struct{}
 
-// SetTestMode enables test mode to prevent overwriting mocked functions
-func SetTestMode(enabled bool) {
-	testMode = enabled
+// Execute runs a real command on the system
+func (r *RealCommandExecutor) Execute(cmd string) (string, error) {
+	return executeCommand(cmd)
 }
 
 func needsSudo(command string) bool {
@@ -114,10 +115,9 @@ func executeCommand(cmdStr string) (string, error) {
 func executeRules(rules []parser.Rule, blueprint string, osName string, basePath string, runNumber int) []ExecutionRecord {
 	var records []ExecutionRecord
 
-	// Set up the handler package with our executeCommand function (unless in test mode)
-	if !testMode {
-		handlerskg.SetExecuteCommandFunc(executeCommand)
-	}
+	// Set up the handler package with our command executor
+	// Use dependency injection instead of global function setting
+	handlerskg.SetCommandExecutor(&RealCommandExecutor{})
 
 	// Load current status once — used for idempotency checks before Up()/Down()
 	currentStatus := loadCurrentStatus()
