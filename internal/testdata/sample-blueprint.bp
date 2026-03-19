@@ -1,0 +1,58 @@
+# Sample blueprint file for testing
+# This file provides test data for unit and integration tests
+
+# Package installations using Blueprint's native syntax
+install curl id: basic-tools on: [linux, mac]
+install git id: basic-tools on: [linux, mac]
+install wget id: basic-tools on: [linux, mac]
+install docker package-manager: snap id: docker-install on: [linux]
+install nodejs on: [mac]
+install npm on: [mac]
+
+# Git repositories  
+clone https://github.com/user/repo.git to: ~/projects/repo branch: main id: main-repo on: [linux, mac]
+clone https://github.com/user/dotfiles.git to: ~/.dotfiles id: dotfiles on: [linux, mac]
+
+# Directory creation
+mkdir ~/projects id: projects-dir on: [linux, mac]
+mkdir ~/.config/app perms: 0755 id: config-dir on: [linux, mac]
+mkdir ~/.ssh perms: 0700 id: ssh-dir after: config-dir on: [linux, mac]
+
+# File operations
+decrypt secrets.gpg to: ~/.secrets/config id: secrets on: [linux, mac]
+download https://example.com/script.sh to: ~/bin/script.sh perms: 0755 id: download-script on: [linux, mac]
+
+# ASDF version manager
+asdf node@18.17.0 id: dev-tools on: [linux, mac]
+asdf python@3.11.4 id: dev-tools on: [linux, mac]
+
+# Homebrew packages (macOS)
+homebrew git id: brew-essentials on: [mac]
+homebrew node id: brew-essentials on: [mac]
+homebrew python id: brew-essentials on: [mac]
+homebrew cask: docker id: mac-apps on: [mac]
+homebrew cask: visual-studio-code id: mac-apps on: [mac]
+
+# Known hosts for SSH
+known-hosts github.com id: github-ssh on: [linux, mac]
+known-hosts gitlab.com key-type: rsa id: gitlab-ssh on: [linux, mac]
+
+# GPG keys for repositories
+gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: wezterm-key on: [linux]
+
+# Schedule automated runs
+schedule daily ~/blueprint/maintenance.bp id: daily-maintenance on: [linux, mac]
+
+# Run shell scripts
+run-sh https://get.docker.com undo: "systemctl stop docker && apt remove docker-ce docker-ce-cli" id: docker-setup on: [linux]
+
+# Sudoers entries
+sudoers user: deploy id: deploy-sudo on: [linux]
+
+# Ollama AI models
+ollama llama2 id: ai-models on: [linux, mac]
+ollama mistral id: ai-models on: [linux, mac]
+
+# Mise version manager (modern asdf alternative)
+mise node@20.0.0 path: ~/projects/webapp id: webapp-env on: [linux, mac]
+mise python@3.12.0 path: ~/projects/webapp id: webapp-env on: [linux, mac]

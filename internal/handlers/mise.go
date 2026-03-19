@@ -50,7 +50,14 @@ func NewMiseHandler(rule parser.Rule, basePath string) *MiseHandler {
 }
 
 // miseCmd returns the full path to the mise binary
+// miseCmdFunc is a variable that can be mocked during testing
+var miseCmdFunc = realMiseCmd
+
 func (h *MiseHandler) miseCmd() string {
+	return miseCmdFunc()
+}
+
+func realMiseCmd() string {
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
 		misePath := filepath.Join(homeDir, ".local", "bin", "mise")
@@ -59,6 +66,16 @@ func (h *MiseHandler) miseCmd() string {
 		}
 	}
 	return "mise"
+}
+
+// SetMiseCmdFunc sets the mise command function (for testing)
+func SetMiseCmdFunc(fn func() string) {
+	miseCmdFunc = fn
+}
+
+// ResetMiseCmd resets the mise command function to default
+func ResetMiseCmd() {
+	miseCmdFunc = realMiseCmd
 }
 
 // installMise installs mise using the platform-appropriate method

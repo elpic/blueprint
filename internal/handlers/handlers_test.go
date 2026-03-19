@@ -9,10 +9,10 @@ import (
 // TestGetDependencyKeyHelper tests the helper function that centralizes ID checking
 func TestGetDependencyKeyHelper(t *testing.T) {
 	tests := []struct {
-		name       string
-		rule       parser.Rule
-		fallback   string
-		expected   string
+		name     string
+		rule     parser.Rule
+		fallback string
+		expected string
 	}{
 		{
 			name: "returns ID when present",
@@ -91,11 +91,11 @@ func TestKeyProviderInterface(t *testing.T) {
 	}{
 		{
 			name:    "InstallHandler implements KeyProvider",
-			handler: NewInstallHandler(parser.Rule{Packages: []parser.Package{{Name: "pkg"}}}, ""),
+			handler: NewInstallHandlerLegacy(parser.Rule{Packages: []parser.Package{{Name: "pkg"}}}, ""),
 		},
 		{
 			name:    "CloneHandler implements KeyProvider",
-			handler: NewCloneHandler(parser.Rule{ClonePath: "path"}, ""),
+			handler: NewCloneHandlerLegacy(parser.Rule{ClonePath: "path"}, ""),
 		},
 		{
 			name:    "DecryptHandler implements KeyProvider",
@@ -107,7 +107,7 @@ func TestKeyProviderInterface(t *testing.T) {
 		},
 		{
 			name:    "MkdirHandler implements KeyProvider",
-			handler: NewMkdirHandler(parser.Rule{Mkdir: "path"}, ""),
+			handler: NewMkdirHandlerLegacy(parser.Rule{Mkdir: "path"}, ""),
 		},
 		{
 			name:    "KnownHostsHandler implements KeyProvider",
@@ -178,13 +178,13 @@ func TestDisplayProviderInterface(t *testing.T) {
 	}{
 		{
 			name:              "InstallHandler provides package display",
-			handler:           NewInstallHandler(parser.Rule{Packages: []parser.Package{{Name: "vim"}, {Name: "curl"}}}, ""),
+			handler:           NewInstallHandlerLegacy(parser.Rule{Packages: []parser.Package{{Name: "vim"}, {Name: "curl"}}}, ""),
 			expectedFormatted: "vim, curl",
 			isUninstall:       false,
 		},
 		{
 			name:              "CloneHandler provides path display",
-			handler:           NewCloneHandler(parser.Rule{ClonePath: "~/my-repo"}, ""),
+			handler:           NewCloneHandlerLegacy(parser.Rule{ClonePath: "~/my-repo"}, ""),
 			expectedFormatted: "~/my-repo",
 			isUninstall:       false,
 		},
@@ -202,7 +202,7 @@ func TestDisplayProviderInterface(t *testing.T) {
 		},
 		{
 			name:              "MkdirHandler provides path display",
-			handler:           NewMkdirHandler(parser.Rule{Mkdir: "~/projects"}, ""),
+			handler:           NewMkdirHandlerLegacy(parser.Rule{Mkdir: "~/projects"}, ""),
 			expectedFormatted: "~/projects",
 			isUninstall:       false,
 		},
@@ -296,14 +296,14 @@ func TestStateProviderInterface(t *testing.T) {
 	}{
 		{
 			name:            "InstallHandler provides package state",
-			handler:         NewInstallHandler(parser.Rule{Packages: []parser.Package{{Name: "vim"}, {Name: "curl"}}}, ""),
+			handler:         NewInstallHandlerLegacy(parser.Rule{Packages: []parser.Package{{Name: "vim"}, {Name: "curl"}}}, ""),
 			expectedSummary: "vim, curl",
 			isUninstall:     false,
 			expectedKeys:    []string{"summary", "packages"},
 		},
 		{
 			name:            "CloneHandler provides clone state",
-			handler:         NewCloneHandler(parser.Rule{ClonePath: "~/my-repo", CloneURL: "https://github.com/user/repo"}, ""),
+			handler:         NewCloneHandlerLegacy(parser.Rule{ClonePath: "~/my-repo", CloneURL: "https://github.com/user/repo"}, ""),
 			expectedSummary: "~/my-repo",
 			isUninstall:     false,
 			expectedKeys:    []string{"summary", "url", "path"},
@@ -324,7 +324,7 @@ func TestStateProviderInterface(t *testing.T) {
 		},
 		{
 			name:            "MkdirHandler provides mkdir state",
-			handler:         NewMkdirHandler(parser.Rule{Mkdir: "~/projects"}, ""),
+			handler:         NewMkdirHandlerLegacy(parser.Rule{Mkdir: "~/projects"}, ""),
 			expectedSummary: "~/projects",
 			isUninstall:     false,
 			expectedKeys:    []string{"summary", "path"},
@@ -443,13 +443,13 @@ func TestStatusProviderInterface(t *testing.T) {
 	}{
 		{
 			name:              "InstallHandler implements StatusProvider",
-			handler:           NewInstallHandler(parser.Rule{Packages: []parser.Package{{Name: "vim"}}}, ""),
+			handler:           NewInstallHandlerLegacy(parser.Rule{Packages: []parser.Package{{Name: "vim"}}}, ""),
 			currentRules:      []parser.Rule{}, // No current rules means resources should be uninstalled
 			expectedRuleCount: 0,               // No uninstall rules from empty status
 		},
 		{
 			name:              "CloneHandler implements StatusProvider",
-			handler:           NewCloneHandler(parser.Rule{ClonePath: "~/repo"}, ""),
+			handler:           NewCloneHandlerLegacy(parser.Rule{ClonePath: "~/repo"}, ""),
 			currentRules:      []parser.Rule{},
 			expectedRuleCount: 0,
 		},
@@ -467,7 +467,7 @@ func TestStatusProviderInterface(t *testing.T) {
 		},
 		{
 			name:              "MkdirHandler implements StatusProvider",
-			handler:           NewMkdirHandler(parser.Rule{Mkdir: "~/projects"}, ""),
+			handler:           NewMkdirHandlerLegacy(parser.Rule{Mkdir: "~/projects"}, ""),
 			currentRules:      []parser.Rule{},
 			expectedRuleCount: 0,
 		},

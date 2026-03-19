@@ -1232,7 +1232,7 @@ func TestParseComprehensiveFromFile(t *testing.T) {
 	}
 
 	// Verify total rule count
-	expectedCount := 13
+	expectedCount := 17
 	if len(rules) != expectedCount {
 		t.Errorf("Parse() got %d rules, want %d", len(rules), expectedCount)
 	}
@@ -1247,10 +1247,10 @@ func TestParseComprehensiveFromFile(t *testing.T) {
 	expectedActions := map[string]int{
 		"mkdir":       2,
 		"gpg-key":     1,
-		"install":     2,
+		"install":     5,
 		"decrypt":     2,
 		"clone":       2,
-		"asdf":        2,
+		"asdf":        3,
 		"known_hosts": 2,
 	}
 

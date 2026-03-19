@@ -5,9 +5,29 @@ import (
 	"testing"
 
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
 )
 
+// miseMockExecutor for test-specific behavior
+type miseMockExecutor struct {
+	executeFunc func(string) (string, error)
+}
+
+// Ensure it implements platform.CommandExecutor
+var _ platform.CommandExecutor = (*miseMockExecutor)(nil)
+
+func (c *miseMockExecutor) Execute(cmd string) (string, error) {
+	if c.executeFunc != nil {
+		return c.executeFunc(cmd)
+	}
+	return "", nil
+}
+
 func TestMiseHandlerGetCommand(t *testing.T) {
+	// Mock mise command to return consistent path across environments
+	SetMiseCmdFunc(func() string { return "mise" })
+	defer ResetMiseCmd()
+
 	mise := (&MiseHandler{}).miseCmd()
 	tests := []struct {
 		name     string
@@ -97,12 +117,18 @@ func TestMiseUpSkipsAlreadyInstalledVersions(t *testing.T) {
 	miseInstalledCheck = func() bool { return true }
 
 	var executedCmds []string
-	origExec := executeCommandWithCache
-	defer func() { executeCommandWithCache = origExec }()
-	executeCommandWithCache = func(cmd string) (string, error) {
-		executedCmds = append(executedCmds, cmd)
-		return "", nil
+
+	// Use dependency injection pattern
+	mockExecutor := &miseMockExecutor{
+		executeFunc: func(cmd string) (string, error) {
+			executedCmds = append(executedCmds, cmd)
+			return "", nil
+		},
 	}
+
+	originalExecutor := commandExecutor
+	defer func() { commandExecutor = originalExecutor }()
+	commandExecutor = mockExecutor
 
 	rule := parser.Rule{
 		Action:       "mise",

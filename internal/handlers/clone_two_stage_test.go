@@ -38,7 +38,7 @@ func TestCloneTwoStageApproach(t *testing.T) {
 			Branch:    "",
 		}
 
-		handler := NewCloneHandler(rule, tmpDir)
+		handler := NewCloneHandlerLegacy(rule, tmpDir)
 
 		// First: simulate a clone that would create files
 		// Create target directory and add a user file to simulate pollution
@@ -107,7 +107,7 @@ func TestCloneTwoStageApproach(t *testing.T) {
 			ClonePath: "~/.test-repo",
 		}
 
-		handler := NewCloneHandler(rule, "/tmp")
+		handler := NewCloneHandlerLegacy(rule, "/tmp")
 
 		status := &Status{
 			Clones: []CloneStatus{
@@ -143,7 +143,7 @@ func TestCloneTwoStageApproach(t *testing.T) {
 			ClonePath: "~/.test-repo",
 		}
 
-		handler := NewCloneHandler(rule, "/tmp")
+		handler := NewCloneHandlerLegacy(rule, "/tmp")
 
 		status := &Status{
 			Clones: []CloneStatus{
@@ -192,7 +192,7 @@ func TestCloneTwoStageApproach(t *testing.T) {
 			ClonePath: "/tmp/test-repo",
 		}
 
-		handler := NewCloneHandler(rule, "/tmp")
+		handler := NewCloneHandlerLegacy(rule, "/tmp")
 
 		// First clone
 		output1, err1 := handler.Up()
@@ -252,7 +252,7 @@ func TestCloneHandlerBackwardCompatibility(t *testing.T) {
 			ClonePath: "~/.existing-repo",
 		}
 
-		handler := NewCloneHandler(rule, "/tmp")
+		handler := NewCloneHandlerLegacy(rule, "/tmp")
 
 		status := &Status{
 			Clones: []CloneStatus{

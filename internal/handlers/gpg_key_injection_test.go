@@ -5,7 +5,23 @@ import (
 	"testing"
 
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
 )
+
+// gpgMockExecutor for test-specific behavior
+type gpgMockExecutor struct {
+	executeFunc func(string) (string, error)
+}
+
+// Ensure it implements platform.CommandExecutor
+var _ platform.CommandExecutor = (*gpgMockExecutor)(nil)
+
+func (c *gpgMockExecutor) Execute(cmd string) (string, error) {
+	if c.executeFunc != nil {
+		return c.executeFunc(cmd)
+	}
+	return "", nil
+}
 
 // TestGPGKeyDownloadKeyURLPassedAsArgument verifies that user-controlled URLs
 // are passed as discrete exec.Command arguments rather than interpolated into
@@ -53,12 +69,18 @@ func TestGPGKeyGetCommandDoesNotExecShellInjection(t *testing.T) {
 	handler := NewGPGKeyHandler(rule, "")
 
 	var capturedExecCmd string
-	origExec := executeCommandWithCache
-	defer func() { executeCommandWithCache = origExec }()
-	executeCommandWithCache = func(c string) (string, error) {
-		capturedExecCmd = c
-		return "", nil
+
+	// Use dependency injection pattern instead of global function assignment
+	mockExecutor := &gpgMockExecutor{
+		executeFunc: func(c string) (string, error) {
+			capturedExecCmd = c
+			return "", nil
+		},
 	}
+
+	originalExecutor := commandExecutor
+	defer func() { commandExecutor = originalExecutor }()
+	commandExecutor = mockExecutor
 
 	// Stub downloadKey so it succeeds without running curl.
 	origDL := downloadKey

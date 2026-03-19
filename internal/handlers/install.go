@@ -2,13 +2,12 @@ package handlers
 
 import (
 	"fmt"
-	"os/user"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/elpic/blueprint/internal"
+	internal "github.com/elpic/blueprint/internal"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
 	"github.com/elpic/blueprint/internal/ui"
 )
 
@@ -18,13 +17,19 @@ type InstallHandler struct {
 }
 
 // NewInstallHandler creates a new install handler
-func NewInstallHandler(rule parser.Rule, basePath string) *InstallHandler {
+func NewInstallHandler(rule parser.Rule, basePath string, container platform.Container) *InstallHandler {
 	return &InstallHandler{
 		BaseHandler: BaseHandler{
-			Rule:     rule,
-			BasePath: basePath,
+			Rule:      rule,
+			BasePath:  basePath,
+			Container: container,
 		},
 	}
+}
+
+// NewInstallHandlerLegacy creates a new install handler without container (for backward compatibility)
+func NewInstallHandlerLegacy(rule parser.Rule, basePath string) *InstallHandler {
+	return NewInstallHandler(rule, basePath, platform.NewContainer())
 }
 
 // Up installs the packages
@@ -96,29 +101,56 @@ func (h *InstallHandler) UpdateStatus(status *Status, records []ExecutionRecord,
 	return nil
 }
 
-// needsSudo checks if a command needs sudo
+// needsSudo checks if a command needs sudo by examining the command string.
+// This is used as a fallback for unknown systems or when package-manager specific
+// logic is not available.
 func needsSudo(cmd string) bool {
-	return strings.Contains(cmd, "brew") || strings.Contains(cmd, "apt-get") || strings.Contains(cmd, "snap")
+	return strings.Contains(cmd, "sudo")
 }
 
 // shouldAddSudo checks if sudo should be added for package installation on this OS
 func (h *InstallHandler) shouldAddSudo() bool {
+	// Use injected dependencies for OS and user detection
+	osDetector := h.Container.SystemProvider().OS()
+
 	// Only Linux requires sudo for package managers
-	if getOSName() != "linux" {
+	if osDetector.Name() != "linux" {
 		return false
 	}
 
-	// Check if current user is root
-	currentUser, err := user.Current()
-	if err == nil {
-		uid, err := strconv.Atoi(currentUser.Uid)
-		if err == nil && uid == 0 {
-			// Already root, no sudo needed
-			return false
+	// Check if current user is root using injected dependency
+	return !osDetector.IsRoot()
+}
+
+// getBrewCommand returns the appropriate brew command using dependency injection
+func (h *InstallHandler) getBrewCommand() string {
+	osDetector := h.Container.SystemProvider().OS()
+	processExecutor := h.Container.SystemProvider().Process()
+	filesystemProvider := h.Container.SystemProvider().Filesystem()
+
+	if osDetector.Name() != "mac" {
+		// On Linux brew is often not on PATH — check known locations first
+		knownBrewPaths := []string{
+			"/home/linuxbrew/.linuxbrew/bin/brew",
+			"/opt/homebrew/bin/brew",
+			"/usr/local/bin/brew",
 		}
+
+		for _, p := range knownBrewPaths {
+			if filesystemProvider.Exists(p) {
+				return p
+			}
+		}
+		return "brew"
 	}
 
-	return true
+	// On Mac, check for Rosetta 2 using dependency injection
+	result, err := processExecutor.Execute("sysctl -n sysctl.proc_translated", platform.ExecuteOptions{})
+	if err == nil && strings.TrimSpace(result.Stdout) == "1" {
+		return "/usr/bin/arch -arm64 /opt/homebrew/bin/brew"
+	}
+
+	return "brew"
 }
 
 // buildCommand builds the install command based on OS and package manager
@@ -127,7 +159,8 @@ func (h *InstallHandler) buildCommand() string {
 		return ""
 	}
 
-	targetOS := getOSName()
+	// Use injected OS detector instead of hardcoded getOSName
+	targetOS := h.Container.SystemProvider().OS().Name()
 
 	// Group packages by package manager
 	packagesByManager := h.groupPackagesByManager()
@@ -202,14 +235,14 @@ func (h *InstallHandler) buildInstallCommandForManager(manager string, pkgNames 
 		return ""
 
 	case "homebrew", "brew":
-		// Homebrew (macOS and Linux) — use brewCmd() to handle Rosetta 2 on Apple Silicon
-		return fmt.Sprintf("%s install %s", brewCmd(), pkgStr)
+		// Homebrew (macOS and Linux) — use dependency injection for brew command
+		return fmt.Sprintf("%s install %s", h.getBrewCommand(), pkgStr)
 
 	case "apt", "apt-get", "default":
 		// apt-get (Linux default)
 		if targetOS == "mac" {
-			// Fallback to brew on macOS if apt is specified — use brewCmd() for Rosetta 2 support
-			return fmt.Sprintf("%s install %s", brewCmd(), pkgStr)
+			// Fallback to brew on macOS if apt is specified — use dependency injection for brew command
+			return fmt.Sprintf("%s install %s", h.getBrewCommand(), pkgStr)
 		}
 
 		cmd := fmt.Sprintf("apt-get install -y %s", pkgStr)
@@ -234,7 +267,7 @@ func (h *InstallHandler) buildUninstallCommand(rule parser.Rule) string {
 		return ""
 	}
 
-	targetOS := getOSName()
+	targetOS := h.Container.SystemProvider().OS().Name()
 
 	// Group packages by package manager
 	packagesByManager := make(map[string][]string)
@@ -301,14 +334,14 @@ func (h *InstallHandler) buildUninstallCommandForManager(manager string, pkgName
 		return ""
 
 	case "homebrew", "brew":
-		// Homebrew uninstall — use brewCmd() for Rosetta 2 support
-		return fmt.Sprintf("%s uninstall -y %s", brewCmd(), pkgStr)
+		// Homebrew uninstall — use dependency injection for brew command
+		return fmt.Sprintf("%s uninstall -y %s", h.getBrewCommand(), pkgStr)
 
 	case "apt", "apt-get", "default":
 		// apt-get (Linux default)
 		if targetOS == "mac" {
-			// Fallback to brew on macOS if apt is specified — use brewCmd() for Rosetta 2 support
-			return fmt.Sprintf("%s uninstall -y %s", brewCmd(), pkgStr)
+			// Fallback to brew on macOS if apt is specified — use dependency injection for brew command
+			return fmt.Sprintf("%s uninstall -y %s", h.getBrewCommand(), pkgStr)
 		}
 
 		cmd := fmt.Sprintf("apt-get remove -y %s", pkgStr)
@@ -328,6 +361,7 @@ func (h *InstallHandler) buildUninstallCommandForManager(manager string, pkgName
 }
 
 // getOSName returns the current OS name. Defined as a var to allow stubbing in tests.
+// DEPRECATED: Use dependency injection via Container.SystemProvider().OS().Name() instead
 var getOSName = func() string {
 	return internal.OSName()
 }
@@ -351,13 +385,21 @@ func (h *InstallHandler) DisplayInfo() {
 	}
 }
 
-// executeCommandWithCache executes a command using the cached sudo password if available
-// This is defined in engine.go and accessed here
-var executeCommandWithCache func(string) (string, error)
+// Global command executor instance - injected by engine, never set by tests
+var commandExecutor platform.CommandExecutor
 
-// SetExecuteCommandFunc sets the execute command function
-func SetExecuteCommandFunc(fn func(string) (string, error)) {
-	executeCommandWithCache = fn
+// SetCommandExecutor sets the command executor for production use
+// This replaces the old SetExecuteCommandFunc pattern
+func SetCommandExecutor(executor platform.CommandExecutor) {
+	commandExecutor = executor
+}
+
+// executeCommandWithCache executes a command using the injected command executor
+func executeCommandWithCache(cmd string) (string, error) {
+	if commandExecutor == nil {
+		return "", fmt.Errorf("command executor not initialized - missing dependency injection")
+	}
+	return commandExecutor.Execute(cmd)
 }
 
 // DisplayStatus displays installed package status information
@@ -485,20 +527,36 @@ func (h *InstallHandler) IsInstalled(status *Status, blueprintFile, osName strin
 }
 
 // NeedsSudo returns true if package installation/uninstallation requires sudo privileges.
-// On macOS, brew may internally invoke sudo (e.g. when installing casks), so we signal
-// sudo is needed when there are packages to install on macOS.
+// This method uses package-manager aware logic consistent with shouldAddSudo().
 func (h *InstallHandler) NeedsSudo() bool {
-	if getOSName() == "mac" {
-		return len(h.Rule.Packages) > 0
+	// No packages = no sudo needed
+	if len(h.Rule.Packages) == 0 {
+		return false
 	}
 
-	// On Linux, check the command that will be executed
-	var cmd string
-	if h.Rule.Action == "uninstall" {
-		cmd = h.buildUninstallCommand(h.Rule)
-	} else {
-		cmd = h.buildCommand()
-	}
+	// Use the same package-manager aware logic as shouldAddSudo()
+	osDetector := h.Container.SystemProvider().OS()
 
-	return needsSudo(cmd)
+	switch osDetector.Name() {
+	case "mac":
+		// Homebrew typically doesn't require sudo for regular packages
+		// Only some casks or system-level operations might need it, but
+		// brew handles this internally without user intervention
+		return false
+
+	case "linux":
+		// Linux package managers (apt, yum, snap) require sudo unless running as root
+		return !osDetector.IsRoot()
+
+	default:
+		// For Windows and unknown systems, check if the generated command contains sudo
+		// This ensures consistency with the actual command that will be executed
+		var cmd string
+		if h.Rule.Action == "uninstall" {
+			cmd = h.buildUninstallCommand(h.Rule)
+		} else {
+			cmd = h.buildCommand()
+		}
+		return needsSudo(cmd)
+	}
 }
