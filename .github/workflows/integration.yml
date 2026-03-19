@@ -9,6 +9,7 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout code
@@ -27,6 +28,7 @@ jobs:
 
       - name: Run unit tests with coverage
         run: just test "--coverage -v"
+        timeout-minutes: 8
 
       - name: Generate coverage report
         if: hashFiles('coverage.out') != ''

@@ -41,15 +41,12 @@ func NewCloneHandlerLegacy(rule parser.Rule, basePath string) *CloneHandler {
 	return NewCloneHandler(rule, basePath, platform.NewContainer())
 }
 
-// Up clones or updates the repository using go-git library
+// Up clones or updates the repository using two-stage approach with dependency injection
 func (h *CloneHandler) Up() (string, error) {
-	// Expand home directory if needed using injected filesystem provider
-	clonePath := h.Container.SystemProvider().Filesystem().ExpandPath(h.Rule.ClonePath)
-
-	// Use go-git library to clone or update repository
-	oldSHA, newSHA, status, err := gitpkg.CloneOrUpdateRepository(
+	// Use two-stage clone to prevent repository pollution
+	oldSHA, newSHA, status, err := gitpkg.CloneOrUpdateRepositoryTwoStage(
 		h.Rule.CloneURL,
-		clonePath,
+		h.Rule.ClonePath,
 		h.Rule.Branch,
 	)
 	if err != nil {
@@ -73,6 +70,12 @@ func (h *CloneHandler) Up() (string, error) {
 			return fmt.Sprintf("Updated (SHA: %s)", newSHA), nil
 		}
 		return "Updated", nil
+
+	case "Synced":
+		if newSHA != "" {
+			return fmt.Sprintf("Synced (SHA: %s)", newSHA), nil
+		}
+		return "Synced", nil
 
 	case "Already up to date":
 		if newSHA != "" {
@@ -274,21 +277,31 @@ func (h *CloneHandler) FindUninstallRules(status *Status, currentRules []parser.
 	return rules
 }
 
-// IsInstalled returns true if the clone path is recorded in status AND the local
-// repository SHA matches the current remote HEAD. If the remote SHA cannot be
-// determined (network unavailable, auth issue) it falls back to path-only check.
+// IsInstalled returns true if the clone path is recorded in status AND the repository
+// SHA matches the current remote HEAD. Uses clean repository storage when available,
+// falls back to target directory for backward compatibility.
 func (h *CloneHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
 	normalizedBlueprint := normalizePath(blueprintFile)
 	for _, clone := range status.Clones {
 		if clone.Path != h.Rule.ClonePath || normalizePath(clone.Blueprint) != normalizedBlueprint || clone.OS != osName {
 			continue
 		}
-		// Found a matching status entry — now check SHA currency.
+		// Found a matching status entry — now check SHA currency
 		remoteSHA := remoteHeadSHA(h.Rule.CloneURL, h.Rule.Branch)
 		if remoteSHA == "" {
 			// Cannot reach remote — trust the status entry as-is.
 			return true
 		}
+
+		// Try clean repository storage first (prevents pollution issues)
+		cleanSHA := gitpkg.GetCleanRepositorySHA(h.Rule.CloneURL, h.Rule.Branch)
+		if cleanSHA != "" {
+			// Clean storage exists, use it for SHA comparison
+			return cleanSHA == remoteSHA
+		}
+
+		// Fall back to checking target directory for backward compatibility
+		// This handles existing installations that don't have clean storage yet
 		localSHAVal := localSHA(h.Container.SystemProvider().Filesystem().ExpandPath(h.Rule.ClonePath))
 		return localSHAVal == remoteSHA
 	}
