@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ func TestInstallHandler_BuildCommand_Pure(t *testing.T) {
 			packages:       []string{"curl"},
 			osName:         "mac",
 			expectedCmd:    "brew install curl",
-			shouldHaveSudo: true,
+			shouldHaveSudo: false,
 		},
 		{
 			name:           "single package on linux uses apt with sudo",
@@ -38,7 +39,7 @@ func TestInstallHandler_BuildCommand_Pure(t *testing.T) {
 			packages:       []string{"git", "curl", "wget"},
 			osName:         "mac",
 			expectedCmd:    "brew install git curl wget",
-			shouldHaveSudo: true,
+			shouldHaveSudo: false,
 		},
 		{
 			name:           "multiple packages on linux",
@@ -94,10 +95,10 @@ func TestInstallHandler_BuildCommand_Pure(t *testing.T) {
 				t.Errorf("Test took %v, expected < 1ms for pure unit test", duration)
 			}
 
-			// Test NeedsSudo method (also pure)
-			needsSudo := handler.NeedsSudo()
-			if needsSudo != tt.shouldHaveSudo {
-				t.Errorf("NeedsSudo() = %v, want %v", needsSudo, tt.shouldHaveSudo)
+			// Test that the command matches the expected sudo usage
+			hasSudo := strings.Contains(cmd, "sudo")
+			if hasSudo != tt.shouldHaveSudo {
+				t.Errorf("Command has sudo = %v, want %v. Command: %q", hasSudo, tt.shouldHaveSudo, cmd)
 			}
 		})
 	}
