@@ -8,6 +8,10 @@ import (
 )
 
 func TestHomebrewHandlerGetCommand(t *testing.T) {
+	// Mock brew command to return consistent path across environments
+	SetBrewCmdFunc(func() string { return "brew" })
+	defer ResetBrewCmd()
+
 	brew := brewCmd()
 	tests := []struct {
 		name string

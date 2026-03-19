@@ -8,6 +8,9 @@ import (
 )
 
 func TestMiseHandler_GetCommand_Pure(t *testing.T) {
+	// Mock mise command to return consistent path across environments
+	handlers.SetMiseCmdFunc(func() string { return "/Users/elpic/.local/bin/mise" })
+	defer handlers.ResetMiseCmd()
 	tests := []struct {
 		name     string
 		rule     parser.Rule
@@ -612,6 +615,10 @@ func TestMiseHandler_FindUninstallRules_Pure(t *testing.T) {
 
 // Test helper function for path resolution logic
 func TestMiseHandler_IsGlobal_Pure(t *testing.T) {
+	// Mock mise command to return consistent path across environments
+	handlers.SetMiseCmdFunc(func() string { return "/Users/elpic/.local/bin/mise" })
+	defer handlers.ResetMiseCmd()
+
 	tests := []struct {
 		name     string
 		misePath string
@@ -664,6 +671,10 @@ func TestMiseHandler_IsGlobal_Pure(t *testing.T) {
 
 // Test constructor and basic properties
 func TestMiseHandler_Constructor_Pure(t *testing.T) {
+	// Mock mise command to return consistent path across environments
+	handlers.SetMiseCmdFunc(func() string { return "/Users/elpic/.local/bin/mise" })
+	defer handlers.ResetMiseCmd()
+
 	rule := parser.Rule{
 		Action:       "mise",
 		MisePackages: []string{"node@18.0.0", "python@3.11.0"},

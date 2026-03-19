@@ -8,6 +8,10 @@ import (
 )
 
 func TestMiseHandlerGetCommand(t *testing.T) {
+	// Mock mise command to return consistent path across environments
+	SetMiseCmdFunc(func() string { return "mise" })
+	defer ResetMiseCmd()
+
 	mise := (&MiseHandler{}).miseCmd()
 	tests := []struct {
 		name     string
