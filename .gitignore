@@ -28,5 +28,7 @@ opencode.json
 # Coverage files (should never be committed)
 coverage.out
 coverage.html
+coverage_detailed.out
+*coverage*.out
 *.coverage
 .coverage/
