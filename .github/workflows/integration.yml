@@ -136,34 +136,34 @@ jobs:
           main=${main:-0}
           diff=${diff:-0}
           
-          # Format diff with sign and badge
+          # Format diff with sign and emoji
           if (( $(echo "$diff > 0" | bc -l 2>/dev/null || echo "0") )); then
             diff_formatted="+${diff}%"
-            badge=":green_circle: +${diff}%"
+            emoji="📈"
           elif (( $(echo "$diff < 0" | bc -l 2>/dev/null || echo "0") )); then
             diff_formatted="${diff}%"
-            badge=":red_circle: ${diff}%"
+            emoji="📉"
           else
-            diff_formatted="0%"
-            badge=":white_circle: 0%"
+            diff_formatted="unchanged"
+            emoji="➡️"
           fi
           
-          # Get files with low coverage (below 50%)
-          low_coverage=$(go tool cover -func coverage.out | grep -v "total:" | awk -F'\t' '{if ($2 ~ /[0-9]+\.[0-9]+%/) split($2,a,"."); if (a[1] < 50) print $1 " (" $2 ")"}' | sort -t'(' -k2 -rn | head -10)
+          # Get packages with low coverage (below 50%) from test output
+          low_coverage=$(go test ./... 2>&1 | grep -E 'coverage: [0-9]+\.[0-9]+%' | grep -oE 'github.com/[^\t]+|internal/[^\t]+' | head -10)
           
           # Build comment body
-          COMMENT="## Coverage Report
+          COMMENT="## Coverage Report ${emoji}
           
           | Metric | Value |
           |--------|-------|
           | **This PR** | ${current}% |
           | **Main Branch** | ${main}% |
-          | **Difference** | ${diff_formatted} ${badge} |"
+          | **Change** | ${diff_formatted} ${emoji} |"
           
           if [ -n "$low_coverage" ]; then
             COMMENT="${COMMENT}
           
-          ### Files with Low Coverage
+          ### Packages Needing Coverage
           
           \`\`\`
           ${low_coverage}
