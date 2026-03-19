@@ -148,19 +148,17 @@ jobs:
             emoji="➡️"
           fi
           
-          # Get packages with low coverage (below 50%) - show package and worst coverage
+          # Get packages with low coverage (below 50%) - format as markdown table
           low_coverage=$(go tool cover -func coverage.out | grep -v "total:" | \
             awk -F'[\t:]' '{split($2,pct,"%"); if (pct[1] < 50 && pct[1] > 0) {
-              # Extract package path (remove module prefix)
               match($1, /internal\/[^\/]+|cmd\/[^\/]+/)
               pkg = substr($1, RSTART, RLENGTH)
-              # Keep track of lowest coverage per package
               if (!(pkg in min) || pct[1] < min[pkg]) {
                 min[pkg] = pct[1]
               }
             }} END {
               for (pkg in min) {
-                print min[pkg] " " pkg
+                print "| " min[pkg] "% | " pkg " |"
               }
             }' | sort -n | head -10)
           
@@ -178,9 +176,9 @@ jobs:
           
           ### Packages Needing Coverage
           
-          \`\`\`
-          ${low_coverage}
-          \`\`\`"
+          | Coverage | Package |
+          |----------|---------|
+          ${low_coverage}"
           fi
           
           gh pr comment ${{ github.event.pull_request.number }} --body "${COMMENT}"
