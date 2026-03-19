@@ -17,9 +17,8 @@
 # Define the exact versions of tools required for development
 [tools]
 go = "1.24.1"
-golangci-lint = "latest"
+golangci-lint = "2.11.3"
 # Note: gosec is installed via go install in the security task since it's not in mise registry
-# gosec = "latest"
 
 # Environment Configuration
 # =========================
@@ -98,7 +97,7 @@ alias = "l"
 [tasks.security]
 description = "Run security scan with gosec"
 run = [
-  "go install github.com/securego/gosec/v2/cmd/gosec@latest",
+  "go install github.com/securego/gosec/v2/cmd/gosec@v2.24.7",
   "PATH=\"$(go env GOPATH)/bin:$PATH\" gosec -exclude=G204,G304,G115 ./..."
 ]
 alias = "s"
