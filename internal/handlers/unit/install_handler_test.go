@@ -260,10 +260,10 @@ func TestInstallHandler_NeedsSudo_Pure(t *testing.T) {
 		expectedSudo bool
 	}{
 		{
-			name:         "macOS with packages always needs sudo (brew may need it for casks)",
+			name:         "macOS with packages doesn't need sudo (brew handles it internally)",
 			packages:     []string{"curl"},
 			osName:       "mac",
-			expectedSudo: true,
+			expectedSudo: false,
 		},
 		{
 			name:         "macOS with no packages doesn't need sudo",
@@ -283,16 +283,34 @@ func TestInstallHandler_NeedsSudo_Pure(t *testing.T) {
 			osName:       "linux",
 			expectedSudo: false,
 		},
+		{
+			name:         "Windows with packages matches command generation (currently no sudo)",
+			packages:     []string{"curl"},
+			osName:       "windows",
+			expectedSudo: false, // Matches current command generation behavior
+		},
+		{
+			name:         "Windows with no packages doesn't need sudo",
+			packages:     []string{},
+			osName:       "windows",
+			expectedSudo: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			start := time.Now()
 
-			// Create mock container with specified OS
-			mockContainer := testutils.NewMockContainer().
-				WithOS(tt.osName).
-				Build()
+			// Create mock container with specified OS and non-root user for Linux
+			containerBuilder := testutils.NewMockContainer().
+				WithOS(tt.osName)
+
+			// Set up non-root user for Linux to test sudo requirement logic
+			if tt.osName == "linux" {
+				containerBuilder = containerBuilder.WithUser("testuser", "1001", "1001", "/home/testuser")
+			}
+
+			mockContainer := containerBuilder.Build()
 
 			// Build rule with packages (manually for now)
 			var packages []parser.Package

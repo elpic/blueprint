@@ -101,7 +101,9 @@ func (h *InstallHandler) UpdateStatus(status *Status, records []ExecutionRecord,
 	return nil
 }
 
-// needsSudo checks if a command needs sudo
+// needsSudo checks if a command needs sudo by examining the command string.
+// This is used as a fallback for unknown systems or when package-manager specific
+// logic is not available.
 func needsSudo(cmd string) bool {
 	return strings.Contains(cmd, "sudo")
 }
@@ -525,20 +527,36 @@ func (h *InstallHandler) IsInstalled(status *Status, blueprintFile, osName strin
 }
 
 // NeedsSudo returns true if package installation/uninstallation requires sudo privileges.
-// On macOS, brew may internally invoke sudo (e.g. when installing casks), so we signal
-// sudo is needed when there are packages to install on macOS.
+// This method uses package-manager aware logic consistent with shouldAddSudo().
 func (h *InstallHandler) NeedsSudo() bool {
-	if h.Container.SystemProvider().OS().Name() == "mac" {
-		return len(h.Rule.Packages) > 0
+	// No packages = no sudo needed
+	if len(h.Rule.Packages) == 0 {
+		return false
 	}
 
-	// On Linux, check the command that will be executed
-	var cmd string
-	if h.Rule.Action == "uninstall" {
-		cmd = h.buildUninstallCommand(h.Rule)
-	} else {
-		cmd = h.buildCommand()
-	}
+	// Use the same package-manager aware logic as shouldAddSudo()
+	osDetector := h.Container.SystemProvider().OS()
 
-	return needsSudo(cmd)
+	switch osDetector.Name() {
+	case "mac":
+		// Homebrew typically doesn't require sudo for regular packages
+		// Only some casks or system-level operations might need it, but
+		// brew handles this internally without user intervention
+		return false
+
+	case "linux":
+		// Linux package managers (apt, yum, snap) require sudo unless running as root
+		return !osDetector.IsRoot()
+
+	default:
+		// For Windows and unknown systems, check if the generated command contains sudo
+		// This ensures consistency with the actual command that will be executed
+		var cmd string
+		if h.Rule.Action == "uninstall" {
+			cmd = h.buildUninstallCommand(h.Rule)
+		} else {
+			cmd = h.buildCommand()
+		}
+		return needsSudo(cmd)
+	}
 }
