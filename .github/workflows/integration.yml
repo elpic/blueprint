@@ -17,17 +17,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-          cache: true
-
-      - name: Install just
-        uses: extractions/setup-just@v2
+      - name: Install mise
+        uses: jdx/mise-action@v2
 
       - name: Run unit tests with coverage
-        run: just test "--coverage -v"
+        run: mise run test:coverage
         timeout-minutes: 8
 
       - name: Generate coverage report
@@ -60,7 +54,7 @@ jobs:
 
           # Checkout main and get coverage
           git checkout main
-          just test "--coverage -v" || true
+          mise run test:coverage || true
           main_coverage=$(go tool cover -func coverage.out | grep total | awk '{print $3}' | sed 's/%//')
 
           # Restore changes
@@ -98,17 +92,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-          cache: true
-
-      - name: Install just
-        uses: extractions/setup-just@v2
+      - name: Install mise
+        uses: jdx/mise-action@v2
 
       - name: Run linter
-        run: just lint
+        run: mise run lint
 
   build:
     name: Build Binary
@@ -118,17 +106,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-          cache: true
-
-      - name: Install just
-        uses: extractions/setup-just@v2
+      - name: Install mise
+        uses: jdx/mise-action@v2
 
       - name: Build binary
-        run: just build
+        run: mise run build
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
@@ -145,11 +127,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-          cache: true
+      - name: Install mise
+        uses: jdx/mise-action@v2
 
       - name: Download blueprint binaries
         uses: actions/download-artifact@v4
@@ -162,7 +141,7 @@ jobs:
 
       - name: Run integration tests
         run: |
-          go test -v -race -run Integration ./...
+          mise run test:integration
 
   security:
     name: Security Checks
@@ -172,14 +151,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-          cache: true
-
-      - name: Install just
-        uses: extractions/setup-just@v2
+      - name: Install mise
+        uses: jdx/mise-action@v2
 
       - name: Run security scan
-        run: just security
+        run: mise run security
