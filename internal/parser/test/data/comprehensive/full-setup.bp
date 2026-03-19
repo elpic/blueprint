@@ -4,11 +4,15 @@
 mkdir ~/.config id: config-dir on: [linux, mac]
 mkdir ~/.ssh id: ssh-dir after: config-dir on: [linux, mac]
 
-install git curl wget id: base-tools on: [linux, mac]
-install vim build-essential id: dev-packages on: [linux, mac]
+install git id: base-tools on: [linux, mac]
+install curl id: base-tools on: [linux, mac]
+install wget id: base-tools on: [linux, mac]
+install vim id: dev-packages on: [linux, mac]
+install build-essential id: dev-packages on: [linux, mac]
 
 asdf nodejs 18.0.0 id: nodejs-setup on: [linux, mac]
-asdf ruby 3.1.0 python 3.11.0 id: dev-tools after: nodejs-setup on: [linux, mac]
+asdf ruby 3.1.0 id: dev-tools after: nodejs-setup on: [linux, mac]
+asdf python 3.11.0 id: dev-tools after: nodejs-setup on: [linux, mac]
 
 clone https://github.com/user/dotfiles.git to: ~/dotfiles id: clone-dotfiles after: config-dir on: [linux, mac]
 clone https://github.com/user/projects.git to: ~/projects id: clone-projects on: [linux, mac]
