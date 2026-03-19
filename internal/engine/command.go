@@ -14,6 +14,13 @@ import (
 	"time"
 )
 
+var testMode = false
+
+// SetTestMode enables test mode to prevent overwriting mocked functions
+func SetTestMode(enabled bool) {
+	testMode = enabled
+}
+
 func needsSudo(command string) bool {
 	// Only on Linux
 	if getOSName() != "linux" {
@@ -107,8 +114,10 @@ func executeCommand(cmdStr string) (string, error) {
 func executeRules(rules []parser.Rule, blueprint string, osName string, basePath string, runNumber int) []ExecutionRecord {
 	var records []ExecutionRecord
 
-	// Set up the handler package with our executeCommand function
-	handlerskg.SetExecuteCommandFunc(executeCommand)
+	// Set up the handler package with our executeCommand function (unless in test mode)
+	if !testMode {
+		handlerskg.SetExecuteCommandFunc(executeCommand)
+	}
 
 	// Load current status once — used for idempotency checks before Up()/Down()
 	currentStatus := loadCurrentStatus()
