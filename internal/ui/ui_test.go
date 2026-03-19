@@ -99,9 +99,8 @@ func TestFormatFunctionsWithEmptyInput(t *testing.T) {
 			duration := time.Since(start)
 
 			// Should handle empty input gracefully (result should not be nil)
-			if result == "" {
-				// Some functions might return empty string for empty input, that's ok
-			}
+			// Some functions might return empty string for empty input, that's ok
+			_ = result // Explicitly acknowledge we're checking the function doesn't panic
 
 			// Should be fast
 			if duration > 100*time.Microsecond {

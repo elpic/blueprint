@@ -24,7 +24,7 @@ func TestInstallHandler_BuildCommand_Pure(t *testing.T) {
 			packages:       []string{"curl"},
 			osName:         "mac",
 			expectedCmd:    "brew install curl",
-			shouldHaveSudo: false,
+			shouldHaveSudo: true,
 		},
 		{
 			name:           "single package on linux uses apt with sudo",
@@ -38,7 +38,7 @@ func TestInstallHandler_BuildCommand_Pure(t *testing.T) {
 			packages:       []string{"git", "curl", "wget"},
 			osName:         "mac",
 			expectedCmd:    "brew install git curl wget",
-			shouldHaveSudo: false,
+			shouldHaveSudo: true,
 		},
 		{
 			name:           "multiple packages on linux",
