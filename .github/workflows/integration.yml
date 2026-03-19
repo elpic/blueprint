@@ -85,14 +85,10 @@ jobs:
           git stash pop || true
 
       - name: Generate coverage comparison report
+        id: coverage-report
         run: |
-          current_coverage="${COVERAGE:-0}"
-          main_coverage="${{ steps.main-coverage.outputs.main_coverage || '0' }}"
-          
-          # Get current coverage if not already set
-          if [ -z "$current_coverage" ] || [ "$current_coverage" = "0" ]; then
-            current_coverage=$(go tool cover -func coverage.out | grep total | awk '{print $3}' | sed 's/%//')
-          fi
+          current_coverage="${{ steps.coverage.outputs.current_coverage }}"
+          main_coverage="${{ steps.main-coverage.outputs.main_coverage }}"
           
           # Handle empty or missing values
           current_coverage=${current_coverage:-0}
@@ -100,6 +96,11 @@ jobs:
           
           # Calculate difference
           diff=$(echo "$current_coverage - $main_coverage" | bc 2>/dev/null || echo "0")
+          
+          # Set output for PR comment
+          echo "current=$current_coverage" >> $GITHUB_OUTPUT
+          echo "main=$main_coverage" >> $GITHUB_OUTPUT
+          echo "diff=$diff" >> $GITHUB_OUTPUT
           
           echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -117,6 +118,46 @@ jobs:
           else
             echo "➡️ Coverage unchanged" >> $GITHUB_STEP_SUMMARY
           fi
+
+      - name: Post coverage comment on PR
+        if: hashFiles('coverage.out') != ''
+        run: |
+          current="${{ steps.coverage-report.outputs.current }}"
+          main="${{ steps.coverage-report.outputs.main }}"
+          diff="${{ steps.coverage-report.outputs.diff }}"
+          
+          # Default to 0 if empty
+          current=${current:-0}
+          main=${main:-0}
+          diff=${diff:-0}
+          
+          # Determine emoji and status
+          if (( $(echo "$diff > 0" | bc -l 2>/dev/null || echo "0") )); then
+            emoji="📈"
+            status="increased"
+          elif (( $(echo "$diff < 0" | bc -l 2>/dev/null || echo "0") )); then
+            emoji="📉"
+            status="decreased"
+          else
+            emoji="➡️"
+            status="unchanged"
+          fi
+          
+          # Format diff with sign
+          if (( $(echo "$diff > 0" | bc -l 2>/dev/null || echo "0") )); then
+            diff_formatted="+${diff}%"
+          else
+            diff_formatted="${diff}%"
+          fi
+          
+          # Post comment
+          gh pr comment ${{ github.event.pull_request.number }} --body "## Coverage Report ${emoji}
+          | Metric | Value |
+          |--------|-------|
+          | **This PR** | ${current}% |
+          | **Main Branch** | ${main}% |
+          | **Difference** | ${diff_formatted} |
+          Coverage ${status} by ${diff#-}%"
 
   lint:
     name: Run Linter
