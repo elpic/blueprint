@@ -128,7 +128,7 @@ jobs:
         if: hashFiles('coverage.out') != ''
         run: |
           current="${{ steps.coverage-report.outputs.current }}"
-          main="${{ steps.coverage-report.outputs.main }}"
+          main="${{ steps.main-coverage.outputs.main_coverage }}"
           diff="${{ steps.coverage-report.outputs.diff }}"
           
           # Default to 0 if empty
@@ -148,8 +148,21 @@ jobs:
             emoji="➡️"
           fi
           
-          # Get packages with low coverage (below 50%) from test output
-          low_coverage=$(go test ./... 2>&1 | grep -E 'coverage: [0-9]+\.[0-9]+%' | grep -oE 'github.com/[^\t]+|internal/[^\t]+' | head -10)
+          # Get packages with low coverage (below 50%) - show package and worst coverage
+          low_coverage=$(go tool cover -func coverage.out | grep -v "total:" | \
+            awk -F'[\t:]' '{split($2,pct,"%"); if (pct[1] < 50 && pct[1] > 0) {
+              # Extract package path (remove module prefix)
+              match($1, /internal\/[^\/]+|cmd\/[^\/]+/)
+              pkg = substr($1, RSTART, RLENGTH)
+              # Keep track of lowest coverage per package
+              if (!(pkg in min) || pct[1] < min[pkg]) {
+                min[pkg] = pct[1]
+              }
+            }} END {
+              for (pkg in min) {
+                print min[pkg] " " pkg
+              }
+            }' | sort -n | head -10)
           
           # Build comment body
           COMMENT="## Coverage Report ${emoji}
