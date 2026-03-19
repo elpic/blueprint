@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/elpic/blueprint/internal/handlers"
+	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/platform/testutils"
 )
 
@@ -247,5 +248,76 @@ func TestInstallHandler_GetState_Pure(t *testing.T) {
 
 	if duration > 100*time.Microsecond {
 		t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
+	}
+}
+
+func TestInstallHandler_NeedsSudo_Pure(t *testing.T) {
+	tests := []struct {
+		name         string
+		packages     []string
+		osName       string
+		expectedSudo bool
+	}{
+		{
+			name:         "macOS with packages always needs sudo (brew may need it for casks)",
+			packages:     []string{"curl"},
+			osName:       "mac",
+			expectedSudo: true,
+		},
+		{
+			name:         "macOS with no packages doesn't need sudo",
+			packages:     []string{},
+			osName:       "mac",
+			expectedSudo: false,
+		},
+		{
+			name:         "Linux with packages needs sudo (for apt-get)",
+			packages:     []string{"curl"},
+			osName:       "linux",
+			expectedSudo: true,
+		},
+		{
+			name:         "Linux with no packages doesn't need sudo",
+			packages:     []string{},
+			osName:       "linux",
+			expectedSudo: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			start := time.Now()
+
+			// Create mock container with specified OS
+			mockContainer := testutils.NewMockContainer().
+				WithOS(tt.osName).
+				Build()
+
+			// Build rule with packages (manually for now)
+			var packages []parser.Package
+			for _, pkg := range tt.packages {
+				packages = append(packages, parser.Package{Name: pkg})
+			}
+			rule := parser.Rule{
+				Action:   "install",
+				Packages: packages,
+			}
+
+			// Create handler with mocked dependencies
+			handler := handlers.NewInstallHandler(rule, "/test", mockContainer)
+
+			// Test NeedsSudo method (pure function)
+			needsSudo := handler.NeedsSudo()
+
+			duration := time.Since(start)
+
+			if needsSudo != tt.expectedSudo {
+				t.Errorf("NeedsSudo() = %v, want %v", needsSudo, tt.expectedSudo)
+			}
+
+			if duration > 100*time.Microsecond {
+				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
+			}
+		})
 	}
 }
