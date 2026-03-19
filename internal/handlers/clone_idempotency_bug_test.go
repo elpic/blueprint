@@ -29,7 +29,7 @@ func TestCloneIdempotencyBug(t *testing.T) {
 			Branch:    "",
 		}
 
-		handler := NewCloneHandler(rule, "/tmp")
+		handler := NewCloneHandlerLegacy(rule, "/tmp")
 
 		// Mock consistent SHAs (repository unchanged)
 		testSHA := "abc123456789"
@@ -72,7 +72,7 @@ func TestCloneIdempotencyBug(t *testing.T) {
 			ClonePath: "~/.oh-my-zsh",
 		}
 
-		handler := NewCloneHandler(rule, "/tmp")
+		handler := NewCloneHandlerLegacy(rule, "/tmp")
 
 		// Mock network failure (empty remote SHA) but valid local SHA
 		localSHA = func(string) string { return "abc123456789" }
@@ -114,7 +114,7 @@ func TestCloneIdempotencyBug(t *testing.T) {
 			ClonePath: "~/.oh-my-zsh",
 		}
 
-		handler := NewCloneHandler(rule, "/tmp")
+		handler := NewCloneHandlerLegacy(rule, "/tmp")
 
 		// Mock local repository corruption (empty local SHA) but valid remote SHA
 		localSHA = func(string) string { return "" } // Corrupted/missing .git
@@ -151,7 +151,7 @@ func TestCloneIdempotencyBug(t *testing.T) {
 			ClonePath: "~/.oh-my-zsh",
 		}
 
-		handler := NewCloneHandler(rule, "/tmp")
+		handler := NewCloneHandlerLegacy(rule, "/tmp")
 
 		// Empty status (no clone recorded)
 		status := &Status{Clones: []CloneStatus{}}
@@ -180,7 +180,7 @@ func TestCloneIdempotencyBug(t *testing.T) {
 			ClonePath: "~/.oh-my-zsh",
 		}
 
-		handler := NewCloneHandler(rule, "/tmp")
+		handler := NewCloneHandlerLegacy(rule, "/tmp")
 
 		testSHA := "abc123456789"
 		localSHA = func(string) string { return testSHA }
@@ -235,7 +235,7 @@ func TestCloneIdempotencyBug(t *testing.T) {
 			ClonePath: "~/.oh-my-zsh",
 		}
 
-		handler := NewCloneHandler(rule, "/tmp")
+		handler := NewCloneHandlerLegacy(rule, "/tmp")
 
 		testSHA := "abc123456789"
 		localSHA = func(string) string { return testSHA }

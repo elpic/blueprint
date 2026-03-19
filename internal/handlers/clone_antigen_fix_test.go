@@ -40,7 +40,7 @@ func TestAntigenZshPollutionFix(t *testing.T) {
 			Branch:    "",
 		}
 
-		handler := NewCloneHandler(ohMyZshRule, tmpDir)
+		handler := NewCloneHandlerLegacy(ohMyZshRule, tmpDir)
 
 		// SCENARIO: Initial setup where antigen.zsh was downloaded separately
 		// This simulates Rule #11 from troubleshooting doc: download antigen to ~/.oh-my-zsh/antigen.zsh
@@ -184,7 +184,7 @@ source ~/.oh-my-zsh/lib/theme-and-appearance.zsh
 			ClonePath: ohMyZshPath,
 		}
 
-		handler := NewCloneHandler(rule, tmpDir)
+		handler := NewCloneHandlerLegacy(rule, tmpDir)
 
 		testSHA := "stable123456"
 

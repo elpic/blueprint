@@ -39,7 +39,7 @@ func TestCloneRepositoryPollutionFix(t *testing.T) {
 			Branch:    "",
 		}
 
-		handler := NewCloneHandler(rule, tmpDir)
+		handler := NewCloneHandlerLegacy(rule, tmpDir)
 
 		// Create target directory with user file (simulating antigen.zsh added by user)
 		err := os.MkdirAll(targetPath, 0755)
@@ -122,7 +122,7 @@ func TestCloneRepositoryPollutionFix(t *testing.T) {
 			ClonePath: targetPath,
 		}
 
-		handler := NewCloneHandler(rule, tmpDir)
+		handler := NewCloneHandlerLegacy(rule, tmpDir)
 
 		// Simulate clean repository storage exists and is up to date
 		testSHA := "abc123456789"
@@ -167,7 +167,7 @@ func TestCloneRepositoryPollutionFix(t *testing.T) {
 			ClonePath: targetPath,
 		}
 
-		handler := NewCloneHandler(rule, tmpDir)
+		handler := NewCloneHandlerLegacy(rule, tmpDir)
 
 		testSHA := "existing123456"
 
