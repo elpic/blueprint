@@ -275,7 +275,14 @@ func (h *HomebrewHandler) installHomebrewLinux() error {
 // sysctl.proc_translated returns 1. In that case we force ARM64 execution
 // via /usr/bin/arch -arm64 with the full path to brew so it always runs
 // natively regardless of the parent process architecture.
+// brewCmdFunc is a variable that can be mocked during testing
+var brewCmdFunc = realBrewCmd
+
 func brewCmd() string {
+	return brewCmdFunc()
+}
+
+func realBrewCmd() string {
 	if getOSName() != "mac" {
 		// On Linux brew is often not on PATH — check known locations first
 		for _, p := range knownBrewPaths {
@@ -293,6 +300,16 @@ func brewCmd() string {
 	}
 
 	return "brew"
+}
+
+// SetBrewCmdFunc sets the brew command function (for testing)
+func SetBrewCmdFunc(fn func() string) {
+	brewCmdFunc = fn
+}
+
+// ResetBrewCmd resets the brew command function to default
+func ResetBrewCmd() {
+	brewCmdFunc = realBrewCmd
 }
 
 // buildCommand builds the install command for formulas and/or casks
