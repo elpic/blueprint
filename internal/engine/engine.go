@@ -165,7 +165,7 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 		if err := saveHistory(records); err != nil {
 			fmt.Printf("Warning: Failed to save history: %v\n", err)
 		}
-		if err := saveStatus(allRules, records, file, currentOS); err != nil {
+		if err := saveStatus(allRules, records, setupPath, currentOS); err != nil {
 			fmt.Printf("Warning: Failed to save status: %v\n", err)
 		}
 
