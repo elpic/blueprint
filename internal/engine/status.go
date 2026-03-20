@@ -261,13 +261,15 @@ func PrintDiff(blueprintFile string) {
 	}
 
 	// Removals: resources in status but no longer in the blueprint
-	removeRules := getAutoUninstallRules(desiredRules, blueprintFile, currentOS)
+	// Use setupPath (resolved local path) instead of blueprintFile (may be git URL)
+	removeRules := getAutoUninstallRules(desiredRules, setupPath, currentOS)
 
 	// Additions: rules in the blueprint that have no matching status entry.
+	// Use setupPath (resolved local path) instead of blueprintFile (may be git URL)
 	var addRules []parser.Rule
 	for _, rule := range desiredRules {
 		handler := handlerskg.NewHandler(rule, "", nil)
-		if handler != nil && !handler.IsInstalled(&status, blueprintFile, currentOS) {
+		if handler != nil && !handler.IsInstalled(&status, setupPath, currentOS) {
 			addRules = append(addRules, rule)
 		}
 	}
