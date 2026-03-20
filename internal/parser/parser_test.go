@@ -1476,3 +1476,324 @@ func TestGitIncludeDetection(t *testing.T) {
 		})
 	}
 }
+
+// TestParseHomebrewRule tests homebrew rule parsing
+func TestParseHomebrewRule(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "basic homebrew install", input: "homebrew install wget", wantErr: false},
+		{name: "homebrew install multiple packages", input: "homebrew install wget curl git", wantErr: false},
+		{name: "homebrew install with OS filter", input: "homebrew install wget curl on: [mac, linux]", wantErr: false},
+		{name: "homebrew with id and after", input: "homebrew install wget id: wget-setup after: base on: [mac]", wantErr: false},
+		{name: "homebrew uninstall", input: "homebrew uninstall wget", wantErr: false},
+		{name: "homebrew with no packages", input: "homebrew on: [mac]", wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseHomebrewRule(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseHomebrewRule() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got == nil {
+				t.Error("parseHomebrewRule() got nil, want valid rule")
+			}
+		})
+	}
+}
+
+// TestParseOllamaRule tests ollama rule parsing
+func TestParseOllamaRule(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "basic ollama pull", input: "ollama pull llama3", wantErr: false},
+		{name: "ollama pull multiple models", input: "ollama pull llama3 mistral codellama", wantErr: false},
+		{name: "ollama with OS filter", input: "ollama pull llama3 on: [linux, mac]", wantErr: false},
+		{name: "ollama with id and after", input: "ollama pull llama3 id: llm-setup after: ollama-install on: [linux]", wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseOllamaRule(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseOllamaRule() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got == nil {
+				t.Error("parseOllamaRule() got nil, want valid rule")
+			}
+		})
+	}
+}
+
+// TestParseDownloadRule tests download rule parsing
+func TestParseDownloadRule(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "basic download", input: "download https://example.com/file.sh to: ~/bin/file.sh", wantErr: false},
+		{name: "download with permissions", input: "download https://example.com/file.sh to: ~/bin/file.sh perms: 0755 on: [linux]", wantErr: false},
+		{name: "download with id and after", input: "download https://example.com/tool.sh to: ~/bin/tool.sh id: tool after: base on: [linux]", wantErr: false},
+		{name: "download with overwrite", input: "download https://example.com/config.sh to: ~/.config.sh overwrite: true on: [linux]", wantErr: false},
+		{name: "download missing URL", input: "download to: ~/bin/file.sh", wantErr: true},
+		{name: "download missing destination", input: "download https://example.com/file.sh", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseDownloadRule(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseDownloadRule() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got == nil {
+				t.Error("parseDownloadRule() got nil, want valid rule")
+			}
+		})
+	}
+}
+
+// TestParseRunRule tests run rule parsing
+func TestParseRunRule(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "basic run command", input: "run echo hello", wantErr: false},
+		{name: "run with OS filter", input: "run make build on: [linux, mac]", wantErr: false},
+		{name: "run with id and after", input: "run make test id: test after: build on: [linux]", wantErr: false},
+		{name: "run with shell command", input: `run sh -c "echo hello"`, wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseRunRule(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseRunRule() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got == nil {
+				t.Error("parseRunRule() got nil, want valid rule")
+			}
+		})
+	}
+}
+
+// TestParseRunShRule tests run-sh rule parsing
+func TestParseRunShRule(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "basic run-sh", input: "run-sh https://example.com/install.sh", wantErr: false},
+		{name: "run-sh with OS filter", input: "run-sh https://example.com/install.sh on: [linux, mac]", wantErr: false},
+		{name: "run-sh with id and after", input: "run-sh https://example.com/setup.sh id: setup after: base on: [linux]", wantErr: false},
+		{name: "run-sh with args", input: "run-sh https://example.com/install.sh args: --user on: [linux]", wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseRunShRule(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseRunShRule() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got == nil {
+				t.Error("parseRunShRule() got nil, want valid rule")
+			}
+		})
+	}
+}
+
+// TestParseDotfilesRule tests dotfiles rule parsing
+func TestParseDotfilesRule(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "basic dotfiles", input: "dotfiles https://github.com/user/dotfiles", wantErr: false},
+		{name: "dotfiles with branch", input: "dotfiles https://github.com/user/dotfiles branch: main", wantErr: false},
+		{name: "dotfiles with target", input: "dotfiles https://github.com/user/dotfiles target: ~/.myfiles", wantErr: false},
+		{name: "dotfiles with OS filter", input: "dotfiles https://github.com/user/dotfiles on: [linux, mac]", wantErr: false},
+		{name: "dotfiles with id and after", input: "dotfiles https://github.com/user/dotfiles id: mydots after: base on: [linux]", wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseDotfilesRule(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseDotfilesRule() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got == nil {
+				t.Error("parseDotfilesRule() got nil, want valid rule")
+			}
+		})
+	}
+}
+
+// TestParseMiseRule tests mise rule parsing
+func TestParseMiseRule(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "basic mise install", input: "mise install node@20 python@3.11", wantErr: false},
+		{name: "mise with single package", input: "mise install ruby@3.2", wantErr: false},
+		{name: "mise with OS filter", input: "mise install node@20 python@3.11 on: [linux, mac]", wantErr: false},
+		{name: "mise with id and after", input: "mise install go@1.21 id: go-setup after: base on: [linux]", wantErr: false},
+		{name: "mise without packages", input: "mise on: [linux]", wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseMiseRule(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseMiseRule() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got == nil {
+				t.Error("parseMiseRule() got nil, want valid rule")
+			}
+		})
+	}
+}
+
+// TestParseSudoersRule tests sudoers rule parsing
+func TestParseSudoersRule(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantErr  bool
+		wantUser string
+	}{
+		{name: "basic sudoers", input: "sudoers user: alice", wantErr: false, wantUser: "alice"},
+		{name: "sudoers with OS filter", input: "sudoers user: bob on: [linux]", wantErr: false, wantUser: "bob"},
+		{name: "sudoers with id", input: "sudoers user: carol id: carol-sudo on: [linux]", wantErr: false, wantUser: "carol"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseSudoersRule(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseSudoersRule() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got != nil {
+				if got.SudoersUser != tt.wantUser {
+					t.Errorf("SudoersUser = %q, want %q", got.SudoersUser, tt.wantUser)
+				}
+			}
+		})
+	}
+}
+
+// TestParseShellRule tests shell rule parsing
+func TestParseShellRule(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "basic shell switch to zsh", input: "shell zsh", wantErr: false},
+		{name: "shell switch to bash", input: "shell bash on: [linux, mac]", wantErr: false},
+		{name: "shell with id and after", input: "shell fish id: fish-setup after: base on: [linux]", wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseShellRule(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseShellRule() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got == nil {
+				t.Error("parseShellRule() got nil, want valid rule")
+			}
+		})
+	}
+}
+
+// TestParseFileFunction tests the ParseFile function
+func TestParseFileFunction(t *testing.T) {
+	tmpFile := t.TempDir() + "/test.bp"
+	content := `install vim curl on: [linux]
+mkdir /tmp/test on: [mac]
+`
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+
+	rules, err := ParseFile(tmpFile)
+	if err != nil {
+		t.Errorf("ParseFile() error = %v", err)
+	}
+	if len(rules) != 2 {
+		t.Errorf("ParseFile() got %d rules, want 2", len(rules))
+	}
+}
+
+// TestParseWithComments tests parsing with comments and blank lines
+func TestParseWithComments(t *testing.T) {
+	content := `# This is a comment
+install vim
+
+# Another comment
+mkdir /tmp/test
+`
+	rules, err := Parse(content)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if len(rules) != 2 {
+		t.Errorf("Parse() got %d rules, want 2", len(rules))
+	}
+}
+
+// TestParseUnknownAction tests handling of unknown actions
+func TestParseUnknownAction(t *testing.T) {
+	_, err := Parse(`unknown-action param1 param2`)
+	if err == nil {
+		t.Error("Parse() expected error for unknown action")
+	}
+}
+
+// TestParseContentEdgeCases tests parsing edge cases
+func TestParseContentEdgeCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    int
+	}{
+		{name: "empty content", content: "", want: 0},
+		{name: "only comments", content: "# comment only", want: 0},
+		{name: "only blank lines", content: "\n\n\n", want: 0},
+		{name: "single valid rule", content: "install vim", want: 1},
+		{name: "multiple valid rules", content: "install vim\ninstall curl\nmkdir /tmp", want: 3},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rules, err := Parse(tt.content)
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+			if len(rules) != tt.want {
+				t.Errorf("Parse() got %d rules, want %d", len(rules), tt.want)
+			}
+		})
+	}
+}
