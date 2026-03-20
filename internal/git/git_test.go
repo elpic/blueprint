@@ -1,6 +1,7 @@
 package git
 
 import (
+	"os"
 	"testing"
 )
 
@@ -329,5 +330,179 @@ func TestParseGitURL_DefaultPath(t *testing.T) {
 				t.Errorf("Default path = %q, want %q", result.Path, "setup.bp")
 			}
 		})
+	}
+}
+
+func TestNormalizeGitURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "HTTPS URL with .git suffix",
+			input:    "https://github.com/user/repo.git",
+			expected: "https://github.com/user/repo",
+		},
+		{
+			name:     "HTTPS URL without .git suffix",
+			input:    "https://github.com/user/repo",
+			expected: "https://github.com/user/repo",
+		},
+		{
+			name:     "SSH URL converted to HTTPS",
+			input:    "git@github.com:user/repo.git",
+			expected: "https://github.com/user/repo",
+		},
+		{
+			name:     "SSH URL without .git",
+			input:    "git@github.com:user/repo",
+			expected: "https://github.com/user/repo",
+		},
+		{
+			name:     "SSH URL with uppercase",
+			input:    "git@github.com:User/Repo.git",
+			expected: "https://github.com/user/repo",
+		},
+		{
+			name:     "HTTPS URL with uppercase",
+			input:    "https://github.com/User/Repo.git",
+			expected: "https://github.com/user/repo",
+		},
+		{
+			name:     "Empty URL",
+			input:    "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeGitURL(tt.input)
+			if got != tt.expected {
+				t.Errorf("normalizeGitURL(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGenerateRepositoryID(t *testing.T) {
+	tests := []struct {
+		name        string
+		url         string
+		branch      string
+		expectedLen int
+	}{
+		{
+			name:        "HTTPS URL without branch",
+			url:         "https://github.com/user/repo.git",
+			branch:      "",
+			expectedLen: 16,
+		},
+		{
+			name:        "HTTPS URL with branch",
+			url:         "https://github.com/user/repo.git",
+			branch:      "main",
+			expectedLen: 16,
+		},
+		{
+			name:        "SSH URL",
+			url:         "git@github.com:user/repo.git",
+			branch:      "",
+			expectedLen: 16,
+		},
+		{
+			name:        "Different URLs produce different IDs",
+			url:         "https://github.com/other/repo.git",
+			branch:      "",
+			expectedLen: 16,
+		},
+		{
+			name:        "Same URL different branch produces different ID",
+			url:         "https://github.com/user/repo.git",
+			branch:      "feature",
+			expectedLen: 16,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := generateRepositoryID(tt.url, tt.branch)
+			if len(got) != tt.expectedLen {
+				t.Errorf("generateRepositoryID() length = %d, want %d", len(got), tt.expectedLen)
+			}
+		})
+	}
+
+	// Verify determinism: same input should produce same output
+	id1 := generateRepositoryID("https://github.com/user/repo.git", "main")
+	id2 := generateRepositoryID("https://github.com/user/repo.git", "main")
+	if id1 != id2 {
+		t.Errorf("generateRepositoryID not deterministic: got %q then %q", id1, id2)
+	}
+}
+
+func TestFindSetupFile(t *testing.T) {
+	// Create a temp directory with a setup file
+	tmpDir := t.TempDir()
+
+	// Test with default path
+	setupPath := tmpDir + "/setup.bp"
+	if err := os.WriteFile(setupPath, []byte("content"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Test finding existing file with default path
+	got, err := FindSetupFile(tmpDir, "setup.bp")
+	if err != nil {
+		t.Errorf("FindSetupFile() error = %v, want nil", err)
+	}
+	if got != setupPath {
+		t.Errorf("FindSetupFile() = %q, want %q", got, setupPath)
+	}
+
+	// Test with empty path (should use default)
+	got, err = FindSetupFile(tmpDir, "")
+	if err != nil {
+		t.Errorf("FindSetupFile() error = %v, want nil", err)
+	}
+	if got != setupPath {
+		t.Errorf("FindSetupFile() = %q, want %q", got, setupPath)
+	}
+
+	// Test non-existent file
+	_, err = FindSetupFile(tmpDir, "nonexistent.bp")
+	if err == nil {
+		t.Error("FindSetupFile() expected error for non-existent file")
+	}
+}
+
+func TestCleanupRepository(t *testing.T) {
+	// Test with empty path (should return nil)
+	err := CleanupRepository("")
+	if err != nil {
+		t.Errorf("CleanupRepository('') error = %v, want nil", err)
+	}
+
+	// Test with non-existent path (should return nil)
+	err = CleanupRepository("/nonexistent/path")
+	if err != nil {
+		t.Errorf("CleanupRepository('/nonexistent/path') error = %v, want nil", err)
+	}
+
+	// Test with actual directory
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(tmpDir+"/file.txt", []byte("content"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	err = CleanupRepository(tmpDir)
+	if err != nil {
+		t.Errorf("CleanupRepository() error = %v, want nil", err)
+	}
+
+	// Verify directory is removed
+	if _, statErr := os.Stat(tmpDir); statErr == nil {
+		t.Error("CleanupRepository() did not remove directory")
 	}
 }
