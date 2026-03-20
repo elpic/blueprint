@@ -152,6 +152,7 @@ type DotfilesStatus struct {
 	URL       string   `json:"url"`
 	Path      string   `json:"path"`
 	Branch    string   `json:"branch,omitempty"`
+	SHA       string   `json:"sha"`   // SHA of the cloned repository
 	Links     []string `json:"links"` // symlink targets created (e.g. ["/home/user/.zshrc"])
 	ClonedAt  string   `json:"cloned_at"`
 	Blueprint string   `json:"blueprint"`

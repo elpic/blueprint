@@ -301,9 +301,14 @@ func (h *DotfilesHandler) UpdateStatus(status *Status, records []ExecutionRecord
 		if commandExecuted {
 			// Collect all symlinks currently pointing into the clone
 			var links []string
+			var currentSHA string
 			homeDir, err := os.UserHomeDir()
 			if err == nil {
 				clonePath := h.expandedDotfilesPath()
+
+				// Get current SHA of the cloned repository
+				currentSHA = gitpkg.LocalSHA(clonePath)
+
 				collectManaged := func(linkPath string) {
 					info, lerr := os.Lstat(linkPath)
 					if lerr != nil || info.Mode()&os.ModeSymlink == 0 {
@@ -338,6 +343,7 @@ func (h *DotfilesHandler) UpdateStatus(status *Status, records []ExecutionRecord
 				URL:       h.Rule.DotfilesURL,
 				Path:      h.Rule.DotfilesPath,
 				Branch:    h.Rule.DotfilesBranch,
+				SHA:       currentSHA,
 				Links:     links,
 				ClonedAt:  time.Now().Format(time.RFC3339),
 				Blueprint: blueprint,
@@ -445,11 +451,20 @@ func (h *DotfilesHandler) FindUninstallRules(status *Status, currentRules []pars
 	return rules
 }
 
-// IsInstalled returns true if the dotfiles URL in this rule is already in status.
+// IsInstalled returns true if the dotfiles URL is already installed and up to date.
+// It checks both the URL and the SHA to detect changes in the dotfiles repository.
 func (h *DotfilesHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
 	normalizedBlueprint := normalizePath(blueprintFile)
 	for _, d := range status.Dotfiles {
 		if d.URL == h.Rule.DotfilesURL && normalizePath(d.Blueprint) == normalizedBlueprint && d.OS == osName {
+			// Check if SHA matches - if different, repo has changes that need to be applied
+			if d.SHA != "" {
+				currentSHA := gitpkg.LocalSHA(h.expandedDotfilesPath())
+				if currentSHA != "" && currentSHA != d.SHA {
+					// SHA changed - new files might have been added, need to re-process
+					return false
+				}
+			}
 			return true
 		}
 	}
