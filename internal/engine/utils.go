@@ -196,6 +196,16 @@ func isGitURL(input string) bool {
 	return gitpkg.IsGitURL(input)
 }
 
+// normalizeBlueprint normalizes a blueprint identifier for consistent storage
+// and comparison. Git URLs are normalized via NormalizeGitURL (SSH/HTTPS → canonical
+// lowercase HTTPS form). Local file paths are normalized via normalizePath.
+func normalizeBlueprint(input string) string {
+	if isGitURL(input) {
+		return gitpkg.NormalizeGitURL(input)
+	}
+	return normalizePath(input)
+}
+
 // resolveBlueprintFile resolves a blueprint file path or git URL to a local path.
 // If input is a git URL the repo is cloned to a temp directory and the setup file is located.
 // The caller must call cleanup() when done (safe to call even on error — it is a no-op then).

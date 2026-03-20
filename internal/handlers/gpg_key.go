@@ -222,7 +222,7 @@ func (h *GPGKeyHandler) GetCommand() string {
 
 // UpdateStatus updates the status after adding or removing a GPG key
 func (h *GPGKeyHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
-	blueprint = normalizePath(blueprint)
+	blueprint = normalizeBlueprint(blueprint)
 
 	if h.Rule.Action == "gpg-key" {
 		// Record if the keyring file is present on disk (handles both fresh install and skip)
@@ -315,7 +315,7 @@ func (h *GPGKeyHandler) GetState(isUninstall bool) map[string]string {
 
 // FindUninstallRules compares GPG key status against current rules and returns uninstall rules
 func (h *GPGKeyHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	currentGPGKeys := make(map[string]bool)
 	for _, rule := range currentRules {
@@ -327,7 +327,7 @@ func (h *GPGKeyHandler) FindUninstallRules(status *Status, currentRules []parser
 	var rules []parser.Rule
 	if status.GPGKeys != nil {
 		for _, gpg := range status.GPGKeys {
-			normalizedStatusBlueprint := normalizePath(gpg.Blueprint)
+			normalizedStatusBlueprint := normalizeBlueprint(gpg.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && gpg.OS == osName && !currentGPGKeys[gpg.Keyring] {
 				rules = append(rules, parser.Rule{
 					Action:     "uninstall",
@@ -343,9 +343,9 @@ func (h *GPGKeyHandler) FindUninstallRules(status *Status, currentRules []parser
 
 // IsInstalled returns true if the GPG keyring in this rule is already in status.
 func (h *GPGKeyHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 	for _, gpg := range status.GPGKeys {
-		if gpg.Keyring == h.Rule.GPGKeyring && normalizePath(gpg.Blueprint) == normalizedBlueprint && gpg.OS == osName {
+		if gpg.Keyring == h.Rule.GPGKeyring && normalizeBlueprint(gpg.Blueprint) == normalizedBlueprint && gpg.OS == osName {
 			return true
 		}
 	}

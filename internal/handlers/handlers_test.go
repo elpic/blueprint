@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
 )
 
@@ -1376,5 +1377,134 @@ func TestStatusProviderInterface(t *testing.T) {
 				t.Errorf("FindUninstallRules(empty) = %d rules, want %d", len(rules), tt.expectedRuleCount)
 			}
 		})
+	}
+}
+
+// TestNormalizeBlueprintHandlesGitURLs tests that normalizeBlueprint correctly
+// normalizes git URLs using NormalizeGitURL instead of filepath-based normalizePath.
+func TestNormalizeBlueprintHandlesGitURLs(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "SSH git URL normalized to HTTPS",
+			input:    "git@github.com:user/repo.git",
+			expected: gitpkg.NormalizeGitURL("git@github.com:user/repo.git"),
+		},
+		{
+			name:     "HTTPS git URL normalized",
+			input:    "https://github.com/user/repo.git",
+			expected: gitpkg.NormalizeGitURL("https://github.com/user/repo.git"),
+		},
+		{
+			name:     "SSH and HTTPS normalize to the same value",
+			input:    "git@github.com:user/repo.git",
+			expected: gitpkg.NormalizeGitURL("https://github.com/user/repo.git"),
+		},
+		{
+			name:     "local path still works",
+			input:    "/tmp/setup.bp",
+			expected: "/tmp/setup.bp",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeBlueprint(tt.input)
+			if got != tt.expected {
+				t.Errorf("normalizeBlueprint(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestIsInstalledSSHvsHTTPS tests that IsInstalled matches resources installed via
+// SSH git URL when queried with the HTTPS URL for the same repo (and vice versa).
+func TestIsInstalledSSHvsHTTPS(t *testing.T) {
+	sshURL := "git@github.com:user/dotfiles.git"
+	httpsURL := "https://github.com/user/dotfiles.git"
+
+	// Simulate a package installed via SSH URL blueprint
+	status := &Status{
+		Packages: []PackageStatus{
+			{Name: "vim", Blueprint: sshURL, OS: "linux"},
+		},
+	}
+
+	handler := NewInstallHandlerLegacy(parser.Rule{
+		Action:   "install",
+		Packages: []parser.Package{{Name: "vim", Version: "latest"}},
+	}, "")
+
+	// Query with HTTPS URL — should still find it
+	installed := handler.IsInstalled(status, httpsURL, "linux")
+	if !installed {
+		t.Error("IsInstalled should return true when status has SSH URL and query uses HTTPS URL")
+	}
+
+	// Query with SSH URL — should still find it
+	installed = handler.IsInstalled(status, sshURL, "linux")
+	if !installed {
+		t.Error("IsInstalled should return true when status and query both use SSH URL")
+	}
+
+	// Now test reverse: installed via HTTPS, query with SSH
+	status2 := &Status{
+		Packages: []PackageStatus{
+			{Name: "vim", Blueprint: httpsURL, OS: "linux"},
+		},
+	}
+	installed = handler.IsInstalled(status2, sshURL, "linux")
+	if !installed {
+		t.Error("IsInstalled should return true when status has HTTPS URL and query uses SSH URL")
+	}
+}
+
+// TestFindUninstallRulesSSHvsHTTPS tests that FindUninstallRules correctly matches
+// resources across SSH and HTTPS git URL forms for the same repository.
+func TestFindUninstallRulesSSHvsHTTPS(t *testing.T) {
+	sshURL := "git@github.com:user/dotfiles.git"
+	httpsURL := "https://github.com/user/dotfiles.git"
+
+	// Status has a package installed via SSH URL
+	status := &Status{
+		Packages: []PackageStatus{
+			{Name: "vim", Blueprint: sshURL, OS: "linux"},
+		},
+	}
+
+	// Current rules still have vim — should NOT generate uninstall rules
+	currentRules := []parser.Rule{
+		{Action: "install", Packages: []parser.Package{{Name: "vim", Version: "latest"}}},
+	}
+
+	handler := NewInstallHandlerLegacy(parser.Rule{}, "")
+	// Query with HTTPS — should match the SSH-stored status and NOT uninstall
+	rules := handler.FindUninstallRules(status, currentRules, httpsURL, "linux")
+	if len(rules) != 0 {
+		t.Errorf("FindUninstallRules should return 0 rules when SSH/HTTPS refer to same repo, got %d", len(rules))
+	}
+}
+
+// TestRemovePackageStatusWithGitURLs tests that removePackageStatus correctly
+// matches blueprints stored as SSH URLs when queried with HTTPS URLs.
+func TestRemovePackageStatusWithGitURLs(t *testing.T) {
+	sshURL := "git@github.com:user/dotfiles.git"
+	httpsURL := "https://github.com/user/dotfiles.git"
+
+	packages := []PackageStatus{
+		{Name: "vim", Blueprint: sshURL, OS: "linux"},
+		{Name: "curl", Blueprint: "/local/setup.bp", OS: "linux"},
+	}
+
+	// Remove vim using HTTPS URL — should match the SSH-stored blueprint
+	result := removePackageStatus(packages, "vim", httpsURL, "linux")
+	if len(result) != 1 {
+		t.Errorf("removePackageStatus with HTTPS URL should remove SSH-stored package, got %d remaining (want 1)", len(result))
+	}
+	if len(result) == 1 && result[0].Name != "curl" {
+		t.Errorf("remaining package should be curl, got %s", result[0].Name)
 	}
 }

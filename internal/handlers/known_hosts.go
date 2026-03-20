@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"github.com/elpic/blueprint/internal"
 	"fmt"
+	"github.com/elpic/blueprint/internal"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -170,7 +170,7 @@ func (h *KnownHostsHandler) GetCommand() string {
 // UpdateStatus updates the status after adding or removing a known host
 func (h *KnownHostsHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
 	// Normalize blueprint path for consistent storage and comparison
-	blueprint = normalizePath(blueprint)
+	blueprint = normalizeBlueprint(blueprint)
 
 	if h.Rule.Action == "known_hosts" {
 		// Check if this rule's command was executed successfully
@@ -313,7 +313,7 @@ func (h *KnownHostsHandler) GetState(isUninstall bool) map[string]string {
 
 // FindUninstallRules compares known hosts status against current rules and returns uninstall rules
 func (h *KnownHostsHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	// Build set of current known hosts from known_hosts rules
 	currentKnownHosts := make(map[string]bool)
@@ -327,7 +327,7 @@ func (h *KnownHostsHandler) FindUninstallRules(status *Status, currentRules []pa
 	var rules []parser.Rule
 	if status.KnownHosts != nil {
 		for _, host := range status.KnownHosts {
-			normalizedStatusBlueprint := normalizePath(host.Blueprint)
+			normalizedStatusBlueprint := normalizeBlueprint(host.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && host.OS == osName && !currentKnownHosts[host.Host] {
 				rules = append(rules, parser.Rule{
 					Action:     "uninstall",
@@ -343,9 +343,9 @@ func (h *KnownHostsHandler) FindUninstallRules(status *Status, currentRules []pa
 
 // IsInstalled returns true if the known host in this rule is already in status.
 func (h *KnownHostsHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 	for _, host := range status.KnownHosts {
-		if host.Host == h.Rule.KnownHosts && normalizePath(host.Blueprint) == normalizedBlueprint && host.OS == osName {
+		if host.Host == h.Rule.KnownHosts && normalizeBlueprint(host.Blueprint) == normalizedBlueprint && host.OS == osName {
 			return true
 		}
 	}

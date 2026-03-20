@@ -72,7 +72,7 @@ func (h *OllamaHandler) GetCommand() string {
 
 // UpdateStatus updates the status after installing or uninstalling models
 func (h *OllamaHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
-	blueprint = normalizePath(blueprint)
+	blueprint = normalizeBlueprint(blueprint)
 
 	switch h.Rule.Action {
 	case "ollama":
@@ -234,7 +234,7 @@ func (h *OllamaHandler) GetState(isUninstall bool) map[string]string {
 
 // FindUninstallRules compares ollama status against current rules and returns uninstall rules
 func (h *OllamaHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	// Build set of current model names from ollama rules
 	currentModels := make(map[string]bool)
@@ -250,7 +250,7 @@ func (h *OllamaHandler) FindUninstallRules(status *Status, currentRules []parser
 	var modelsToUninstall []string
 	if status.Ollamas != nil {
 		for _, o := range status.Ollamas {
-			normalizedStatusBlueprint := normalizePath(o.Blueprint)
+			normalizedStatusBlueprint := normalizeBlueprint(o.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && o.OS == osName && !currentModels[o.Model] {
 				modelsToUninstall = append(modelsToUninstall, o.Model)
 			}
@@ -270,11 +270,11 @@ func (h *OllamaHandler) FindUninstallRules(status *Status, currentRules []parser
 
 // IsInstalled returns true if all ollama models in this rule are already in status.
 func (h *OllamaHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 	for _, model := range h.Rule.OllamaModels {
 		found := false
 		for _, s := range status.Ollamas {
-			if s.Model == model && normalizePath(s.Blueprint) == normalizedBlueprint && s.OS == osName {
+			if s.Model == model && normalizeBlueprint(s.Blueprint) == normalizedBlueprint && s.OS == osName {
 				found = true
 				break
 			}
@@ -289,9 +289,9 @@ func (h *OllamaHandler) IsInstalled(status *Status, blueprintFile, osName string
 // removeOllamaStatus removes an ollama model from the status ollamas list
 func removeOllamaStatus(ollamas []OllamaStatus, model string, blueprint string, osName string) []OllamaStatus {
 	var result []OllamaStatus
-	normalizedBlueprint := normalizePath(blueprint)
+	normalizedBlueprint := normalizeBlueprint(blueprint)
 	for _, o := range ollamas {
-		normalizedStoredBlueprint := normalizePath(o.Blueprint)
+		normalizedStoredBlueprint := normalizeBlueprint(o.Blueprint)
 		if o.Model != model || normalizedStoredBlueprint != normalizedBlueprint || o.OS != osName {
 			result = append(result, o)
 		}

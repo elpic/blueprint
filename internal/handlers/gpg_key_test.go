@@ -746,7 +746,6 @@ func TestGPGKeyHandlerNeedsSudo(t *testing.T) {
 	}
 }
 
-
 func TestGPGKeyHandlerGetDependencyKey(t *testing.T) {
 	tests := []struct {
 		name     string

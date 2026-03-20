@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/platform"
 )
@@ -502,6 +503,16 @@ func normalizePath(filePath string) string {
 	return filepath.Clean(absPath)
 }
 
+// normalizeBlueprint normalizes a blueprint identifier for consistent storage
+// and comparison. Git URLs are normalized via NormalizeGitURL (SSH/HTTPS → canonical
+// lowercase HTTPS form). Local file paths are normalized via normalizePath.
+func normalizeBlueprint(input string) string {
+	if gitpkg.IsGitURL(input) {
+		return gitpkg.NormalizeGitURL(input)
+	}
+	return normalizePath(input)
+}
+
 func commandSuccessfullyExecuted(cmd string, records []ExecutionRecord) (*ExecutionRecord, bool) {
 	var resultRecord *ExecutionRecord
 	commandExecuted := false
@@ -530,9 +541,9 @@ func extractSHAFromOutput(output string) string {
 // removePackageStatus removes a package from the status packages list
 func removePackageStatus(packages []PackageStatus, name string, blueprint string, osName string) []PackageStatus {
 	var result []PackageStatus
-	normalizedBlueprint := normalizePath(blueprint)
+	normalizedBlueprint := normalizeBlueprint(blueprint)
 	for _, pkg := range packages {
-		normalizedStoredBlueprint := normalizePath(pkg.Blueprint)
+		normalizedStoredBlueprint := normalizeBlueprint(pkg.Blueprint)
 		if pkg.Name != name || normalizedStoredBlueprint != normalizedBlueprint || pkg.OS != osName {
 			result = append(result, pkg)
 		}
@@ -543,9 +554,9 @@ func removePackageStatus(packages []PackageStatus, name string, blueprint string
 // removeCloneStatus removes a clone from the status clones list
 func removeCloneStatus(clones []CloneStatus, path string, blueprint string, osName string) []CloneStatus {
 	var result []CloneStatus
-	normalizedBlueprint := normalizePath(blueprint)
+	normalizedBlueprint := normalizeBlueprint(blueprint)
 	for _, clone := range clones {
-		normalizedStoredBlueprint := normalizePath(clone.Blueprint)
+		normalizedStoredBlueprint := normalizeBlueprint(clone.Blueprint)
 		if clone.Path != path || normalizedStoredBlueprint != normalizedBlueprint || clone.OS != osName {
 			result = append(result, clone)
 		}
@@ -556,9 +567,9 @@ func removeCloneStatus(clones []CloneStatus, path string, blueprint string, osNa
 // removeDecryptStatus removes a decrypt from the status decrypts list
 func removeDecryptStatus(decrypts []DecryptStatus, destPath string, blueprint string, osName string) []DecryptStatus {
 	var result []DecryptStatus
-	normalizedBlueprint := normalizePath(blueprint)
+	normalizedBlueprint := normalizeBlueprint(blueprint)
 	for _, decrypt := range decrypts {
-		normalizedStoredBlueprint := normalizePath(decrypt.Blueprint)
+		normalizedStoredBlueprint := normalizeBlueprint(decrypt.Blueprint)
 		if decrypt.DestPath != destPath || normalizedStoredBlueprint != normalizedBlueprint || decrypt.OS != osName {
 			result = append(result, decrypt)
 		}
@@ -569,9 +580,9 @@ func removeDecryptStatus(decrypts []DecryptStatus, destPath string, blueprint st
 // removeKnownHostsStatus removes a known host from the status known_hosts list
 func removeKnownHostsStatus(knownHosts []KnownHostsStatus, host string, blueprint string, osName string) []KnownHostsStatus {
 	var result []KnownHostsStatus
-	normalizedBlueprint := normalizePath(blueprint)
+	normalizedBlueprint := normalizeBlueprint(blueprint)
 	for _, kh := range knownHosts {
-		normalizedStoredBlueprint := normalizePath(kh.Blueprint)
+		normalizedStoredBlueprint := normalizeBlueprint(kh.Blueprint)
 		if kh.Host != host || normalizedStoredBlueprint != normalizedBlueprint || kh.OS != osName {
 			result = append(result, kh)
 		}
@@ -582,9 +593,9 @@ func removeKnownHostsStatus(knownHosts []KnownHostsStatus, host string, blueprin
 // removeGPGKeyStatus removes a GPG key from the status gpg_keys list
 func removeGPGKeyStatus(gpgKeys []GPGKeyStatus, keyring string, blueprint string, osName string) []GPGKeyStatus {
 	var result []GPGKeyStatus
-	normalizedBlueprint := normalizePath(blueprint)
+	normalizedBlueprint := normalizeBlueprint(blueprint)
 	for _, gk := range gpgKeys {
-		normalizedStoredBlueprint := normalizePath(gk.Blueprint)
+		normalizedStoredBlueprint := normalizeBlueprint(gk.Blueprint)
 		if gk.Keyring != keyring || normalizedStoredBlueprint != normalizedBlueprint || gk.OS != osName {
 			result = append(result, gk)
 		}
@@ -595,9 +606,9 @@ func removeGPGKeyStatus(gpgKeys []GPGKeyStatus, keyring string, blueprint string
 // removeRunStatus removes a run entry from the status runs list by command key
 func removeRunStatus(runs []RunStatus, command string, blueprint string, osName string) []RunStatus {
 	var result []RunStatus
-	normalizedBlueprint := normalizePath(blueprint)
+	normalizedBlueprint := normalizeBlueprint(blueprint)
 	for _, r := range runs {
-		normalizedStoredBlueprint := normalizePath(r.Blueprint)
+		normalizedStoredBlueprint := normalizeBlueprint(r.Blueprint)
 		if r.Command != command || normalizedStoredBlueprint != normalizedBlueprint || r.OS != osName {
 			result = append(result, r)
 		}
@@ -608,9 +619,9 @@ func removeRunStatus(runs []RunStatus, command string, blueprint string, osName 
 // removeDotfilesStatus removes a dotfiles entry from the status dotfiles list
 func removeDotfilesStatus(dotfiles []DotfilesStatus, url, blueprint, osName string) []DotfilesStatus {
 	var result []DotfilesStatus
-	normalizedBlueprint := normalizePath(blueprint)
+	normalizedBlueprint := normalizeBlueprint(blueprint)
 	for _, d := range dotfiles {
-		normalizedStoredBlueprint := normalizePath(d.Blueprint)
+		normalizedStoredBlueprint := normalizeBlueprint(d.Blueprint)
 		if d.URL != url || normalizedStoredBlueprint != normalizedBlueprint || d.OS != osName {
 			result = append(result, d)
 		}
@@ -621,9 +632,9 @@ func removeDotfilesStatus(dotfiles []DotfilesStatus, url, blueprint, osName stri
 // removeDownloadStatus removes a download from the status downloads list
 func removeDownloadStatus(downloads []DownloadStatus, path string, blueprint string, osName string) []DownloadStatus {
 	var result []DownloadStatus
-	normalizedBlueprint := normalizePath(blueprint)
+	normalizedBlueprint := normalizeBlueprint(blueprint)
 	for _, dl := range downloads {
-		normalizedStoredBlueprint := normalizePath(dl.Blueprint)
+		normalizedStoredBlueprint := normalizeBlueprint(dl.Blueprint)
 		if dl.Path != path || normalizedStoredBlueprint != normalizedBlueprint || dl.OS != osName {
 			result = append(result, dl)
 		}

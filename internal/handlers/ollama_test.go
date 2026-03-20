@@ -104,7 +104,7 @@ func TestOllamaHandlerUpdateStatus(t *testing.T) {
 			OllamaModels: []string{"llama3"},
 		}, "")
 
-		blueprint := normalizePath("/tmp/test.bp")
+		blueprint := normalizeBlueprint("/tmp/test.bp")
 		status := &Status{
 			Ollamas: []OllamaStatus{
 				{Model: "llama3", Blueprint: blueprint, OS: "mac"},
@@ -135,7 +135,7 @@ func TestOllamaHandlerUpdateStatus(t *testing.T) {
 			OllamaModels: []string{"llama3"},
 		}, "")
 
-		blueprint := normalizePath("/tmp/test.bp")
+		blueprint := normalizeBlueprint("/tmp/test.bp")
 		status := &Status{
 			Ollamas: []OllamaStatus{
 				{Model: "llama3", Blueprint: blueprint, OS: "mac", InstalledAt: "old-time"},
@@ -178,8 +178,8 @@ func TestOllamaHandlerGetDependencyKey(t *testing.T) {
 			expected: "llama3",
 		},
 		{
-			name: "returns ollama when no ID and no models",
-			rule: parser.Rule{},
+			name:     "returns ollama when no ID and no models",
+			rule:     parser.Rule{},
 			expected: "ollama",
 		},
 	}
@@ -221,7 +221,7 @@ func TestOllamaHandlerDisplayInfo(t *testing.T) {
 }
 
 func TestOllamaHandlerFindUninstallRules(t *testing.T) {
-	blueprint := normalizePath("/tmp/test.bp")
+	blueprint := normalizeBlueprint("/tmp/test.bp")
 
 	t.Run("finds models to uninstall", func(t *testing.T) {
 		handler := NewOllamaHandler(parser.Rule{}, "")
@@ -266,7 +266,7 @@ func TestOllamaHandlerFindUninstallRules(t *testing.T) {
 
 	t.Run("ignores models from different blueprint", func(t *testing.T) {
 		handler := NewOllamaHandler(parser.Rule{}, "")
-		otherBlueprint := normalizePath("/tmp/other.bp")
+		otherBlueprint := normalizeBlueprint("/tmp/other.bp")
 		status := &Status{
 			Ollamas: []OllamaStatus{
 				{Model: "llama3", Blueprint: blueprint, OS: "mac"},

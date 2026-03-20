@@ -293,7 +293,7 @@ func (h *DotfilesHandler) GetCommand() string {
 
 // UpdateStatus updates the status after dotfiles are installed or removed
 func (h *DotfilesHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
-	blueprint = normalizePath(blueprint)
+	blueprint = normalizeBlueprint(blueprint)
 
 	if h.Rule.Action == "dotfiles" {
 		cloneCmd := h.GetCommand()
@@ -446,7 +446,7 @@ func (h *DotfilesHandler) DisplayStatusFromStatus(status *Status) {
 
 // FindUninstallRules compares dotfiles status against current rules and returns uninstall rules
 func (h *DotfilesHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	// Build set of current dotfiles URLs (using normalized URLs for comparison)
 	currentURLs := make(map[string]bool)
@@ -458,7 +458,7 @@ func (h *DotfilesHandler) FindUninstallRules(status *Status, currentRules []pars
 
 	var rules []parser.Rule
 	for _, d := range status.Dotfiles {
-		normalizedStatusBlueprint := normalizePath(d.Blueprint)
+		normalizedStatusBlueprint := normalizeBlueprint(d.Blueprint)
 		normalizedStatusURL := gitpkg.NormalizeGitURL(d.URL)
 		if normalizedStatusBlueprint == normalizedBlueprint && d.OS == osName && !currentURLs[normalizedStatusURL] {
 			rules = append(rules, parser.Rule{
@@ -477,11 +477,11 @@ func (h *DotfilesHandler) FindUninstallRules(status *Status, currentRules []pars
 // IsInstalled returns true if the dotfiles URL is already installed and up to date.
 // It checks the URL, SHA, and verifies all expected symlinks are present and correct.
 func (h *DotfilesHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 	normalizedRuleURL := gitpkg.NormalizeGitURL(h.Rule.DotfilesURL)
 	for _, d := range status.Dotfiles {
 		normalizedStatusURL := gitpkg.NormalizeGitURL(d.URL)
-		if normalizedStatusURL == normalizedRuleURL && normalizePath(d.Blueprint) == normalizedBlueprint && d.OS == osName {
+		if normalizedStatusURL == normalizedRuleURL && normalizeBlueprint(d.Blueprint) == normalizedBlueprint && d.OS == osName {
 			// Check if SHA matches - if different, repo has changes that need to be applied
 			if d.SHA != "" {
 				currentSHA := gitpkg.LocalSHA(h.expandedDotfilesPath())
