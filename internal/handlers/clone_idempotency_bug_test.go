@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
 )
 
@@ -16,9 +17,11 @@ func TestCloneIdempotencyBug(t *testing.T) {
 		// Store original functions
 		origLocal := localSHA
 		origRemote := remoteHeadSHA
+		origCleanSHA := gitpkg.GetCleanRepositorySHA
 		defer func() {
 			localSHA = origLocal
 			remoteHeadSHA = origRemote
+			gitpkg.GetCleanRepositorySHA = origCleanSHA
 		}()
 
 		rule := parser.Rule{
@@ -35,6 +38,7 @@ func TestCloneIdempotencyBug(t *testing.T) {
 		testSHA := "abc123456789"
 		localSHA = func(string) string { return testSHA }
 		remoteHeadSHA = func(string, string) string { return testSHA }
+		gitpkg.GetCleanRepositorySHA = func(url, branch string) string { return "" } // No clean storage, fall back to localSHA
 
 		status := &Status{
 			Clones: []CloneStatus{
@@ -168,9 +172,11 @@ func TestCloneIdempotencyBug(t *testing.T) {
 	t.Run("Path normalization issues", func(t *testing.T) {
 		origLocal := localSHA
 		origRemote := remoteHeadSHA
+		origCleanSHA := gitpkg.GetCleanRepositorySHA
 		defer func() {
 			localSHA = origLocal
 			remoteHeadSHA = origRemote
+			gitpkg.GetCleanRepositorySHA = origCleanSHA
 		}()
 
 		rule := parser.Rule{
@@ -185,6 +191,7 @@ func TestCloneIdempotencyBug(t *testing.T) {
 		testSHA := "abc123456789"
 		localSHA = func(string) string { return testSHA }
 		remoteHeadSHA = func(string, string) string { return testSHA }
+		gitpkg.GetCleanRepositorySHA = func(url, branch string) string { return "" } // No clean storage, fall back to localSHA
 
 		status := &Status{
 			Clones: []CloneStatus{
@@ -223,9 +230,11 @@ func TestCloneIdempotencyBug(t *testing.T) {
 	t.Run("OS name case sensitivity", func(t *testing.T) {
 		origLocal := localSHA
 		origRemote := remoteHeadSHA
+		origCleanSHA := gitpkg.GetCleanRepositorySHA
 		defer func() {
 			localSHA = origLocal
 			remoteHeadSHA = origRemote
+			gitpkg.GetCleanRepositorySHA = origCleanSHA
 		}()
 
 		rule := parser.Rule{
@@ -240,6 +249,7 @@ func TestCloneIdempotencyBug(t *testing.T) {
 		testSHA := "abc123456789"
 		localSHA = func(string) string { return testSHA }
 		remoteHeadSHA = func(string, string) string { return testSHA }
+		gitpkg.GetCleanRepositorySHA = func(url, branch string) string { return "" } // No clean storage, fall back to localSHA
 
 		status := &Status{
 			Clones: []CloneStatus{
