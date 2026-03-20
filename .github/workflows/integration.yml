@@ -186,7 +186,18 @@ jobs:
           ${low_coverage}"
           fi
           
-          gh pr comment ${{ github.event.pull_request.number }} --body "${COMMENT}"
+          # Find existing coverage comment and update it, or create new one
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          COMMENT_ID=$(gh api repos/${{ github.repository }}/issues/${PR_NUMBER}/comments \
+            --jq '.[] | select(.body | startswith("## Coverage Report")) | .id' 2>/dev/null | head -1)
+          
+          if [ -n "$COMMENT_ID" ]; then
+            gh api repos/${{ github.repository }}/issues/comments/${COMMENT_ID} \
+              --method PATCH \
+              --field body="${COMMENT}"
+          else
+            gh pr comment ${PR_NUMBER} --body "${COMMENT}"
+          fi
 
   lint:
     name: Run Linter
