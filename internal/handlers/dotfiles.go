@@ -301,9 +301,14 @@ func (h *DotfilesHandler) UpdateStatus(status *Status, records []ExecutionRecord
 		if commandExecuted {
 			// Collect all symlinks currently pointing into the clone
 			var links []string
+			var currentSHA string
 			homeDir, err := os.UserHomeDir()
 			if err == nil {
 				clonePath := h.expandedDotfilesPath()
+
+				// Get current SHA of the cloned repository
+				currentSHA = gitpkg.LocalSHA(clonePath)
+
 				collectManaged := func(linkPath string) {
 					info, lerr := os.Lstat(linkPath)
 					if lerr != nil || info.Mode()&os.ModeSymlink == 0 {
@@ -338,6 +343,7 @@ func (h *DotfilesHandler) UpdateStatus(status *Status, records []ExecutionRecord
 				URL:       h.Rule.DotfilesURL,
 				Path:      h.Rule.DotfilesPath,
 				Branch:    h.Rule.DotfilesBranch,
+				SHA:       currentSHA,
 				Links:     links,
 				ClonedAt:  time.Now().Format(time.RFC3339),
 				Blueprint: blueprint,
@@ -445,11 +451,57 @@ func (h *DotfilesHandler) FindUninstallRules(status *Status, currentRules []pars
 	return rules
 }
 
-// IsInstalled returns true if the dotfiles URL in this rule is already in status.
+// IsInstalled returns true if the dotfiles URL is already installed and up to date.
+// It checks the URL, SHA, and verifies all expected symlinks are present and correct.
 func (h *DotfilesHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
 	normalizedBlueprint := normalizePath(blueprintFile)
 	for _, d := range status.Dotfiles {
 		if d.URL == h.Rule.DotfilesURL && normalizePath(d.Blueprint) == normalizedBlueprint && d.OS == osName {
+			// Check if SHA matches - if different, repo has changes that need to be applied
+			if d.SHA != "" {
+				currentSHA := gitpkg.LocalSHA(h.expandedDotfilesPath())
+				if currentSHA != "" && currentSHA != d.SHA {
+					// SHA changed - new files might have been added, need to re-process
+					return false
+				}
+			}
+
+			// Check if all expected links are present and correct
+			if len(d.Links) > 0 {
+				clonePath := h.expandedDotfilesPath()
+
+				for _, linkPath := range d.Links {
+					// Check if the link exists
+					info, err := os.Lstat(linkPath)
+					if err != nil {
+						// Link doesn't exist
+						return false
+					}
+
+					// Check if it's a symlink
+					if info.Mode()&os.ModeSymlink == 0 {
+						// Not a symlink anymore
+						return false
+					}
+
+					// Check if it points to the correct location
+					target, err := os.Readlink(linkPath)
+					if err != nil {
+						return false
+					}
+
+					// Resolve both paths for comparison
+					resolvedTarget, _ := filepath.EvalSymlinks(target)
+					resolvedClonePath, _ := filepath.EvalSymlinks(clonePath)
+
+					// Check if the symlink target is within the clone directory
+					if !strings.HasPrefix(resolvedTarget, resolvedClonePath+string(filepath.Separator)) && resolvedTarget != resolvedClonePath {
+						// Symlink points to wrong location
+						return false
+					}
+				}
+			}
+
 			return true
 		}
 	}

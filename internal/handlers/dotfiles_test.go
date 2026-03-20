@@ -89,3 +89,177 @@ func TestDotfilesHandlerGetDisplayDetails(t *testing.T) {
 		t.Errorf("GetDisplayDetails() = %q, expected to contain path info", got)
 	}
 }
+
+func TestDotfilesHandlerIsInstalled(t *testing.T) {
+	tests := []struct {
+		name     string
+		rule     parser.Rule
+		status   Status
+		expected bool
+	}{
+		{
+			name: "not installed - no status entry",
+			rule: parser.Rule{
+				Action:       "dotfiles",
+				DotfilesURL:  "https://github.com/user/dotfiles",
+				DotfilesPath: "~/.dotfiles",
+			},
+			status:   Status{},
+			expected: false,
+		},
+		{
+			name: "not installed - different URL",
+			rule: parser.Rule{
+				Action:       "dotfiles",
+				DotfilesURL:  "https://github.com/user/dotfiles",
+				DotfilesPath: "~/.dotfiles",
+			},
+			status: Status{
+				Dotfiles: []DotfilesStatus{
+					{
+						URL:       "https://github.com/other/dotfiles",
+						Path:      "~/.dotfiles",
+						Blueprint: "/tmp/test.bp",
+						OS:        "linux",
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "not installed - different blueprint",
+			rule: parser.Rule{
+				Action:       "dotfiles",
+				DotfilesURL:  "https://github.com/user/dotfiles",
+				DotfilesPath: "~/.dotfiles",
+			},
+			status: Status{
+				Dotfiles: []DotfilesStatus{
+					{
+						URL:       "https://github.com/user/dotfiles",
+						Path:      "~/.dotfiles",
+						Blueprint: "/tmp/other.bp",
+						OS:        "linux",
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "not installed - different OS",
+			rule: parser.Rule{
+				Action:       "dotfiles",
+				DotfilesURL:  "https://github.com/user/dotfiles",
+				DotfilesPath: "~/.dotfiles",
+			},
+			status: Status{
+				Dotfiles: []DotfilesStatus{
+					{
+						URL:       "https://github.com/user/dotfiles",
+						Path:      "~/.dotfiles",
+						Blueprint: "/tmp/test.bp",
+						OS:        "mac",
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "installed - exact match without SHA",
+			rule: parser.Rule{
+				Action:       "dotfiles",
+				DotfilesURL:  "https://github.com/user/dotfiles",
+				DotfilesPath: "~/.dotfiles",
+			},
+			status: Status{
+				Dotfiles: []DotfilesStatus{
+					{
+						URL:       "https://github.com/user/dotfiles",
+						Path:      "~/.dotfiles",
+						Blueprint: "/tmp/test.bp",
+						OS:        "linux",
+						SHA:       "", // Empty SHA - will return true
+					},
+				},
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewDotfilesHandler(tt.rule, "/tmp")
+			got := h.IsInstalled(&tt.status, "/tmp/test.bp", "linux")
+			if got != tt.expected {
+				t.Errorf("IsInstalled() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestShouldSkipEntry(t *testing.T) {
+	tests := []struct {
+		name       string
+		entryName  string
+		userSkip   []string
+		shouldSkip bool
+	}{
+		{
+			name:       "git directory",
+			entryName:  ".git",
+			userSkip:   nil,
+			shouldSkip: true,
+		},
+		{
+			name:       "github directory",
+			entryName:  ".github",
+			userSkip:   nil,
+			shouldSkip: true,
+		},
+		{
+			name:       "readme file case insensitive",
+			entryName:  "README.md",
+			userSkip:   nil,
+			shouldSkip: true,
+		},
+		{
+			name:       "readme lowercase",
+			entryName:  "readme.txt",
+			userSkip:   nil,
+			shouldSkip: true,
+		},
+		{
+			name:       "normal file",
+			entryName:  ".bashrc",
+			userSkip:   nil,
+			shouldSkip: false,
+		},
+		{
+			name:       "normal directory",
+			entryName:  "nvim",
+			userSkip:   nil,
+			shouldSkip: false,
+		},
+		{
+			name:       "user skip exact match",
+			entryName:  "skipme",
+			userSkip:   []string{"skipme"},
+			shouldSkip: true,
+		},
+		{
+			name:       "user skip partial match",
+			entryName:  "something",
+			userSkip:   []string{"skipme"},
+			shouldSkip: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldSkipEntry(tt.entryName, tt.userSkip)
+			if got != tt.shouldSkip {
+				t.Errorf("shouldSkipEntry(%q, %v) = %v, want %v", tt.entryName, tt.userSkip, got, tt.shouldSkip)
+			}
+		})
+	}
+}
