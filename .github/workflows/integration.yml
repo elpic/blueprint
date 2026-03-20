@@ -163,7 +163,7 @@ jobs:
               }
             } END {
               for (file in min) {
-                printf "| %3d%% | %-40s |\n", min[file], file
+                printf "| %3d%% | %s |\n", min[file], paths[file]
               }
             }' | sort -t'|' -k2 -n | head -10)
           
