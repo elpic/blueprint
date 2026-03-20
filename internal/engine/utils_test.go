@@ -2,6 +2,7 @@ package engine
 
 import (
 	"testing"
+	"time"
 
 	"github.com/elpic/blueprint/internal/parser"
 )
@@ -166,5 +167,125 @@ func TestResolveDependenciesChain(t *testing.T) {
 		if order[i] != want[i] {
 			t.Errorf("position %d: got %q, want %q", i, order[i], want[i])
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// formatDuration
+// ---------------------------------------------------------------------------
+
+func TestFormatDuration(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "zero",
+			input:    "0s",
+			expected: "0s",
+		},
+		{
+			name:     "seconds only",
+			input:    "30s",
+			expected: "30s",
+		},
+		{
+			name:     "just under a minute",
+			input:    "59s",
+			expected: "59s",
+		},
+		{
+			name:     "one minute",
+			input:    "1m0s",
+			expected: "1m 0s",
+		},
+		{
+			name:     "minutes and seconds",
+			input:    "2m30s",
+			expected: "2m 30s",
+		},
+		{
+			name:     "just under an hour",
+			input:    "59m59s",
+			expected: "59m 59s",
+		},
+		{
+			name:     "one hour",
+			input:    "1h0m0s",
+			expected: "1h 0m 0s",
+		},
+		{
+			name:     "hours and minutes",
+			input:    "2h30m0s",
+			expected: "2h 30m 0s",
+		},
+		{
+			name:     "hours minutes and seconds",
+			input:    "2h30m45s",
+			expected: "2h 30m 45s",
+		},
+		{
+			name:     "large duration",
+			input:    "29h30m15s",
+			expected: "29h 30m 15s",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Parse duration from test format
+			d, err := parseDuration(tt.input)
+			if err != nil {
+				t.Fatalf("invalid test duration %q: %v", tt.input, err)
+			}
+			got := formatDuration(d)
+			if got != tt.expected {
+				t.Errorf("formatDuration(%s) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+// parseDuration is a helper to parse duration strings for testing
+func parseDuration(s string) (time.Duration, error) {
+	// Parse strings like "1h30m15s"
+	return time.ParseDuration(s)
+}
+
+// ---------------------------------------------------------------------------
+// normalizePath
+// ---------------------------------------------------------------------------
+
+func TestNormalizePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "absolute path unchanged",
+			input:    "/Users/test/file.txt",
+			expected: "/Users/test/file.txt",
+		},
+		{
+			name:     "path with dots normalized",
+			input:    "/path/./to/../file.txt",
+			expected: "/path/file.txt",
+		},
+		{
+			name:     "path with trailing slash",
+			input:    "/path/to/dir//",
+			expected: "/path/to/dir",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizePath(tt.input)
+			if got != tt.expected {
+				t.Errorf("normalizePath(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
 	}
 }
