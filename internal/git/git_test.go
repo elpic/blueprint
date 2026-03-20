@@ -386,6 +386,56 @@ func TestNormalizeGitURL(t *testing.T) {
 	}
 }
 
+// TestNormalizeGitURLEquality verifies that SSH and HTTPS URLs for the same
+// repository return identical normalized values.
+func TestNormalizeGitURLEquality(t *testing.T) {
+	testCases := []struct {
+		name          string
+		httpsURL      string
+		sshURL        string
+		expectedValue string
+	}{
+		{
+			name:          "GitHub",
+			httpsURL:      "https://github.com/user/repo.git",
+			sshURL:        "git@github.com:user/repo.git",
+			expectedValue: "https://github.com/user/repo",
+		},
+		{
+			name:          "GitLab",
+			httpsURL:      "https://gitlab.com/user/repo.git",
+			sshURL:        "git@gitlab.com:user/repo.git",
+			expectedValue: "https://gitlab.com/user/repo",
+		},
+		{
+			name:          "Bitbucket",
+			httpsURL:      "https://bitbucket.org/user/repo.git",
+			sshURL:        "git@bitbucket.org:user/repo.git",
+			expectedValue: "https://bitbucket.org/user/repo",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			httpsNormalized := NormalizeGitURL(tc.httpsURL)
+			sshNormalized := NormalizeGitURL(tc.sshURL)
+
+			if httpsNormalized != tc.expectedValue {
+				t.Errorf("HTTPS URL %s normalized to %q, want %q", tc.httpsURL, httpsNormalized, tc.expectedValue)
+			}
+
+			if sshNormalized != tc.expectedValue {
+				t.Errorf("SSH URL %s normalized to %q, want %q", tc.sshURL, sshNormalized, tc.expectedValue)
+			}
+
+			if httpsNormalized != sshNormalized {
+				t.Errorf("SSH and HTTPS URLs should normalize to the same value:\n  SSH:   %s → %s\n  HTTPS: %s → %s",
+					tc.sshURL, sshNormalized, tc.httpsURL, httpsNormalized)
+			}
+		})
+	}
+}
+
 func TestGenerateRepositoryID(t *testing.T) {
 	tests := []struct {
 		name        string
