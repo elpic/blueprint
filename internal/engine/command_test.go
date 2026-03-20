@@ -425,3 +425,137 @@ func TestResolveDependenciesWithIdempotency(t *testing.T) {
 		}
 	}
 }
+
+// TestToHandlerRecords tests the toHandlerRecords function
+func TestToHandlerRecords(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []ExecutionRecord
+		expected []handlerskg.ExecutionRecord
+	}{
+		{
+			name:     "empty records",
+			input:    []ExecutionRecord{},
+			expected: []handlerskg.ExecutionRecord{},
+		},
+		{
+			name: "single record",
+			input: []ExecutionRecord{
+				{
+					Timestamp: "2024-01-15T10:30:00Z",
+					Blueprint: "/path/to/blueprint.bp",
+					OS:        "linux",
+					Command:   "apt-get install git",
+					Output:    "Installed successfully",
+					Status:    "success",
+					Error:     "",
+				},
+			},
+			expected: []handlerskg.ExecutionRecord{
+				{
+					Timestamp: "2024-01-15T10:30:00Z",
+					Blueprint: "/path/to/blueprint.bp",
+					OS:        "linux",
+					Command:   "apt-get install git",
+					Output:    "Installed successfully",
+					Status:    "success",
+					Error:     "",
+				},
+			},
+		},
+		{
+			name: "multiple records",
+			input: []ExecutionRecord{
+				{
+					Timestamp: "2024-01-15T10:30:00Z",
+					Blueprint: "/path/to/blueprint.bp",
+					OS:        "mac",
+					Command:   "brew install curl",
+					Output:    "Installed curl",
+					Status:    "success",
+					Error:     "",
+				},
+				{
+					Timestamp: "2024-01-15T10:30:10Z",
+					Blueprint: "/path/to/blueprint.bp",
+					OS:        "windows",
+					Command:   "winget install notepadplusplus",
+					Output:    "Installed notepad++",
+					Status:    "error",
+					Error:     "Access denied",
+				},
+			},
+			expected: []handlerskg.ExecutionRecord{
+				{
+					Timestamp: "2024-01-15T10:30:00Z",
+					Blueprint: "/path/to/blueprint.bp",
+					OS:        "mac",
+					Command:   "brew install curl",
+					Output:    "Installed curl",
+					Status:    "success",
+					Error:     "",
+				},
+				{
+					Timestamp: "2024-01-15T10:30:10Z",
+					Blueprint: "/path/to/blueprint.bp",
+					OS:        "windows",
+					Command:   "winget install notepadplusplus",
+					Output:    "Installed notepad++",
+					Status:    "error",
+					Error:     "Access denied",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := toHandlerRecords(tt.input)
+
+			if len(result) != len(tt.expected) {
+				t.Fatalf("len(result) = %d, want %d", len(result), len(tt.expected))
+			}
+
+			for i := range result {
+				if result[i].Timestamp != tt.expected[i].Timestamp {
+					t.Errorf("result[%d].Timestamp = %q, want %q", i, result[i].Timestamp, tt.expected[i].Timestamp)
+				}
+				if result[i].Blueprint != tt.expected[i].Blueprint {
+					t.Errorf("result[%d].Blueprint = %q, want %q", i, result[i].Blueprint, tt.expected[i].Blueprint)
+				}
+				if result[i].OS != tt.expected[i].OS {
+					t.Errorf("result[%d].OS = %q, want %q", i, result[i].OS, tt.expected[i].OS)
+				}
+				if result[i].Command != tt.expected[i].Command {
+					t.Errorf("result[%d].Command = %q, want %q", i, result[i].Command, tt.expected[i].Command)
+				}
+				if result[i].Output != tt.expected[i].Output {
+					t.Errorf("result[%d].Output = %q, want %q", i, result[i].Output, tt.expected[i].Output)
+				}
+				if result[i].Status != tt.expected[i].Status {
+					t.Errorf("result[%d].Status = %q, want %q", i, result[i].Status, tt.expected[i].Status)
+				}
+				if result[i].Error != tt.expected[i].Error {
+					t.Errorf("result[%d].Error = %q, want %q", i, result[i].Error, tt.expected[i].Error)
+				}
+			}
+		})
+	}
+}
+
+func TestToHandlerRecords_ErrorField(t *testing.T) {
+	records := []ExecutionRecord{
+		{
+			Timestamp: "2024-01-15T10:30:00Z",
+			Command:   "failing command",
+			Status:    "error",
+			Error:     "command failed with exit code 1",
+		},
+	}
+
+	result := toHandlerRecords(records)
+
+	if result[0].Error != "command failed with exit code 1" {
+		t.Errorf("Error not preserved: got %q, want %q", result[0].Error, "command failed with exit code 1")
+	}
+}
