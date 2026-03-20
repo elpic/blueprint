@@ -509,7 +509,7 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 
 // generateRepositoryID creates a unique ID for a repository based on URL and branch
 func generateRepositoryID(url, branch string) string {
-	normalizedURL := normalizeGitURL(url)
+	normalizedURL := NormalizeGitURL(url)
 	key := normalizedURL
 	if branch != "" {
 		key += "@" + branch
@@ -520,8 +520,9 @@ func generateRepositoryID(url, branch string) string {
 	return fmt.Sprintf("%x", hasher.Sum(nil))[:16] // Use first 16 chars of hash
 }
 
-// normalizeGitURL normalizes a git URL for consistent identification
-func normalizeGitURL(url string) string {
+// NormalizeGitURL normalizes a git URL for consistent identification.
+// It converts SSH URLs to HTTPS and lowercases the result.
+func NormalizeGitURL(url string) string {
 	// Remove .git suffix if present
 	url = strings.TrimSuffix(url, ".git")
 

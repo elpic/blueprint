@@ -247,11 +247,19 @@ func (h *CloneHandler) GetState(isUninstall bool) map[string]string {
 func (h *CloneHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizePath(blueprintFile)
 
-	// Build set of current clone paths from clone rules
+	// Build set of current clone paths from clone rules (using normalized URLs for comparison)
 	currentClonePaths := make(map[string]bool)
 	for _, rule := range currentRules {
 		if rule.Action == "clone" && rule.ClonePath != "" {
 			currentClonePaths[rule.ClonePath] = true
+		}
+	}
+
+	// Build set of current clone URLs (using normalized URLs for comparison)
+	currentCloneURLs := make(map[string]bool)
+	for _, rule := range currentRules {
+		if rule.Action == "clone" && rule.CloneURL != "" {
+			currentCloneURLs[gitpkg.NormalizeGitURL(rule.CloneURL)] = true
 		}
 	}
 
@@ -260,7 +268,10 @@ func (h *CloneHandler) FindUninstallRules(status *Status, currentRules []parser.
 	if status.Clones != nil {
 		for _, clone := range status.Clones {
 			normalizedStatusBlueprint := normalizePath(clone.Blueprint)
-			if normalizedStatusBlueprint == normalizedBlueprint && clone.OS == osName && !currentClonePaths[clone.Path] {
+			normalizedStatusURL := gitpkg.NormalizeGitURL(clone.URL)
+			// Match by path OR by normalized URL
+			isCurrent := currentClonePaths[clone.Path] || currentCloneURLs[normalizedStatusURL]
+			if normalizedStatusBlueprint == normalizedBlueprint && clone.OS == osName && !isCurrent {
 				// Don't uninstall asdf which is handled by AsdfHandler
 				if clone.Path != "~/.asdf" {
 					rules = append(rules, parser.Rule{
