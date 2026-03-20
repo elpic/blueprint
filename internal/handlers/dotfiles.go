@@ -448,18 +448,19 @@ func (h *DotfilesHandler) DisplayStatusFromStatus(status *Status) {
 func (h *DotfilesHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizePath(blueprintFile)
 
-	// Build set of current dotfiles URLs
+	// Build set of current dotfiles URLs (using normalized URLs for comparison)
 	currentURLs := make(map[string]bool)
 	for _, rule := range currentRules {
 		if rule.Action == "dotfiles" && rule.DotfilesURL != "" {
-			currentURLs[rule.DotfilesURL] = true
+			currentURLs[gitpkg.NormalizeGitURL(rule.DotfilesURL)] = true
 		}
 	}
 
 	var rules []parser.Rule
 	for _, d := range status.Dotfiles {
 		normalizedStatusBlueprint := normalizePath(d.Blueprint)
-		if normalizedStatusBlueprint == normalizedBlueprint && d.OS == osName && !currentURLs[d.URL] {
+		normalizedStatusURL := gitpkg.NormalizeGitURL(d.URL)
+		if normalizedStatusBlueprint == normalizedBlueprint && d.OS == osName && !currentURLs[normalizedStatusURL] {
 			rules = append(rules, parser.Rule{
 				Action:         "uninstall",
 				DotfilesURL:    d.URL,
@@ -477,8 +478,10 @@ func (h *DotfilesHandler) FindUninstallRules(status *Status, currentRules []pars
 // It checks the URL, SHA, and verifies all expected symlinks are present and correct.
 func (h *DotfilesHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
 	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedRuleURL := gitpkg.NormalizeGitURL(h.Rule.DotfilesURL)
 	for _, d := range status.Dotfiles {
-		if d.URL == h.Rule.DotfilesURL && normalizePath(d.Blueprint) == normalizedBlueprint && d.OS == osName {
+		normalizedStatusURL := gitpkg.NormalizeGitURL(d.URL)
+		if normalizedStatusURL == normalizedRuleURL && normalizePath(d.Blueprint) == normalizedBlueprint && d.OS == osName {
 			// Check if SHA matches - if different, repo has changes that need to be applied
 			if d.SHA != "" {
 				currentSHA := gitpkg.LocalSHA(h.expandedDotfilesPath())

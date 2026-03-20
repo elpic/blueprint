@@ -263,3 +263,68 @@ func TestShouldSkipEntry(t *testing.T) {
 		})
 	}
 }
+
+// TestDotfilesFindUninstallRulesNormalizesURLs tests that FindUninstallRules
+// uses normalized URLs for comparison so SSH and HTTPS URLs for the same repo are treated as equal.
+func TestDotfilesFindUninstallRulesNormalizesURLs(t *testing.T) {
+	status := Status{
+		Dotfiles: []DotfilesStatus{
+			{
+				URL:       "git@github.com:user/dotfiles.git",
+				Path:      "~/.dotfiles",
+				Blueprint: "/bp/setup.bp",
+				OS:        "linux",
+				SHA:       "abc123",
+				Links:     []string{"~/.bashrc"},
+			},
+		},
+	}
+
+	// Current rules use HTTPS URL for the same repo
+	currentRules := []parser.Rule{
+		{
+			Action:       "dotfiles",
+			DotfilesURL:  "https://github.com/user/dotfiles.git",
+			DotfilesPath: "~/.dotfiles",
+		},
+	}
+
+	handler := NewDotfilesHandler(currentRules[0], "/bp/setup.bp")
+	rules := handler.FindUninstallRules(&status, currentRules, "/bp/setup.bp", "linux")
+
+	// Since the URLs are normalized to the same value, the repo should NOT be marked for uninstall
+	if len(rules) > 0 {
+		t.Errorf("FindUninstallRules should not return uninstall rules when SSH and HTTPS URLs refer to the same repo, got %d rules", len(rules))
+	}
+}
+
+// TestDotfilesIsInstalledNormalizesURLs tests that IsInstalled uses normalized URLs
+// for comparison so SSH and HTTPS URLs for the same repo are treated as equal.
+func TestDotfilesIsInstalledNormalizesURLs(t *testing.T) {
+	// Status has SSH URL - no SHA or Links to avoid additional checks
+	// that would fail in a unit test (LocalSHA lookup, symlink existence)
+	status := Status{
+		Dotfiles: []DotfilesStatus{
+			{
+				URL:       "git@github.com:user/dotfiles.git",
+				Path:      "~/.dotfiles",
+				Blueprint: "/bp/setup.bp",
+				OS:        "linux",
+			},
+		},
+	}
+
+	// Rule uses HTTPS URL for the same repo
+	rule := parser.Rule{
+		Action:       "dotfiles",
+		DotfilesURL:  "https://github.com/user/dotfiles.git",
+		DotfilesPath: "~/.dotfiles",
+	}
+
+	handler := NewDotfilesHandler(rule, "/bp/setup.bp")
+
+	// Should find the installed dotfiles because URLs are normalized for comparison
+	if !handler.IsInstalled(&status, "/bp/setup.bp", "linux") {
+		t.Error("IsInstalled should return true when SSH and HTTPS URLs refer to the same repo")
+	}
+}
