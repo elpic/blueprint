@@ -452,7 +452,7 @@ func (h *DotfilesHandler) FindUninstallRules(status *Status, currentRules []pars
 }
 
 // IsInstalled returns true if the dotfiles URL is already installed and up to date.
-// It checks both the URL and the SHA to detect changes in the dotfiles repository.
+// It checks the URL, SHA, and verifies all expected symlinks are present and correct.
 func (h *DotfilesHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
 	normalizedBlueprint := normalizePath(blueprintFile)
 	for _, d := range status.Dotfiles {
@@ -465,6 +465,43 @@ func (h *DotfilesHandler) IsInstalled(status *Status, blueprintFile, osName stri
 					return false
 				}
 			}
+
+			// Check if all expected links are present and correct
+			if len(d.Links) > 0 {
+				clonePath := h.expandedDotfilesPath()
+
+				for _, linkPath := range d.Links {
+					// Check if the link exists
+					info, err := os.Lstat(linkPath)
+					if err != nil {
+						// Link doesn't exist
+						return false
+					}
+
+					// Check if it's a symlink
+					if info.Mode()&os.ModeSymlink == 0 {
+						// Not a symlink anymore
+						return false
+					}
+
+					// Check if it points to the correct location
+					target, err := os.Readlink(linkPath)
+					if err != nil {
+						return false
+					}
+
+					// Resolve both paths for comparison
+					resolvedTarget, _ := filepath.EvalSymlinks(target)
+					resolvedClonePath, _ := filepath.EvalSymlinks(clonePath)
+
+					// Check if the symlink target is within the clone directory
+					if !strings.HasPrefix(resolvedTarget, resolvedClonePath+string(filepath.Separator)) && resolvedTarget != resolvedClonePath {
+						// Symlink points to wrong location
+						return false
+					}
+				}
+			}
+
 			return true
 		}
 	}
