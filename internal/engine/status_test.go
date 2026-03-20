@@ -64,7 +64,7 @@ func TestReadBlueprintFile(t *testing.T) {
 	if err := os.WriteFile(testFile, testContent, 0644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
-	defer os.Remove(testFile)
+	defer func() { _ = os.Remove(testFile) }()
 
 	tests := []struct {
 		name      string
