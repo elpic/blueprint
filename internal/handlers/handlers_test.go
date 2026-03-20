@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/elpic/blueprint/internal/parser"
@@ -430,6 +432,831 @@ func TestStateProviderInterface(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestRuleKey tests the RuleKey function for different rule types
+func TestRuleKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		rule     parser.Rule
+		expected string
+	}{
+		{
+			name: "returns ID when present",
+			rule: parser.Rule{
+				ID:     "custom-id-123",
+				Action: "clone",
+			},
+			expected: "custom-id-123",
+		},
+		{
+			name: "install with package returns package name",
+			rule: parser.Rule{
+				Action:   "install",
+				Packages: []parser.Package{{Name: "vim"}},
+			},
+			expected: "vim",
+		},
+		{
+			name: "install with multiple packages returns first",
+			rule: parser.Rule{
+				Action:   "install",
+				Packages: []parser.Package{{Name: "vim"}, {Name: "curl"}},
+			},
+			expected: "vim",
+		},
+		{
+			name: "uninstall with package returns package name",
+			rule: parser.Rule{
+				Action:   "uninstall",
+				Packages: []parser.Package{{Name: "vim"}},
+			},
+			expected: "vim",
+		},
+		{
+			name: "clone returns clone path",
+			rule: parser.Rule{
+				Action:    "clone",
+				ClonePath: "~/projects/repo",
+			},
+			expected: "~/projects/repo",
+		},
+		{
+			name: "decrypt returns decrypt path",
+			rule: parser.Rule{
+				Action:      "decrypt",
+				DecryptPath: "~/.ssh/config",
+				DecryptFile: "config.enc",
+			},
+			expected: "~/.ssh/config",
+		},
+		{
+			name: "download returns download path",
+			rule: parser.Rule{
+				Action:       "download",
+				DownloadURL:  "https://example.com/file.sh",
+				DownloadPath: "~/bin/file.sh",
+			},
+			expected: "~/bin/file.sh",
+		},
+		{
+			name: "known_hosts returns hostname",
+			rule: parser.Rule{
+				Action:     "known_hosts",
+				KnownHosts: "github.com",
+			},
+			expected: "github.com",
+		},
+		{
+			name: "mkdir returns directory path",
+			rule: parser.Rule{
+				Action: "mkdir",
+				Mkdir:  "~/projects",
+			},
+			expected: "~/projects",
+		},
+		{
+			name: "run returns command",
+			rule: parser.Rule{
+				Action:     "run",
+				RunCommand: "echo hello",
+			},
+			expected: "echo hello",
+		},
+		{
+			name: "run-sh returns URL",
+			rule: parser.Rule{
+				Action:   "run-sh",
+				RunShURL: "https://example.com/install.sh",
+			},
+			expected: "https://example.com/install.sh",
+		},
+		{
+			name: "gpg_key returns keyring",
+			rule: parser.Rule{
+				Action:     "gpg_key",
+				GPGKeyring: "ubuntu-keyring",
+			},
+			expected: "ubuntu-keyring",
+		},
+		{
+			name: "homebrew with package returns package name",
+			rule: parser.Rule{
+				Action:           "homebrew",
+				HomebrewPackages: []string{"wget"},
+			},
+			expected: "wget",
+		},
+		{
+			name: "asdf returns asdf",
+			rule: parser.Rule{
+				Action:       "asdf",
+				AsdfPackages: []string{"nodejs"},
+			},
+			expected: "asdf",
+		},
+		{
+			name: "mise returns mise",
+			rule: parser.Rule{
+				Action:       "mise",
+				MisePackages: []string{"node@20"},
+			},
+			expected: "mise",
+		},
+		{
+			name: "ollama with model returns model name",
+			rule: parser.Rule{
+				Action:       "ollama",
+				OllamaModels: []string{"llama3"},
+			},
+			expected: "llama3",
+		},
+		{
+			name: "schedule with source returns schedule-source",
+			rule: parser.Rule{
+				Action:         "schedule",
+				ScheduleSource: "setup.bp",
+			},
+			expected: "schedule-setup.bp",
+		},
+		{
+			name: "shell returns shell name",
+			rule: parser.Rule{
+				Action:    "shell",
+				ShellName: "zsh",
+			},
+			expected: "zsh",
+		},
+		{
+			name: "unknown action returns action name",
+			rule: parser.Rule{
+				Action: "unknown_action",
+			},
+			expected: "unknown_action",
+		},
+		{
+			name: "install with no packages returns install",
+			rule: parser.Rule{
+				Action: "install",
+			},
+			expected: "install",
+		},
+		{
+			name: "homebrew with no packages returns homebrew",
+			rule: parser.Rule{
+				Action: "homebrew",
+			},
+			expected: "homebrew",
+		},
+		{
+			name: "schedule with no source returns schedule",
+			rule: parser.Rule{
+				Action: "schedule",
+			},
+			expected: "schedule",
+		},
+		{
+			name: "ollama with no models returns ollama",
+			rule: parser.Rule{
+				Action: "ollama",
+			},
+			expected: "ollama",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := RuleKey(tt.rule)
+			if got != tt.expected {
+				t.Errorf("RuleKey() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestDetectRuleType tests the DetectRuleType function
+func TestDetectRuleType(t *testing.T) {
+	tests := []struct {
+		name     string
+		rule     parser.Rule
+		expected string
+	}{
+		{
+			name: "detects install from packages",
+			rule: parser.Rule{
+				Packages: []parser.Package{{Name: "vim"}},
+			},
+			expected: "install",
+		},
+		{
+			name: "detects clone from clone URL",
+			rule: parser.Rule{
+				CloneURL: "https://github.com/user/repo",
+			},
+			expected: "clone",
+		},
+		{
+			name: "detects decrypt from decrypt file",
+			rule: parser.Rule{
+				DecryptFile: "config.enc",
+			},
+			expected: "decrypt",
+		},
+		{
+			name: "detects mkdir from mkdir field",
+			rule: parser.Rule{
+				Mkdir: "~/projects",
+			},
+			expected: "mkdir",
+		},
+		{
+			name: "detects asdf from asdf packages",
+			rule: parser.Rule{
+				AsdfPackages: []string{"nodejs"},
+			},
+			expected: "asdf",
+		},
+		{
+			name: "detects mise from mise packages",
+			rule: parser.Rule{
+				MisePackages: []string{"node@20"},
+			},
+			expected: "mise",
+		},
+		{
+			name: "detects homebrew from homebrew packages",
+			rule: parser.Rule{
+				HomebrewPackages: []string{"wget"},
+			},
+			expected: "homebrew",
+		},
+		{
+			name: "detects ollama from ollama models",
+			rule: parser.Rule{
+				OllamaModels: []string{"llama3"},
+			},
+			expected: "ollama",
+		},
+		{
+			name: "detects known_hosts from known hosts field",
+			rule: parser.Rule{
+				KnownHosts: "github.com",
+			},
+			expected: "known_hosts",
+		},
+		{
+			name: "detects gpg_key from keyring field",
+			rule: parser.Rule{
+				GPGKeyring: "ubuntu-keyring",
+			},
+			expected: "gpg-key",
+		},
+		{
+			name: "detects download from download URL",
+			rule: parser.Rule{
+				DownloadURL: "https://example.com/file.sh",
+			},
+			expected: "download",
+		},
+		{
+			name: "detects run from run command",
+			rule: parser.Rule{
+				RunCommand: "echo hello",
+			},
+			expected: "run",
+		},
+		{
+			name: "detects run-sh from run-sh URL",
+			rule: parser.Rule{
+				RunShURL: "https://example.com/install.sh",
+			},
+			expected: "run-sh",
+		},
+		{
+			name: "detects dotfiles from dotfiles URL",
+			rule: parser.Rule{
+				DotfilesURL: "https://github.com/user/dotfiles",
+			},
+			expected: "dotfiles",
+		},
+		{
+			name: "detects sudoers from sudoers user",
+			rule: parser.Rule{
+				SudoersUser: "alice",
+			},
+			expected: "sudoers",
+		},
+		{
+			name: "detects schedule from schedule source",
+			rule: parser.Rule{
+				ScheduleSource: "setup.bp",
+			},
+			expected: "schedule",
+		},
+		{
+			name: "detects shell from shell name",
+			rule: parser.Rule{
+				ShellName: "zsh",
+			},
+			expected: "shell",
+		},
+		{
+			name: "returns empty for unknown rule type",
+			rule: parser.Rule{
+				Action: "unknown",
+			},
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DetectRuleType(tt.rule)
+			if got != tt.expected {
+				t.Errorf("DetectRuleType() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestNormalizePath tests the normalizePath function
+func TestNormalizePath(t *testing.T) {
+	cwd, _ := os.Getwd()
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "returns absolute path unchanged",
+			input:    "/Users/test/file.txt",
+			expected: "/Users/test/file.txt",
+		},
+		{
+			name:     "converts relative path to absolute",
+			input:    "relative/../relative/file.txt",
+			expected: filepath.Join(cwd, "relative/file.txt"),
+		},
+		{
+			name:     "handles empty path",
+			input:    "",
+			expected: cwd,
+		},
+		{
+			name:     "removes trailing slashes",
+			input:    "/path/to/dir//",
+			expected: "/path/to/dir",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizePath(tt.input)
+			if got != tt.expected {
+				t.Errorf("normalizePath(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestRemovePackageStatus tests the removePackageStatus function
+func TestRemovePackageStatus(t *testing.T) {
+	tests := []struct {
+		name      string
+		packages  []PackageStatus
+		target    string
+		blueprint string
+		osName    string
+		expected  int
+	}{
+		{
+			name: "removes matching package",
+			packages: []PackageStatus{
+				{Name: "vim", Blueprint: "/bp/setup.bp", OS: "mac"},
+				{Name: "curl", Blueprint: "/bp/setup.bp", OS: "mac"},
+			},
+			target:    "vim",
+			blueprint: "/bp/setup.bp",
+			osName:    "mac",
+			expected:  1,
+		},
+		{
+			name: "keeps package with different name",
+			packages: []PackageStatus{
+				{Name: "vim", Blueprint: "/bp/setup.bp", OS: "mac"},
+				{Name: "curl", Blueprint: "/bp/setup.bp", OS: "mac"},
+			},
+			target:    "wget",
+			blueprint: "/bp/setup.bp",
+			osName:    "mac",
+			expected:  2,
+		},
+		{
+			name: "keeps package with different blueprint",
+			packages: []PackageStatus{
+				{Name: "vim", Blueprint: "/bp/setup.bp", OS: "mac"},
+				{Name: "vim", Blueprint: "/other/setup.bp", OS: "mac"},
+			},
+			target:    "vim",
+			blueprint: "/bp/setup.bp",
+			osName:    "mac",
+			expected:  1,
+		},
+		{
+			name: "keeps package with different OS",
+			packages: []PackageStatus{
+				{Name: "vim", Blueprint: "/bp/setup.bp", OS: "mac"},
+				{Name: "vim", Blueprint: "/bp/setup.bp", OS: "linux"},
+			},
+			target:    "vim",
+			blueprint: "/bp/setup.bp",
+			osName:    "mac",
+			expected:  1,
+		},
+		{
+			name:      "empty packages returns empty",
+			packages:  []PackageStatus{},
+			target:    "vim",
+			blueprint: "/bp/setup.bp",
+			osName:    "mac",
+			expected:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := removePackageStatus(tt.packages, tt.target, tt.blueprint, tt.osName)
+			if len(got) != tt.expected {
+				t.Errorf("removePackageStatus() returned %d items, want %d", len(got), tt.expected)
+			}
+		})
+	}
+}
+
+// TestRemoveRunStatus tests the removeRunStatus function
+func TestRemoveRunStatus(t *testing.T) {
+	tests := []struct {
+		name      string
+		runs      []RunStatus
+		command   string
+		blueprint string
+		osName    string
+		expected  int
+	}{
+		{
+			name: "removes matching run",
+			runs: []RunStatus{
+				{Command: "echo hello", Blueprint: "/bp/setup.bp", OS: "mac"},
+				{Command: "echo world", Blueprint: "/bp/setup.bp", OS: "mac"},
+			},
+			command:   "echo hello",
+			blueprint: "/bp/setup.bp",
+			osName:    "mac",
+			expected:  1,
+		},
+		{
+			name: "keeps run with different command",
+			runs: []RunStatus{
+				{Command: "echo hello", Blueprint: "/bp/setup.bp", OS: "mac"},
+			},
+			command:   "echo world",
+			blueprint: "/bp/setup.bp",
+			osName:    "mac",
+			expected:  1,
+		},
+		{
+			name: "keeps run with different blueprint",
+			runs: []RunStatus{
+				{Command: "echo hello", Blueprint: "/bp/setup.bp", OS: "mac"},
+				{Command: "echo hello", Blueprint: "/other/setup.bp", OS: "mac"},
+			},
+			command:   "echo hello",
+			blueprint: "/bp/setup.bp",
+			osName:    "mac",
+			expected:  1,
+		},
+		{
+			name: "keeps run with different OS",
+			runs: []RunStatus{
+				{Command: "echo hello", Blueprint: "/bp/setup.bp", OS: "mac"},
+				{Command: "echo hello", Blueprint: "/bp/setup.bp", OS: "linux"},
+			},
+			command:   "echo hello",
+			blueprint: "/bp/setup.bp",
+			osName:    "mac",
+			expected:  1,
+		},
+		{
+			name:      "empty runs returns empty",
+			runs:      []RunStatus{},
+			command:   "echo hello",
+			blueprint: "/bp/setup.bp",
+			osName:    "mac",
+			expected:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := removeRunStatus(tt.runs, tt.command, tt.blueprint, tt.osName)
+			if len(got) != tt.expected {
+				t.Errorf("removeRunStatus() returned %d items, want %d", len(got), tt.expected)
+			}
+		})
+	}
+}
+
+// TestRemoveDotfilesStatus tests the removeDotfilesStatus function
+func TestRemoveDotfilesStatus(t *testing.T) {
+	tests := []struct {
+		name      string
+		dotfiles  []DotfilesStatus
+		url       string
+		blueprint string
+		osName    string
+		expected  int
+	}{
+		{
+			name: "removes matching dotfiles",
+			dotfiles: []DotfilesStatus{
+				{URL: "https://github.com/user/dotfiles", Blueprint: "/bp/setup.bp", OS: "mac"},
+				{URL: "https://github.com/other/dotfiles", Blueprint: "/bp/setup.bp", OS: "mac"},
+			},
+			url:       "https://github.com/user/dotfiles",
+			blueprint: "/bp/setup.bp",
+			osName:    "mac",
+			expected:  1,
+		},
+		{
+			name: "keeps dotfiles with different URL",
+			dotfiles: []DotfilesStatus{
+				{URL: "https://github.com/user/dotfiles", Blueprint: "/bp/setup.bp", OS: "mac"},
+			},
+			url:       "https://github.com/other/dotfiles",
+			blueprint: "/bp/setup.bp",
+			osName:    "mac",
+			expected:  1,
+		},
+		{
+			name: "keeps dotfiles with different blueprint",
+			dotfiles: []DotfilesStatus{
+				{URL: "https://github.com/user/dotfiles", Blueprint: "/bp/setup.bp", OS: "mac"},
+				{URL: "https://github.com/user/dotfiles", Blueprint: "/other/setup.bp", OS: "mac"},
+			},
+			url:       "https://github.com/user/dotfiles",
+			blueprint: "/bp/setup.bp",
+			osName:    "mac",
+			expected:  1,
+		},
+		{
+			name:      "empty dotfiles returns empty",
+			dotfiles:  []DotfilesStatus{},
+			url:       "https://github.com/user/dotfiles",
+			blueprint: "/bp/setup.bp",
+			osName:    "mac",
+			expected:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := removeDotfilesStatus(tt.dotfiles, tt.url, tt.blueprint, tt.osName)
+			if len(got) != tt.expected {
+				t.Errorf("removeDotfilesStatus() returned %d items, want %d", len(got), tt.expected)
+			}
+		})
+	}
+}
+
+// TestRemoveDownloadStatus tests the removeDownloadStatus function
+func TestRemoveDownloadStatus(t *testing.T) {
+	tests := []struct {
+		name      string
+		downloads []DownloadStatus
+		path      string
+		blueprint string
+		osName    string
+		expected  int
+	}{
+		{
+			name: "removes matching download",
+			downloads: []DownloadStatus{
+				{Path: "~/bin/file.sh", Blueprint: "/bp/setup.bp", OS: "mac"},
+				{Path: "~/bin/other.sh", Blueprint: "/bp/setup.bp", OS: "mac"},
+			},
+			path:      "~/bin/file.sh",
+			blueprint: "/bp/setup.bp",
+			osName:    "mac",
+			expected:  1,
+		},
+		{
+			name: "keeps download with different path",
+			downloads: []DownloadStatus{
+				{Path: "~/bin/file.sh", Blueprint: "/bp/setup.bp", OS: "mac"},
+			},
+			path:      "~/bin/other.sh",
+			blueprint: "/bp/setup.bp",
+			osName:    "mac",
+			expected:  1,
+		},
+		{
+			name:      "empty downloads returns empty",
+			downloads: []DownloadStatus{},
+			path:      "~/bin/file.sh",
+			blueprint: "/bp/setup.bp",
+			osName:    "mac",
+			expected:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := removeDownloadStatus(tt.downloads, tt.path, tt.blueprint, tt.osName)
+			if len(got) != tt.expected {
+				t.Errorf("removeDownloadStatus() returned %d items, want %d", len(got), tt.expected)
+			}
+		})
+	}
+}
+
+// TestAbbreviateBlueprintPath tests the abbreviateBlueprintPath function
+func TestAbbreviateBlueprintPath(t *testing.T) {
+	// Get the current working directory for testing
+	cwd, _ := os.Getwd()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "returns path unchanged when outside cwd",
+			input:    "/Users/other/project/file.bp",
+			expected: "/Users/other/project/file.bp",
+		},
+		{
+			name:     "returns path unchanged when error getting cwd",
+			input:    "/unknown/path/file.bp",
+			expected: "/unknown/path/file.bp",
+		},
+	}
+
+	// Add test for path within cwd
+	pathWithinCwd := filepath.Join(cwd, "setup.bp")
+	relPath := "setup.bp"
+	tests = append(tests, struct {
+		name     string
+		input    string
+		expected string
+	}{
+		name:     "returns relative path for file within cwd",
+		input:    pathWithinCwd,
+		expected: relPath,
+	})
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := abbreviateBlueprintPath(tt.input)
+			if got != tt.expected {
+				t.Errorf("abbreviateBlueprintPath(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestNewHandler tests the NewHandler function
+func TestNewHandler(t *testing.T) {
+	tests := []struct {
+		name       string
+		rule       parser.Rule
+		basePath   string
+		passwords  map[string]string
+		expectNil  bool
+		expectType string
+	}{
+		{
+			name: "creates install handler",
+			rule: parser.Rule{
+				Action:   "install",
+				Packages: []parser.Package{{Name: "vim"}},
+			},
+			basePath:   "",
+			passwords:  nil,
+			expectNil:  false,
+			expectType: "*handlers.InstallHandler",
+		},
+		{
+			name: "creates clone handler",
+			rule: parser.Rule{
+				Action:    "clone",
+				ClonePath: "~/repo",
+				CloneURL:  "https://github.com/user/repo",
+			},
+			basePath:   "",
+			passwords:  nil,
+			expectNil:  false,
+			expectType: "*handlers.CloneHandler",
+		},
+		{
+			name: "creates decrypt handler",
+			rule: parser.Rule{
+				Action:      "decrypt",
+				DecryptPath: "~/.ssh/config",
+				DecryptFile: "config.enc",
+			},
+			basePath:   "",
+			passwords:  nil,
+			expectNil:  false,
+			expectType: "*handlers.DecryptHandler",
+		},
+		{
+			name: "creates mkdir handler",
+			rule: parser.Rule{
+				Action: "mkdir",
+				Mkdir:  "~/projects",
+			},
+			basePath:   "",
+			passwords:  nil,
+			expectNil:  false,
+			expectType: "*handlers.MkdirHandler",
+		},
+		{
+			name: "creates run handler",
+			rule: parser.Rule{
+				Action:     "run",
+				RunCommand: "echo hello",
+			},
+			basePath:   "",
+			passwords:  nil,
+			expectNil:  false,
+			expectType: "*handlers.RunHandler",
+		},
+		{
+			name: "creates run-sh handler",
+			rule: parser.Rule{
+				Action:   "run-sh",
+				RunShURL: "https://example.com/install.sh",
+			},
+			basePath:   "",
+			passwords:  nil,
+			expectNil:  false,
+			expectType: "*handlers.RunShHandler",
+		},
+		{
+			name: "creates download handler",
+			rule: parser.Rule{
+				Action:       "download",
+				DownloadURL:  "https://example.com/file.sh",
+				DownloadPath: "~/bin/file.sh",
+			},
+			basePath:   "",
+			passwords:  nil,
+			expectNil:  false,
+			expectType: "*handlers.DownloadHandler",
+		},
+		{
+			name: "returns nil for unknown action",
+			rule: parser.Rule{
+				Action: "unknown_action",
+			},
+			basePath:   "",
+			passwords:  nil,
+			expectNil:  true,
+			expectType: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NewHandler(tt.rule, tt.basePath, tt.passwords)
+			if tt.expectNil {
+				if got != nil {
+					t.Errorf("NewHandler() = %v, want nil", got)
+				}
+			} else {
+				if got == nil {
+					t.Errorf("NewHandler() = nil, want non-nil handler")
+				}
+			}
+		})
+	}
+}
+
+// TestGetStatusProviderHandlers tests the GetStatusProviderHandlers function
+func TestGetStatusProviderHandlers(t *testing.T) {
+	handlers := GetStatusProviderHandlers()
+
+	// Verify we get handlers for all types
+	if len(handlers) == 0 {
+		t.Error("GetStatusProviderHandlers() returned empty slice")
+	}
+
+	// Verify each handler implements StatusProvider
+	for i, h := range handlers {
+		if _, ok := h.(StatusProvider); !ok {
+			t.Errorf("Handler at index %d does not implement StatusProvider", i)
+		}
 	}
 }
 

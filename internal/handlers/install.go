@@ -360,10 +360,11 @@ func (h *InstallHandler) buildUninstallCommandForManager(manager string, pkgName
 	}
 }
 
-// getOSName returns the current OS name. Defined as a var to allow stubbing in tests.
+// getOSName returns the current OS name using the default detector.
 // DEPRECATED: Use dependency injection via Container.SystemProvider().OS().Name() instead
 var getOSName = func() string {
-	return internal.OSName()
+	detector := internal.NewOSDetector()
+	return detector.Name()
 }
 
 // DisplayInfo displays handler-specific information

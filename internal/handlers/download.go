@@ -51,7 +51,7 @@ func (h *DownloadHandler) Up() (string, error) {
 	}
 
 	// HTTP GET the URL
-	resp, err := http.Get(h.Rule.DownloadURL) // #nosec G107 -- URL is user-supplied via blueprint file
+	resp, err := h.httpClient().Get(h.Rule.DownloadURL) // #nosec G107 -- URL is user-supplied via blueprint file
 	if err != nil {
 		return "", fmt.Errorf("failed to download %s: %w", h.Rule.DownloadURL, err)
 	}

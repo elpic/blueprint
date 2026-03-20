@@ -14,7 +14,8 @@ import (
 )
 
 func getOSName() string {
-	return internal.OSName()
+	detector := internal.NewOSDetector()
+	return detector.Name()
 }
 
 func filterRulesByOS(rules []parser.Rule) []parser.Rule {

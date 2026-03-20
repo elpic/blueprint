@@ -318,6 +318,17 @@ func (h *DotfilesHandler) UpdateStatus(status *Status, records []ExecutionRecord
 					if rerr != nil {
 						return
 					}
+					// Try to resolve the target path to handle ~ and relative paths
+					resolvedTarget, terr := filepath.EvalSymlinks(target)
+					if terr == nil {
+						target = resolvedTarget
+					}
+					// Also resolve clonePath for comparison
+					resolvedClonePath, cerr := filepath.EvalSymlinks(clonePath)
+					if cerr == nil {
+						clonePath = resolvedClonePath
+					}
+					// Check if target points into the clone directory
 					if strings.HasPrefix(target, clonePath+string(filepath.Separator)) || target == clonePath {
 						links = append(links, linkPath)
 					}
@@ -410,9 +421,20 @@ func (h *DotfilesHandler) DisplayStatusFromStatus(status *Status) {
 			timeStr = d.ClonedAt
 		}
 
-		fmt.Printf("  %s %s (%s) [%s, %s]\n",
+		// Show SHA (abbreviated to 7 chars) if available
+		shaStr := ""
+		if d.SHA != "" {
+			if len(d.SHA) >= 7 {
+				shaStr = fmt.Sprintf(" @ %s", d.SHA[:7])
+			} else {
+				shaStr = fmt.Sprintf(" @ %s", d.SHA)
+			}
+		}
+
+		fmt.Printf("  %s %s%s (%s) [%s, %s]\n",
 			ui.FormatSuccess("●"),
 			ui.FormatInfo(d.URL),
+			ui.FormatDim(shaStr),
 			ui.FormatDim(timeStr),
 			ui.FormatDim(d.OS),
 			ui.FormatDim(abbreviateBlueprintPath(d.Blueprint)),

@@ -223,7 +223,8 @@ type realOSDetector struct{}
 
 // Name returns the normalized OS name (mac, linux, windows).
 func (d *realOSDetector) Name() string {
-	return internal.OSName()
+	detector := internal.NewOSDetector()
+	return detector.Name()
 }
 
 // Architecture returns the system architecture.
