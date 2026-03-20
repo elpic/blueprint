@@ -191,6 +191,11 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 	return sorted, nil
 }
 
+// isGitURL returns true if the input is a git URL
+func isGitURL(input string) bool {
+	return gitpkg.IsGitURL(input)
+}
+
 // resolveBlueprintFile resolves a blueprint file path or git URL to a local path.
 // If input is a git URL the repo is cloned to a temp directory and the setup file is located.
 // The caller must call cleanup() when done (safe to call even on error — it is a no-op then).

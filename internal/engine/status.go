@@ -138,7 +138,10 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 	}
 
 	// Normalize blueprint path for consistent storage and comparison
-	blueprint = normalizePath(blueprint)
+	// Skip normalization for git URLs - they should be stored as-is
+	if !isGitURL(blueprint) {
+		blueprint = normalizePath(blueprint)
+	}
 
 	// Load existing status
 	var status handlerskg.Status
