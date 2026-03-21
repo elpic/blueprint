@@ -21,7 +21,7 @@ mise install   # installs Go and golangci-lint at the versions in mise.toml
 ### Current OS
 
 ```bash
-go build -o blueprint ./cmd/blueprint
+mise run build:macos   # or build:linux / build:windows
 ```
 
 ### Cross-Platform Builds
@@ -60,11 +60,6 @@ mise run lint        # run golangci-lint
 mise run check       # run tests + lint + security scan
 ```
 
-Or directly with Go:
-
-```bash
-go test ./...
-```
 
 ## Project Structure
 
@@ -72,7 +67,7 @@ See [`docs/architecture.md`](docs/architecture.md) for a full project structure 
 
 ## Code Style
 
-- Run `gofmt -l .` before committing to ensure code is formatted
+- Run `mise run format` before committing to ensure code is formatted
 - Follow standard Go conventions and idioms
 - Each handler lives in its own file under `internal/handlers/`
 - Action documentation lives in `docs/` (one `.md` per action)
