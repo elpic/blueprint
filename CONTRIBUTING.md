@@ -4,8 +4,7 @@ Thank you for your interest in contributing to Blueprint. This guide covers ever
 
 ## Requirements
 
-- Go 1.20+
-- `just` (optional, for convenient build commands) -- https://github.com/casey/just#installation
+- [mise](https://mise.jdx.dev) — manages Go version and task runner
 
 ## Getting Started
 
@@ -14,7 +13,7 @@ Clone the repository and install dependencies:
 ```bash
 git clone https://github.com/elpic/blueprint.git
 cd blueprint
-go mod download
+mise install   # installs Go and golangci-lint at the versions in mise.toml
 ```
 
 ## Building
@@ -27,22 +26,22 @@ go build -o blueprint ./cmd/blueprint
 
 ### Cross-Platform Builds
 
-Use `just` to build for all platforms:
+Use `mise run` to build for all platforms:
 
 ```bash
 # Build for all platforms (default)
-just build
+mise run build
 
 # Build for specific platform
-just build-linux      # Linux (amd64 and arm64)
-just build-windows    # Windows (amd64)
-just build-macos      # macOS (amd64 and arm64)
+mise run build:linux      # Linux (amd64 and arm64)
+mise run build:windows    # Windows (amd64)
+mise run build:macos      # macOS (amd64 and arm64)
 
 # Clean build artifacts
-just clean
+mise run clean
 
-# Show all available recipes
-just help
+# Show all available tasks
+mise tasks
 ```
 
 This creates:
@@ -54,6 +53,14 @@ This creates:
 - `blueprint` -- Current OS
 
 ## Running Tests
+
+```bash
+mise run test        # run all tests
+mise run lint        # run golangci-lint
+mise run check       # run tests + lint + security scan
+```
+
+Or directly with Go:
 
 ```bash
 go test ./...
