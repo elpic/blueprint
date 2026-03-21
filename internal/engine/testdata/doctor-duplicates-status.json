@@ -1,0 +1,20 @@
+{
+  "packages": [
+    {"name": "vim", "blueprint": "/home/elpic/https:/github.com/elpic/setup.git", "os": "linux"},
+    {"name": "vim", "blueprint": "https://github.com/elpic/setup", "os": "linux"},
+    {"name": "git", "blueprint": "/home/elpic/https:/github.com/elpic/setup.git", "os": "linux"},
+    {"name": "git", "blueprint": "https://github.com/elpic/setup", "os": "linux"},
+    {"name": "curl", "blueprint": "https://github.com/elpic/setup", "os": "linux"}
+  ],
+  "downloads": [
+    {"url": "https://example.com/antigen.zsh", "path": "~/.oh-my-zsh/antigen.zsh", "blueprint": "/home/elpic/https:/github.com/elpic/setup.git", "os": "linux"},
+    {"url": "https://example.com/antigen.zsh", "path": "~/.oh-my-zsh/antigen.zsh", "blueprint": "https://github.com/elpic/setup", "os": "linux"}
+  ],
+  "runs": [
+    {"action": "run", "command": "https://download.calibre-ebook.com/linux-installer.sh", "blueprint": "/home/elpic/https:/github.com/elpic/setup.git", "os": "linux"},
+    {"action": "run", "command": "https://download.calibre-ebook.com/linux-installer.sh", "blueprint": "https://github.com/elpic/setup", "os": "linux"},
+    {"action": "run", "command": "rm -rf ~/.local/bin/vim && ln -s $(asdf which nvim) ~/.local/bin/vim", "blueprint": "/home/elpic/https:/github.com/elpic/setup.git", "os": "linux"},
+    {"action": "run", "command": "rm -rf ~/.local/bin/vim && ln -s $(which nvim) ~/.local/bin/vim", "blueprint": "/home/elpic/https:/github.com/elpic/setup.git", "os": "linux"},
+    {"action": "run", "command": "rm -rf ~/.local/bin/vim && ln -s $(which nvim) ~/.local/bin/vim", "blueprint": "https://github.com/elpic/setup", "os": "linux"}
+  ]
+}

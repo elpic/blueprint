@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
+	gitpkg "github.com/elpic/blueprint/internal/git"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
+	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
 )
 
@@ -201,6 +204,167 @@ func checkDuplicates(status *handlerskg.Status) []doctorIssue {
 	}
 }
 
+// findBlueprintSetupFile returns the path to setup.bp inside localPath, or an
+// error if the file does not exist.
+func findBlueprintSetupFile(localPath string) (string, error) {
+	p := filepath.Join(localPath, "setup.bp")
+	if _, err := os.Stat(p); err != nil {
+		return "", err
+	}
+	return p, nil
+}
+
+// rulesForBlueprint loads the parsed rules for a blueprint URL. It uses the
+// local cache at ~/.blueprint/repos/<host>/<org>/<repo> if present, otherwise
+// clones the repo on demand so that `blueprint doctor` works without requiring
+// a prior `blueprint apply`.
+func rulesForBlueprint(blueprintURL string) ([]parser.Rule, error) {
+	if !gitpkg.IsGitURL(blueprintURL) {
+		// Local file — parse directly.
+		return parser.ParseFile(blueprintURL)
+	}
+
+	localPath := blueprintRepoPath(blueprintURL)
+
+	// Clone or update the repo so doctor always has fresh rules.
+	params := gitpkg.ParseGitURL(blueprintURL)
+	if _, _, _, err := gitpkg.CloneOrUpdateRepository(params.URL, localPath, params.Branch); err != nil {
+		return nil, fmt.Errorf("failed to fetch blueprint %s: %w", blueprintURL, err)
+	}
+
+	setupPath, err := findBlueprintSetupFile(localPath)
+	if err != nil {
+		return nil, fmt.Errorf("setup.bp not found in %s: %w", blueprintURL, err)
+	}
+	return parser.ParseFile(setupPath)
+}
+
+// checkOrphansWithLoader is the testable core of checkOrphans.
+// loader is called with a normalized blueprint URL and returns the parsed rules
+// for that blueprint, or nil if the blueprint is not available locally.
+func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []parser.Rule) []doctorIssue {
+	// Build a map of blueprint URL → set of rule keys present in that blueprint.
+	type ruleSet map[string]bool
+	cache := map[string]ruleSet{} // normalized blueprint URL → rule keys
+
+	rulesFor := func(bp string) ruleSet {
+		norm := handlerskg.NormalizeBlueprint(bp)
+		if rs, ok := cache[norm]; ok {
+			return rs
+		}
+		rules := loader(norm)
+		if rules == nil {
+			cache[norm] = nil
+			return nil
+		}
+		rs := ruleSet{}
+		for _, r := range rules {
+			rs[handlerskg.RuleKey(r)] = true
+			// Also index every package / homebrew formula individually.
+			for _, pkg := range r.Packages {
+				rs[pkg.Name] = true
+			}
+			for _, formula := range r.HomebrewPackages {
+				rs[formula] = true
+			}
+			for _, model := range r.OllamaModels {
+				rs[model] = true
+			}
+		}
+		cache[norm] = rs
+		return rs
+	}
+
+	var orphans []string
+
+	check := func(resource, bp string) {
+		rs := rulesFor(bp)
+		if rs == nil {
+			return // blueprint not cached — skip
+		}
+		if !rs[resource] {
+			orphans = append(orphans, fmt.Sprintf("%s (blueprint: %s)", resource, handlerskg.NormalizeBlueprint(bp)))
+		}
+	}
+
+	for _, v := range status.Packages {
+		check(v.Name, v.Blueprint)
+	}
+	for _, v := range status.Clones {
+		check(v.Path, v.Blueprint)
+	}
+	for _, v := range status.Decrypts {
+		check(v.DestPath, v.Blueprint)
+	}
+	for _, v := range status.Mkdirs {
+		check(v.Path, v.Blueprint)
+	}
+	for _, v := range status.KnownHosts {
+		check(v.Host, v.Blueprint)
+	}
+	for _, v := range status.GPGKeys {
+		check(v.Keyring, v.Blueprint)
+	}
+	for _, v := range status.Brews {
+		check(v.Formula, v.Blueprint)
+	}
+	for _, v := range status.Ollamas {
+		check(v.Model, v.Blueprint)
+	}
+	for _, v := range status.Downloads {
+		check(v.Path, v.Blueprint)
+	}
+	for _, v := range status.Runs {
+		check(v.Command, v.Blueprint)
+	}
+	for _, v := range status.Dotfiles {
+		check(v.URL, v.Blueprint)
+	}
+	for _, v := range status.Schedules {
+		check(v.Source, v.Blueprint)
+	}
+	for _, v := range status.Shells {
+		check(v.Shell, v.Blueprint)
+	}
+	for _, v := range status.AuthorizedKeys {
+		check(v.Source, v.Blueprint)
+	}
+
+	if len(orphans) == 0 {
+		return nil
+	}
+
+	examples := orphans
+	if len(examples) > 3 {
+		examples = examples[:3]
+	}
+	return []doctorIssue{
+		{
+			description: fmt.Sprintf("%d orphaned entries (resource no longer exists in blueprint)", len(orphans)),
+			count:       len(orphans),
+			examples:    examples,
+		},
+	}
+}
+
+// checkOrphans detects status entries whose resource no longer exists in the
+// blueprint file they were installed from.
+func checkOrphans(status *handlerskg.Status) []doctorIssue {
+	fetched := map[string]bool{}
+	return checkOrphansWithLoader(status, func(norm string) []parser.Rule {
+		if !fetched[norm] {
+			fetched[norm] = true
+			fmt.Printf("  Fetching blueprint %s...\n", norm)
+		}
+		rules, err := rulesForBlueprint(norm)
+		if err != nil {
+			fmt.Printf("  %s\n", ui.FormatError(fmt.Sprintf("could not fetch %s: %v", norm, err)))
+			return nil
+		}
+		return rules
+	})
+}
+
 // DoctorCheck reads ~/.blueprint/status.json, reports all issues found, and
 // optionally rewrites the file with issues fixed when fix is true.
 // Exits with code 1 if issues are found and fix is false.
@@ -235,10 +399,13 @@ func DoctorCheck(fix bool) {
 
 	issues := checkBlueprintURLs(&status)
 	issues = append(issues, checkDuplicates(&status)...)
+	fmt.Printf("\nChecking for orphaned entries...\n")
+	issues = append(issues, checkOrphans(&status)...)
 
 	if len(issues) == 0 {
 		fmt.Printf("  %s\n", ui.FormatSuccess("blueprint URLs are normalized"))
 		fmt.Printf("  %s\n", ui.FormatSuccess("no duplicate entries"))
+		fmt.Printf("  %s\n", ui.FormatSuccess("no orphaned entries"))
 		fmt.Printf("\n%s\n\n", ui.FormatSuccess("No issues found."))
 		return
 	}

@@ -1,9 +1,12 @@
 package engine
 
 import (
+	"encoding/json"
+	"os"
 	"testing"
 
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
+	"github.com/elpic/blueprint/internal/parser"
 )
 
 func TestCheckBlueprintURLs_CleanStatus(t *testing.T) {
@@ -266,5 +269,173 @@ func TestCheckBlueprintURLs_AllStatusTypes(t *testing.T) {
 	// 14 slices each with 1 entry = 14 stale entries.
 	if issues[0].count != 14 {
 		t.Errorf("expected count 14, got %d", issues[0].count)
+	}
+}
+
+func TestDoctorFixture_DoctorDuplicatesStatus(t *testing.T) {
+	// Loads testdata/doctor-duplicates-status.json — mirrors what was found on the
+	// remote machine: mangled absolute-path blueprint URLs paired with their
+	// correct forms, producing both stale-URL and duplicate issues.
+	data, err := os.ReadFile("testdata/doctor-duplicates-status.json")
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
+	}
+	var status handlerskg.Status
+	if err := json.Unmarshal(data, &status); err != nil {
+		t.Fatalf("failed to parse fixture: %v", err)
+	}
+
+	urlIssues := checkBlueprintURLs(&status)
+	if len(urlIssues) == 0 {
+		t.Fatal("expected stale URL issues, got none")
+	}
+	// 2 packages + 1 download + 3 runs (calibre, asdf-nvim, nvim-link) all have mangled blueprints = 6 stale entries.
+	if urlIssues[0].count != 6 {
+		t.Errorf("expected 6 stale URL entries, got %d", urlIssues[0].count)
+	}
+
+	dupIssues := checkDuplicates(&status)
+	if len(dupIssues) == 0 {
+		t.Fatal("expected duplicate issues, got none")
+	}
+	// 2 package dups + 1 download dup + 2 run dups (calibre + nvim-link) = 5.
+	if dupIssues[0].count != 5 {
+		t.Errorf("expected 5 duplicate entries, got %d", dupIssues[0].count)
+	}
+
+	// After fix: migrate then dedup — verify counts are clean.
+	handlerskg.MigrateStatus(&status)
+	handlerskg.DeduplicateStatus(&status)
+
+	if len(checkBlueprintURLs(&status)) != 0 {
+		t.Error("expected no stale URL issues after fix")
+	}
+	if len(checkDuplicates(&status)) != 0 {
+		t.Error("expected no duplicate issues after fix")
+	}
+	// 5 unique packages (vim, git, curl), 1 download, 3 runs (calibre, asdf-nvim, nvim-link).
+	if len(status.Packages) != 3 {
+		t.Errorf("expected 3 packages after dedup, got %d", len(status.Packages))
+	}
+	if len(status.Downloads) != 1 {
+		t.Errorf("expected 1 download after dedup, got %d", len(status.Downloads))
+	}
+	if len(status.Runs) != 3 {
+		t.Errorf("expected 3 runs after dedup, got %d", len(status.Runs))
+	}
+}
+
+// loaderFromFile parses testdata/<filename> and returns a loader func that
+// serves those rules for any blueprint URL. Used to inject fixture blueprints
+// into checkOrphansWithLoader without touching the filesystem cache.
+func loaderFromFile(t *testing.T, filename string) func(string) []parser.Rule {
+	t.Helper()
+	rules, err := parser.ParseFile("testdata/" + filename)
+	if err != nil {
+		t.Fatalf("failed to parse fixture blueprint %s: %v", filename, err)
+	}
+	return func(_ string) []parser.Rule { return rules }
+}
+
+func TestCheckOrphans_DetectsRemovedRunCommand(t *testing.T) {
+	// doctor-orphan-setup.bp contains two run commands:
+	//   run: rm -rf ~/.local/bin/vim && ln -s $(which nvim) ~/.local/bin/vim
+	//   run: https://download.calibre-ebook.com/linux-installer.sh
+	//
+	// Status has three run entries — the third (asdf which nvim) is orphaned.
+	status := &handlerskg.Status{
+		Runs: []handlerskg.RunStatus{
+			{Command: "rm -rf ~/.local/bin/vim && ln -s $(which nvim) ~/.local/bin/vim", Blueprint: "https://github.com/elpic/setup", OS: "linux"},
+			{Command: "https://download.calibre-ebook.com/linux-installer.sh", Blueprint: "https://github.com/elpic/setup", OS: "linux"},
+			{Command: "rm -rf ~/.local/bin/vim && ln -s $(asdf which nvim) ~/.local/bin/vim", Blueprint: "https://github.com/elpic/setup", OS: "linux"},
+		},
+	}
+
+	issues := checkOrphansWithLoader(status, loaderFromFile(t, "doctor-orphan-setup.bp"))
+	if len(issues) == 0 {
+		t.Fatal("expected orphan issues, got none")
+	}
+	if issues[0].count != 1 {
+		t.Errorf("expected 1 orphaned entry, got %d", issues[0].count)
+	}
+	if len(issues[0].examples) == 0 || issues[0].examples[0] == "" {
+		t.Error("expected at least one example in orphan issue")
+	}
+}
+
+func TestCheckOrphans_NoOrphans(t *testing.T) {
+	// All run commands exist in the blueprint — no orphans expected.
+	status := &handlerskg.Status{
+		Runs: []handlerskg.RunStatus{
+			{Command: "rm -rf ~/.local/bin/vim && ln -s $(which nvim) ~/.local/bin/vim", Blueprint: "https://github.com/elpic/setup", OS: "linux"},
+			{Command: "https://download.calibre-ebook.com/linux-installer.sh", Blueprint: "https://github.com/elpic/setup", OS: "linux"},
+		},
+	}
+
+	issues := checkOrphansWithLoader(status, loaderFromFile(t, "doctor-orphan-setup.bp"))
+	if len(issues) != 0 {
+		t.Errorf("expected no orphan issues, got %d: %+v", len(issues), issues)
+	}
+}
+
+func TestCheckOrphans_SkipsUncachedBlueprint(t *testing.T) {
+	// loader returns nil (blueprint not cached) — orphan check must be skipped.
+	status := &handlerskg.Status{
+		Runs: []handlerskg.RunStatus{
+			{Command: "some-old-command", Blueprint: "https://github.com/elpic/setup", OS: "linux"},
+		},
+	}
+	loader := func(_ string) []parser.Rule { return nil }
+	issues := checkOrphansWithLoader(status, loader)
+	if len(issues) != 0 {
+		t.Errorf("expected no issues when blueprint not cached, got %d", len(issues))
+	}
+}
+
+func TestCheckOrphans_ElpicSetupRealStatus(t *testing.T) {
+	// Mirrors the exact runs from the real https://github.com/elpic/setup status:
+	//
+	//   ✓ rm -rf ~/.local/bin/vim && ln -s $(asdf which nvim) ~/.local/bin/vim  ← ORPHANED
+	//   ✓ https://download.calibre-ebook.com/linux-installer.sh                  ← still present (run-sh)
+	//   ✓ rm -rf ~/.local/bin/vim && ln -s $(which nvim) ~/.local/bin/vim        ← still present
+	//
+	// The fixture blueprint (elpic-setup-runs.bp) has the two current commands
+	// but not the old "asdf which nvim" one, so it should be flagged as orphaned.
+	status := &handlerskg.Status{
+		Runs: []handlerskg.RunStatus{
+			{
+				Action:    "run",
+				Command:   "rm -rf ~/.local/bin/vim && ln -s $(asdf which nvim) ~/.local/bin/vim",
+				Blueprint: "https://github.com/elpic/setup",
+				OS:        "linux",
+			},
+			{
+				Action:    "run-sh",
+				Command:   "https://download.calibre-ebook.com/linux-installer.sh",
+				Blueprint: "https://github.com/elpic/setup",
+				OS:        "linux",
+			},
+			{
+				Action:    "run",
+				Command:   "rm -rf ~/.local/bin/vim && ln -s $(which nvim) ~/.local/bin/vim",
+				Blueprint: "https://github.com/elpic/setup",
+				OS:        "linux",
+			},
+		},
+	}
+
+	issues := checkOrphansWithLoader(status, loaderFromFile(t, "elpic-setup-runs.bp"))
+	if len(issues) == 0 {
+		t.Fatal("expected orphan issue for removed 'asdf which nvim' command, got none")
+	}
+	if issues[0].count != 1 {
+		t.Errorf("expected 1 orphaned entry, got %d", issues[0].count)
+	}
+	if len(issues[0].examples) == 0 {
+		t.Fatal("expected at least one example in orphan issue")
+	}
+	want := "rm -rf ~/.local/bin/vim && ln -s $(asdf which nvim) ~/.local/bin/vim"
+	if issues[0].examples[0] != want+" (blueprint: https://github.com/elpic/setup)" {
+		t.Errorf("unexpected orphan example:\n  got:  %s\n  want: %s (blueprint: https://github.com/elpic/setup)", issues[0].examples[0], want)
 	}
 }

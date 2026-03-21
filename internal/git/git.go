@@ -577,6 +577,12 @@ func NormalizeGitURL(url string) string {
 
 // getRepositoryStoragePath returns the path where a repository should be stored
 func getRepositoryStoragePath(url, branch string) (string, error) {
+	return RepositoryStoragePath(url, branch)
+}
+
+// RepositoryStoragePath returns the local cache path for a blueprint repository.
+// This is where `blueprint apply <git-url>` stores the cloned repo.
+func RepositoryStoragePath(url, branch string) (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
