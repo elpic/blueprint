@@ -282,6 +282,21 @@ func PrintDiff(blueprintFile string) {
 		fmt.Printf("\n%s\n", ui.FormatSuccess("+ will install:"))
 		for _, r := range addRules {
 			fmt.Printf("  %s %s\n", ui.FormatSuccess("+"), ui.FormatInfo(r.DisplaySummary()))
+			// For dotfiles rules, show what will change
+			if r.Action == "dotfiles" && r.DotfilesURL != "" {
+				handler := handlerskg.NewHandler(r, "", nil)
+				if dh, ok := handler.(*handlerskg.DotfilesHandler); ok {
+					// Show symlinks missing from the local clone
+					missing := handlerskg.DotfilesLinksForDiff(dh)
+					for _, link := range missing {
+						fmt.Printf("      %s %s\n", ui.FormatDim("\u2192"), ui.FormatDim(link))
+					}
+					// If no missing symlinks but remote has new commits, say so
+					if len(missing) == 0 {
+						fmt.Printf("      %s\n", ui.FormatDim("remote has new commits"))
+					}
+				}
+			}
 		}
 	}
 
