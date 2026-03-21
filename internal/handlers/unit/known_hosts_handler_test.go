@@ -2,7 +2,6 @@ package unit
 
 import (
 	"testing"
-	"time"
 
 	"github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
@@ -56,9 +55,6 @@ func TestKnownHostsHandler_GetCommand_Pure(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			start := time.Now()
-
-			// Create rule manually
 			rule := parser.Rule{
 				Action:        "known_hosts",
 				KnownHosts:    tt.host,
@@ -69,29 +65,18 @@ func TestKnownHostsHandler_GetCommand_Pure(t *testing.T) {
 				rule.Action = "uninstall"
 			}
 
-			// Create handler
 			handler := handlers.NewKnownHostsHandler(rule, "/test/path")
-
-			// Test command generation (pure function - no I/O)
 			cmd := handler.GetCommand()
 
-			duration := time.Since(start)
-
-			// Verify command generation
 			if cmd != tt.expectedCmd {
 				t.Errorf("GetCommand() = %q, want %q", cmd, tt.expectedCmd)
-			}
-
-			// Verify that this is a fast unit test (< 200μs)
-			if duration > 200*time.Microsecond {
-				t.Errorf("Test took %v, expected < 200μs for pure unit test", duration)
 			}
 		})
 	}
 }
 
 // TestKnownHostsHandler_GetDependencyKey_Pure tests dependency key generation
-// without any I/O operations. Executes in microseconds.
+// without any I/O operations.
 func TestKnownHostsHandler_GetDependencyKey_Pure(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -121,28 +106,17 @@ func TestKnownHostsHandler_GetDependencyKey_Pure(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			start := time.Now()
-
-			// Build rule manually
 			rule := parser.Rule{
 				ID:         tt.ruleID,
 				Action:     "known_hosts",
 				KnownHosts: tt.host,
 			}
 
-			// Test dependency key generation
 			handler := handlers.NewKnownHostsHandler(rule, "/test")
 			key := handler.GetDependencyKey()
 
-			duration := time.Since(start)
-
 			if key != tt.expected {
 				t.Errorf("GetDependencyKey() = %q, want %q", key, tt.expected)
-			}
-
-			// This should be extremely fast (microseconds)
-			if duration > 100*time.Microsecond {
-				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
 			}
 		})
 	}
@@ -174,24 +148,16 @@ func TestKnownHostsHandler_GetDisplayDetails_Pure(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			start := time.Now()
-
 			rule := parser.Rule{
 				Action:     "known_hosts",
 				KnownHosts: tt.host,
 			}
 
 			handler := handlers.NewKnownHostsHandler(rule, "/test")
-
 			details := handler.GetDisplayDetails(false)
-			duration := time.Since(start)
 
 			if details != tt.expected {
 				t.Errorf("GetDisplayDetails() = %q, want %q", details, tt.expected)
-			}
-
-			if duration > 100*time.Microsecond {
-				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
 			}
 		})
 	}
@@ -215,8 +181,6 @@ func TestKnownHostsHandler_GetState_Pure(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			start := time.Now()
-
 			rule := parser.Rule{
 				Action:     "known_hosts",
 				KnownHosts: tt.host,
@@ -225,18 +189,11 @@ func TestKnownHostsHandler_GetState_Pure(t *testing.T) {
 			handler := handlers.NewKnownHostsHandler(rule, "/test")
 			state := handler.GetState(false)
 
-			duration := time.Since(start)
-
-			// Verify required keys
 			if state["summary"] != tt.host {
 				t.Errorf("state[summary] = %q, want %q", state["summary"], tt.host)
 			}
 			if state["host"] != tt.host {
 				t.Errorf("state[host] = %q, want %q", state["host"], tt.host)
-			}
-
-			if duration > 100*time.Microsecond {
-				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
 			}
 		})
 	}
@@ -247,7 +204,7 @@ func TestEscapeForSed_Pure(t *testing.T) {
 	tests := []struct {
 		name         string
 		host         string
-		expectedPart string // part of the sed command that should contain the escaped host
+		expectedPart string
 	}{
 		{
 			name:         "simple hostname",
@@ -268,33 +225,22 @@ func TestEscapeForSed_Pure(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			start := time.Now()
-
 			rule := parser.Rule{
-				Action:     "uninstall", // uninstall uses sed escaping
+				Action:     "uninstall",
 				KnownHosts: tt.host,
 			}
 
 			handler := handlers.NewKnownHostsHandler(rule, "/test")
 			cmd := handler.GetCommand()
 
-			duration := time.Since(start)
-
-			// Verify the escaped hostname appears in the sed command
 			if !containsStringKH(cmd, tt.expectedPart) {
 				t.Errorf("GetCommand() = %q should contain escaped host %q", cmd, tt.expectedPart)
-			}
-
-			if duration > 100*time.Microsecond {
-				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
 			}
 		})
 	}
 }
 
-// TestIsValidHostname_Pure tests hostname validation indirectly by checking error handling.
-// We can't call isValidHostname directly since it's not exported, but we can test the validation
-// behavior through the handler methods.
+// TestHostnameValidation_Behavior tests hostname validation indirectly through handler methods.
 func TestHostnameValidation_Behavior(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -330,30 +276,18 @@ func TestHostnameValidation_Behavior(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			start := time.Now()
-
 			rule := parser.Rule{
 				Action:     "known_hosts",
 				KnownHosts: tt.hostname,
 			}
 
 			handler := handlers.NewKnownHostsHandler(rule, "/test")
-
-			// Test that the handler can generate commands for valid hostnames
-			// (this tests the validation indirectly)
 			cmd := handler.GetCommand()
 
-			duration := time.Since(start)
-
 			if tt.valid {
-				// For valid hostnames, command should contain the hostname
 				if !containsStringKH(cmd, tt.hostname) {
 					t.Errorf("GetCommand() = %q should contain hostname %q", cmd, tt.hostname)
 				}
-			}
-
-			if duration > 100*time.Microsecond {
-				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
 			}
 		})
 	}

@@ -17,7 +17,7 @@ type Package struct {
 
 type Rule struct {
 	ID       string // Unique identifier for this rule
-	Action   string // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "mise", "homebrew", "ollama", "known_hosts", "gpg-key", "sudoers", "schedule", or "shell"
+	Action   string // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "mise", "homebrew", "ollama", "known_hosts", "gpg-key", "sudoers", "schedule", "shell", or "authorized_keys"
 	Packages []Package
 	OSList   []string
 	After    []string // List of IDs or package names this rule depends on
@@ -91,6 +91,11 @@ type Rule struct {
 
 	// Shell-specific fields
 	ShellName string // Shell name or path to set as default login shell
+
+	// AuthorizedKeys-specific fields
+	AuthorizedKeysFile       string // Plain file path containing public key(s)
+	AuthorizedKeysEncrypted  string // Encrypted file containing public key(s)
+	AuthorizedKeysPasswordID string // Password ID for decryption
 }
 
 // DisplaySummary returns a short human-readable description of the rule for diff/plan output.
@@ -134,6 +139,11 @@ func (r Rule) DisplaySummary() string {
 		return r.ScheduleSource
 	case "shell":
 		return r.ShellName
+	case "authorized_keys":
+		if r.AuthorizedKeysEncrypted != "" {
+			return r.AuthorizedKeysEncrypted
+		}
+		return r.AuthorizedKeysFile
 	default:
 		return r.Action
 	}
@@ -258,6 +268,8 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 			rule, err = parseScheduleRule(line)
 		case strings.HasPrefix(line, "shell "):
 			rule, err = parseShellRule(line)
+		case strings.HasPrefix(line, "authorized_keys "):
+			rule, err = parseAuthorizedKeysRule(line)
 		default:
 			return nil, fmt.Errorf("line %d: unknown directive %q", lineNum+1, line)
 		}
@@ -720,5 +732,24 @@ func parseShellRule(line string) (*Rule, error) {
 		ShellName: shellName,
 		OSList:    f.osFilter,
 		After:     f.list("after:"),
+	}, nil
+}
+
+func parseAuthorizedKeysRule(line string) (*Rule, error) {
+	f := parseFields(strings.TrimPrefix(line, "authorized_keys "))
+	fileVal := f.word("file:")
+	encryptedVal := f.word("encrypted:")
+	if fileVal == "" && encryptedVal == "" {
+		return nil, lineError(line, "authorized_keys requires file: or encrypted:")
+	}
+	return &Rule{
+		ID:                       f.word("id:"),
+		Action:                   "authorized_keys",
+		AuthorizedKeysFile:       fileVal,
+		AuthorizedKeysEncrypted:  encryptedVal,
+		AuthorizedKeysPasswordID: f.word("password-id:"),
+		Group:                    f.word("group:"),
+		OSList:                   f.osFilter,
+		After:                    f.list("after:"),
 	}, nil
 }
