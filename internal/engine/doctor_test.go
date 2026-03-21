@@ -134,6 +134,33 @@ func TestCheckBlueprintURLs_SingleSlash(t *testing.T) {
 	}
 }
 
+func TestDeduplicateAfterMigrate_ReducesCount(t *testing.T) {
+	// Simulates the full fix path: MigrateStatus then DeduplicateStatus.
+	// Before fix: 4 packages (2 pairs of duplicates under different URL forms).
+	// After fix: 2 packages (one per unique name+os+blueprint).
+	status := handlerskg.Status{
+		Packages: []handlerskg.PackageStatus{
+			{Name: "vim", Blueprint: "https:/github.com/elpic/setup.git", OS: "linux"},
+			{Name: "git", Blueprint: "https:/github.com/elpic/setup.git", OS: "linux"},
+			{Name: "vim", Blueprint: "https://github.com/elpic/setup", OS: "linux"},
+			{Name: "git", Blueprint: "https://github.com/elpic/setup", OS: "linux"},
+		},
+	}
+
+	handlerskg.MigrateStatus(&status)
+	handlerskg.DeduplicateStatus(&status)
+
+	if len(status.Packages) != 2 {
+		t.Errorf("expected 2 packages after dedup, got %d", len(status.Packages))
+	}
+	// The newer entries (originally from https://github.com/elpic/setup) should be kept.
+	for _, p := range status.Packages {
+		if p.Blueprint != "https://github.com/elpic/setup" {
+			t.Errorf("expected blueprint https://github.com/elpic/setup, got %q", p.Blueprint)
+		}
+	}
+}
+
 func TestCheckBlueprintURLs_AllStatusTypes(t *testing.T) {
 	// Verify that all status slice types are checked, not just Packages.
 	staleBlueprint := "git@github.com:corp/blueprint.git"
