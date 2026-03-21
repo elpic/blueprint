@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
 )
@@ -197,6 +198,7 @@ func RemoveWithSkip(file string, skipGroup string, skipID string, autoConfirm bo
 	}
 
 	currentOS := getOSName()
+	basePath := filepath.Dir(setupPath)
 	osRules := filterRulesByOS(rules)
 
 	// Apply skip flags
@@ -220,7 +222,15 @@ func RemoveWithSkip(file string, skipGroup string, skipID string, autoConfirm bo
 	ui.PrintRemoveHeader(currentOS, file, len(filteredRules))
 	fmt.Printf("%s\n", ui.FormatError("- will remove:"))
 	for _, rule := range filteredRules {
-		fmt.Printf("  %s %s\n", ui.FormatError("-"), ui.FormatInfo(rule.DisplaySummary()))
+		label := rule.DisplaySummary()
+		if handler := handlerskg.NewHandler(rule, basePath, nil); handler != nil {
+			if dp, ok := handler.(handlerskg.DisplayProvider); ok {
+				if details := dp.GetDisplayDetails(true); details != "" {
+					label = details
+				}
+			}
+		}
+		fmt.Printf("  %s %s\n", ui.FormatError("-"), ui.FormatInfo(label))
 	}
 	fmt.Println()
 
@@ -244,8 +254,6 @@ func RemoveWithSkip(file string, skipGroup string, skipID string, autoConfirm bo
 	for i := range filteredRules {
 		filteredRules[i].Action = "uninstall"
 	}
-
-	basePath := filepath.Dir(setupPath)
 
 	// Prompt for sudo password if needed
 	if err := promptForSudoPasswordWithOS(filteredRules, currentOS); err != nil {
