@@ -130,17 +130,6 @@ func (h *OllamaHandler) isOllamaInstalled() bool {
 	return cmd.Run() == nil
 }
 
-// isOllamaModelInstalled checks if a model is present in `ollama list` output.
-var isOllamaModelInstalled = func(model string) bool {
-	cmd := exec.Command("ollama", "list")
-	cmd.Stdin = nil
-	out, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(out), model)
-}
-
 // buildCommand builds the install command based on model list
 func (h *OllamaHandler) buildCommand() string {
 	if len(h.Rule.OllamaModels) == 0 {

@@ -169,23 +169,6 @@ func caskKey(name string) string {
 	return "cask:" + name
 }
 
-// getInstalledFormulaVersion gets the installed version of a formula
-func (h *HomebrewHandler) getInstalledFormulaVersion(formula string) (string, error) {
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("%s list --versions %s", brewCmd(), formula))
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", err
-	}
-
-	// Output format: "formula version"
-	parts := strings.Fields(string(output))
-	if len(parts) > 1 {
-		return parts[1], nil
-	}
-
-	return "", nil
-}
-
 // ensureHomebrewInstalled ensures homebrew is installed on the system
 // Uses mutex to prevent concurrent installation attempts that could cause conflicts
 func (h *HomebrewHandler) ensureHomebrewInstalled() error {
