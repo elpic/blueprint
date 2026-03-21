@@ -70,22 +70,28 @@ func (h *OllamaHandler) GetCommand() string {
 	return h.buildCommand()
 }
 
-// UpdateStatus updates the status after installing or uninstalling models
+// UpdateStatus updates the status after installing or uninstalling models.
+// It uses execution records to determine success rather than shelling out to
+// ollama, which avoids unnecessary command overhead during status saving.
 func (h *OllamaHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
 	blueprint = normalizeBlueprint(blueprint)
 
 	switch h.Rule.Action {
 	case "ollama":
+		cmd := h.buildCommand()
+		_, commandExecuted := commandSuccessfullyExecuted(cmd, records)
+		if !commandExecuted {
+			return nil // command failed or didn't run — don't update status
+		}
+
 		for _, model := range h.Rule.OllamaModels {
-			if isOllamaModelInstalled(model) {
-				status.Ollamas = removeOllamaStatus(status.Ollamas, model, blueprint, osName)
-				status.Ollamas = append(status.Ollamas, OllamaStatus{
-					Model:       model,
-					InstalledAt: time.Now().Format(time.RFC3339),
-					Blueprint:   blueprint,
-					OS:          osName,
-				})
-			}
+			status.Ollamas = removeOllamaStatus(status.Ollamas, model, blueprint, osName)
+			status.Ollamas = append(status.Ollamas, OllamaStatus{
+				Model:       model,
+				InstalledAt: time.Now().Format(time.RFC3339),
+				Blueprint:   blueprint,
+				OS:          osName,
+			})
 		}
 	case "uninstall":
 		for _, model := range h.Rule.OllamaModels {
@@ -122,17 +128,6 @@ func (h *OllamaHandler) ensureOllamaInstalled() error {
 func (h *OllamaHandler) isOllamaInstalled() bool {
 	cmd := exec.Command("which", "ollama")
 	return cmd.Run() == nil
-}
-
-// isOllamaModelInstalled checks if a model is present in `ollama list` output.
-var isOllamaModelInstalled = func(model string) bool {
-	cmd := exec.Command("ollama", "list")
-	cmd.Stdin = nil
-	out, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(out), model)
 }
 
 // buildCommand builds the install command based on model list

@@ -70,17 +70,16 @@ func TestOllamaHandlerGetCommand(t *testing.T) {
 
 func TestOllamaHandlerUpdateStatus(t *testing.T) {
 	t.Run("install adds models to status", func(t *testing.T) {
-		origIsOllamaModelInstalled := isOllamaModelInstalled
-		defer func() { isOllamaModelInstalled = origIsOllamaModelInstalled }()
-		isOllamaModelInstalled = func(model string) bool { return true }
-
 		handler := NewOllamaHandler(parser.Rule{
 			Action:       "ollama",
 			OllamaModels: []string{"llama3", "codellama"},
 		}, "")
 
 		status := &Status{}
-		records := []ExecutionRecord{}
+		// Provide a matching success record so UpdateStatus records the models
+		records := []ExecutionRecord{
+			{Command: handler.GetCommand(), Status: "success"},
+		}
 
 		err := handler.UpdateStatus(status, records, "/tmp/test.bp", "mac")
 		if err != nil {
@@ -95,6 +94,28 @@ func TestOllamaHandlerUpdateStatus(t *testing.T) {
 		}
 		if status.Ollamas[1].Model != "codellama" {
 			t.Errorf("second model = %q, want %q", status.Ollamas[1].Model, "codellama")
+		}
+	})
+
+	t.Run("install skips status when command failed", func(t *testing.T) {
+		handler := NewOllamaHandler(parser.Rule{
+			Action:       "ollama",
+			OllamaModels: []string{"llama3"},
+		}, "")
+
+		status := &Status{}
+		// Provide a failed record — status should not be updated
+		records := []ExecutionRecord{
+			{Command: handler.GetCommand(), Status: "error"},
+		}
+
+		err := handler.UpdateStatus(status, records, "/tmp/test.bp", "mac")
+		if err != nil {
+			t.Fatalf("UpdateStatus() error = %v", err)
+		}
+
+		if len(status.Ollamas) != 0 {
+			t.Fatalf("expected 0 ollama entries after failed command, got %d", len(status.Ollamas))
 		}
 	})
 
@@ -126,10 +147,6 @@ func TestOllamaHandlerUpdateStatus(t *testing.T) {
 	})
 
 	t.Run("install does not duplicate existing models", func(t *testing.T) {
-		origIsOllamaModelInstalled := isOllamaModelInstalled
-		defer func() { isOllamaModelInstalled = origIsOllamaModelInstalled }()
-		isOllamaModelInstalled = func(model string) bool { return true }
-
 		handler := NewOllamaHandler(parser.Rule{
 			Action:       "ollama",
 			OllamaModels: []string{"llama3"},
@@ -142,7 +159,12 @@ func TestOllamaHandlerUpdateStatus(t *testing.T) {
 			},
 		}
 
-		err := handler.UpdateStatus(status, nil, "/tmp/test.bp", "mac")
+		// Provide a matching success record
+		records := []ExecutionRecord{
+			{Command: handler.GetCommand(), Status: "success"},
+		}
+
+		err := handler.UpdateStatus(status, records, "/tmp/test.bp", "mac")
 		if err != nil {
 			t.Fatalf("UpdateStatus() error = %v", err)
 		}
