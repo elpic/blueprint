@@ -374,6 +374,16 @@ func TestNormalizeGitURL(t *testing.T) {
 			input:    "",
 			expected: "",
 		},
+		{
+			name:     "single-slash HTTPS with .git (legacy malformed)",
+			input:    "https:/github.com/user/repo.git",
+			expected: "https://github.com/user/repo",
+		},
+		{
+			name:     "single-slash HTTPS without .git (legacy malformed)",
+			input:    "https:/github.com/user/repo",
+			expected: "https://github.com/user/repo",
+		},
 	}
 
 	for _, tt := range tests {

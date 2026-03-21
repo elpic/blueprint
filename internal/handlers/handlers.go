@@ -599,6 +599,286 @@ func MigrateStatus(s *Status) {
 	}
 }
 
+// DeduplicateStatus removes duplicate entries from each status slice.
+// An entry is a duplicate when two records have the same resource key, OS, and
+// blueprint after normalization — this happens when the same blueprint was applied
+// twice using different URL forms (e.g. "https:/host/repo.git" and "https://host/repo").
+// The last occurrence (most recent apply) is kept; earlier duplicates are removed.
+func DeduplicateStatus(s *Status) {
+	s.Packages = dedupPackages(s.Packages)
+	s.Clones = dedupClones(s.Clones)
+	s.Decrypts = dedupDecrypts(s.Decrypts)
+	s.Mkdirs = dedupMkdirs(s.Mkdirs)
+	s.KnownHosts = dedupKnownHosts(s.KnownHosts)
+	s.GPGKeys = dedupGPGKeys(s.GPGKeys)
+	s.Asdfs = dedupAsdfs(s.Asdfs)
+	s.Mises = dedupMises(s.Mises)
+	s.Sudoers = dedupSudoers(s.Sudoers)
+	s.Brews = dedupBrews(s.Brews)
+	s.Ollamas = dedupOllamas(s.Ollamas)
+	s.Downloads = dedupDownloads(s.Downloads)
+	s.Runs = dedupRuns(s.Runs)
+	s.Dotfiles = dedupDotfiles(s.Dotfiles)
+	s.Schedules = dedupSchedules(s.Schedules)
+	s.Shells = dedupShells(s.Shells)
+	s.AuthorizedKeys = dedupAuthorizedKeys(s.AuthorizedKeys)
+}
+
+func dedupPackages(sl []PackageStatus) []PackageStatus {
+	seen := map[string]int{}
+	var out []PackageStatus
+	for _, v := range sl {
+		key := v.Name + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v // replace with newer
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupClones(sl []CloneStatus) []CloneStatus {
+	seen := map[string]int{}
+	var out []CloneStatus
+	for _, v := range sl {
+		key := v.Path + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupDecrypts(sl []DecryptStatus) []DecryptStatus {
+	seen := map[string]int{}
+	var out []DecryptStatus
+	for _, v := range sl {
+		key := v.DestPath + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupMkdirs(sl []MkdirStatus) []MkdirStatus {
+	seen := map[string]int{}
+	var out []MkdirStatus
+	for _, v := range sl {
+		key := v.Path + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupKnownHosts(sl []KnownHostsStatus) []KnownHostsStatus {
+	seen := map[string]int{}
+	var out []KnownHostsStatus
+	for _, v := range sl {
+		key := v.Host + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupGPGKeys(sl []GPGKeyStatus) []GPGKeyStatus {
+	seen := map[string]int{}
+	var out []GPGKeyStatus
+	for _, v := range sl {
+		key := v.Keyring + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupAsdfs(sl []AsdfStatus) []AsdfStatus {
+	seen := map[string]int{}
+	var out []AsdfStatus
+	for _, v := range sl {
+		key := v.Plugin + "\x00" + v.Version + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupMises(sl []MiseStatus) []MiseStatus {
+	seen := map[string]int{}
+	var out []MiseStatus
+	for _, v := range sl {
+		key := v.Tool + "\x00" + v.Version + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupSudoers(sl []SudoersStatus) []SudoersStatus {
+	seen := map[string]int{}
+	var out []SudoersStatus
+	for _, v := range sl {
+		key := v.User + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupBrews(sl []HomebrewStatus) []HomebrewStatus {
+	seen := map[string]int{}
+	var out []HomebrewStatus
+	for _, v := range sl {
+		key := v.Formula + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupOllamas(sl []OllamaStatus) []OllamaStatus {
+	seen := map[string]int{}
+	var out []OllamaStatus
+	for _, v := range sl {
+		key := v.Model + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupDownloads(sl []DownloadStatus) []DownloadStatus {
+	seen := map[string]int{}
+	var out []DownloadStatus
+	for _, v := range sl {
+		key := v.Path + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupRuns(sl []RunStatus) []RunStatus {
+	seen := map[string]int{}
+	var out []RunStatus
+	for _, v := range sl {
+		key := v.Command + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupDotfiles(sl []DotfilesStatus) []DotfilesStatus {
+	seen := map[string]int{}
+	var out []DotfilesStatus
+	for _, v := range sl {
+		key := v.URL + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupSchedules(sl []ScheduleStatus) []ScheduleStatus {
+	seen := map[string]int{}
+	var out []ScheduleStatus
+	for _, v := range sl {
+		key := v.Source + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupShells(sl []ShellStatus) []ShellStatus {
+	seen := map[string]int{}
+	var out []ShellStatus
+	for _, v := range sl {
+		key := v.Shell + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupAuthorizedKeys(sl []AuthorizedKeysStatus) []AuthorizedKeysStatus {
+	seen := map[string]int{}
+	var out []AuthorizedKeysStatus
+	for _, v := range sl {
+		key := v.Source + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 func commandSuccessfullyExecuted(cmd string, records []ExecutionRecord) (*ExecutionRecord, bool) {
 	var resultRecord *ExecutionRecord
 	commandExecuted := false

@@ -112,6 +112,86 @@ func checkBlueprintURLs(status *handlerskg.Status) []doctorIssue {
 	}
 }
 
+// checkDuplicates detects entries that are duplicates after URL normalization —
+// i.e. the same resource recorded twice because the blueprint was applied with
+// two different URL forms (e.g. "https:/host/repo.git" and "https://host/repo").
+func checkDuplicates(status *handlerskg.Status) []doctorIssue {
+	type key struct{ resource, os, blueprint string }
+	seen := map[key]bool{}
+	count := 0
+
+	track := func(resource, os, blueprint string) {
+		k := key{resource, os, handlerskg.NormalizeBlueprint(blueprint)}
+		if seen[k] {
+			count++
+		}
+		seen[k] = true
+	}
+
+	for _, v := range status.Packages {
+		track(v.Name, v.OS, v.Blueprint)
+	}
+	for _, v := range status.Clones {
+		track(v.Path, v.OS, v.Blueprint)
+	}
+	for _, v := range status.Decrypts {
+		track(v.DestPath, v.OS, v.Blueprint)
+	}
+	for _, v := range status.Mkdirs {
+		track(v.Path, v.OS, v.Blueprint)
+	}
+	for _, v := range status.KnownHosts {
+		track(v.Host, v.OS, v.Blueprint)
+	}
+	for _, v := range status.GPGKeys {
+		track(v.Keyring, v.OS, v.Blueprint)
+	}
+	for _, v := range status.Asdfs {
+		track(v.Plugin+"\x00"+v.Version, v.OS, v.Blueprint)
+	}
+	for _, v := range status.Mises {
+		track(v.Tool+"\x00"+v.Version, v.OS, v.Blueprint)
+	}
+	for _, v := range status.Sudoers {
+		track(v.User, v.OS, v.Blueprint)
+	}
+	for _, v := range status.Brews {
+		track(v.Formula, v.OS, v.Blueprint)
+	}
+	for _, v := range status.Ollamas {
+		track(v.Model, v.OS, v.Blueprint)
+	}
+	for _, v := range status.Downloads {
+		track(v.Path, v.OS, v.Blueprint)
+	}
+	for _, v := range status.Runs {
+		track(v.Command, v.OS, v.Blueprint)
+	}
+	for _, v := range status.Dotfiles {
+		track(v.URL, v.OS, v.Blueprint)
+	}
+	for _, v := range status.Schedules {
+		track(v.Source, v.OS, v.Blueprint)
+	}
+	for _, v := range status.Shells {
+		track(v.Shell, v.OS, v.Blueprint)
+	}
+	for _, v := range status.AuthorizedKeys {
+		track(v.Source, v.OS, v.Blueprint)
+	}
+
+	if count == 0 {
+		return nil
+	}
+
+	return []doctorIssue{
+		{
+			description: fmt.Sprintf("%d duplicate entries (same resource installed under multiple blueprint URL forms)", count),
+			count:       count,
+		},
+	}
+}
+
 // DoctorCheck reads ~/.blueprint/status.json, reports all issues found, and
 // optionally rewrites the file with issues fixed when fix is true.
 // Exits with code 1 if issues are found and fix is false.
@@ -145,15 +225,19 @@ func DoctorCheck(fix bool) {
 	}
 
 	issues := checkBlueprintURLs(&status)
+	issues = append(issues, checkDuplicates(&status)...)
 
 	if len(issues) == 0 {
 		fmt.Printf("  %s\n", ui.FormatSuccess("blueprint URLs are normalized"))
+		fmt.Printf("  %s\n", ui.FormatSuccess("no duplicate entries"))
 		fmt.Printf("\n%s\n\n", ui.FormatSuccess("No issues found."))
 		return
 	}
 
 	if fix {
+		// First normalize URLs, then deduplicate (order matters).
 		handlerskg.MigrateStatus(&status)
+		handlerskg.DeduplicateStatus(&status)
 
 		fixed, err := json.MarshalIndent(status, "", "  ")
 		if err != nil {
@@ -165,18 +249,16 @@ func DoctorCheck(fix bool) {
 			os.Exit(1)
 		}
 
-		totalFixed := 0
 		for _, issue := range issues {
-			totalFixed += issue.count
+			fmt.Printf("  %s\n", ui.FormatSuccess(fmt.Sprintf("Fixed: %s", issue.description)))
 		}
-		fmt.Printf("  %s\n", ui.FormatSuccess(fmt.Sprintf("Normalized %d blueprint URL entries", totalFixed)))
 		fmt.Printf("\n%s\n\n", ui.FormatSuccess("All issues fixed."))
 		return
 	}
 
 	// Report mode: print issues and exit 1.
 	for _, issue := range issues {
-		fmt.Printf("  %s\n", ui.FormatError(issue.description))
+		fmt.Printf("  %s\n", ui.FormatError(fmt.Sprintf("✗ %s", issue.description)))
 		for _, ex := range issue.examples {
 			fmt.Printf("    %s\n", ui.FormatDim(ex))
 		}
