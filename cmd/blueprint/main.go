@@ -7,6 +7,10 @@ import (
 	"github.com/elpic/blueprint/internal/engine"
 )
 
+// version is set at build time via -ldflags "-X main.version=...".
+// It defaults to "dev" for local development builds.
+var version = "dev"
+
 // parseFlags extracts --skip-group, --skip-id, --skip-decrypt, and --only flags from arguments
 func parseFlags(args []string) (skipGroup, skipID, onlyID string, skipDecrypt bool) {
 	for i := 0; i < len(args); i++ {
@@ -36,6 +40,7 @@ func parseFlags(args []string) (skipGroup, skipID, onlyID string, skipDecrypt bo
 var knownCommands = map[string]bool{
 	"plan": true, "apply": true, "encrypt": true,
 	"status": true, "history": true, "ps": true, "slow": true, "diff": true,
+	"version": true,
 }
 
 func isKnownCommand(cmd string) bool {
@@ -43,18 +48,20 @@ func isKnownCommand(cmd string) bool {
 }
 
 func unknownCommandMessage(cmd string) string {
-	return fmt.Sprintf("unknown command: %q\nUsage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff> [<file>]", cmd)
+	return fmt.Sprintf("unknown command: %q\nUsage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff|version> [<file>]", cmd)
 }
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff> [<file|run_number>]")
+		fmt.Println("Usage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff|version> [<file|run_number>]")
 		os.Exit(1)
 	}
 
 	mode := os.Args[1]
 
 	switch mode {
+	case "version":
+		fmt.Printf("blueprint version %s\n", version)
 	case "history":
 		runNumber := 0
 		stepNumber := -1
