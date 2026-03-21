@@ -222,11 +222,11 @@ func RemoveWithSkip(file string, skipGroup string, skipID string, autoConfirm bo
 	ui.PrintRemoveHeader(currentOS, file, len(filteredRules))
 	fmt.Printf("%s\n", ui.FormatError("- will remove:"))
 	for _, rule := range filteredRules {
-		label := rule.DisplaySummary()
+		label := rule.Action
 		if handler := handlerskg.NewHandler(rule, basePath, nil); handler != nil {
 			if dp, ok := handler.(handlerskg.DisplayProvider); ok {
 				if details := dp.GetDisplayDetails(true); details != "" {
-					label = details
+					label = rule.Action + ": " + details
 				}
 			}
 		}
