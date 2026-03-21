@@ -7,9 +7,10 @@ import (
 	"github.com/elpic/blueprint/internal/engine"
 )
 
-// version is set at build time via -ldflags "-X main.version=...".
-// It defaults to "dev" for local development builds.
+// version and commit are set at build time via -ldflags.
+// They default to "dev" / "none" for local development builds.
 var version = "dev"
+var commit = "none"
 
 // parseFlags extracts --skip-group, --skip-id, --skip-decrypt, and --only flags from arguments
 func parseFlags(args []string) (skipGroup, skipID, onlyID string, skipDecrypt bool) {
@@ -61,7 +62,14 @@ func main() {
 
 	switch mode {
 	case "version":
-		fmt.Printf("blueprint version %s\n", version)
+		args := os.Args[2:]
+		if len(args) > 0 && args[0] == "--commit" {
+			fmt.Println(commit)
+		} else if len(args) > 0 && args[0] == "--short" {
+			fmt.Println(version)
+		} else {
+			fmt.Printf("Version: %s\nCommit:  %s\n", version, commit)
+		}
 	case "history":
 		runNumber := 0
 		stepNumber := -1

@@ -13,6 +13,15 @@ func TestVersionDefault(t *testing.T) {
 	}
 }
 
+func TestCommitDefault(t *testing.T) {
+	if commit == "" {
+		t.Fatal("commit should not be empty")
+	}
+	if commit != "none" {
+		t.Fatalf("expected default commit to be %q, got %q", "none", commit)
+	}
+}
+
 func TestUnknownCommandMessageIncludesVersion(t *testing.T) {
 	msg := unknownCommandMessage("bogus")
 	if msg == "" {
