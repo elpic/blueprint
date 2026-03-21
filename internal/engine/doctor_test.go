@@ -161,6 +161,48 @@ func TestDeduplicateAfterMigrate_ReducesCount(t *testing.T) {
 	}
 }
 
+func TestDeduplicateAfterMigrate_RunsAndDownloads(t *testing.T) {
+	// Simulates the exact run/download entries from the remote status output.
+	// Entry 1: old command (asdf which nvim) — genuinely different, NOT a duplicate
+	// Entry 2: calibre installer with old blueprint — duplicate of entry 4
+	// Entry 3: nvim link with old blueprint — duplicate of entry 5
+	// Entry 4: calibre installer with new blueprint
+	// Entry 5: nvim link with new blueprint
+	status := handlerskg.Status{
+		Downloads: []handlerskg.DownloadStatus{
+			{Path: "~/.oh-my-zsh/antigen.zsh", Blueprint: "https:/github.com/elpic/setup.git", OS: "linux"},
+			{Path: "~/.oh-my-zsh/antigen.zsh", Blueprint: "https://github.com/elpic/setup", OS: "linux"},
+		},
+		Runs: []handlerskg.RunStatus{
+			{Command: "rm -rf ~/.local/bin/vim && ln -s $(asdf which nvim) ~/.local/bin/vim", Blueprint: "https:/github.com/elpic/setup.git", OS: "linux"},
+			{Command: "https://download.calibre-ebook.com/linux-installer.sh", Blueprint: "https:/github.com/elpic/setup.git", OS: "linux"},
+			{Command: "rm -rf ~/.local/bin/vim && ln -s $(which nvim) ~/.local/bin/vim", Blueprint: "https:/github.com/elpic/setup.git", OS: "linux"},
+			{Command: "https://download.calibre-ebook.com/linux-installer.sh", Blueprint: "https://github.com/elpic/setup", OS: "linux"},
+			{Command: "rm -rf ~/.local/bin/vim && ln -s $(which nvim) ~/.local/bin/vim", Blueprint: "https://github.com/elpic/setup", OS: "linux"},
+		},
+	}
+
+	// checkDuplicates should find: 1 download dup + 2 run dups = 3
+	issues := checkDuplicates(&status)
+	if len(issues) == 0 {
+		t.Fatal("expected duplicate issues, got none")
+	}
+	if issues[0].count != 3 {
+		t.Errorf("expected count 3, got %d", issues[0].count)
+	}
+
+	// After migrate+dedup: 1 download, 3 runs (asdf-nvim kept as unique, calibre+nvim-link deduplicated to newest)
+	handlerskg.MigrateStatus(&status)
+	handlerskg.DeduplicateStatus(&status)
+
+	if len(status.Downloads) != 1 {
+		t.Errorf("expected 1 download after dedup, got %d", len(status.Downloads))
+	}
+	if len(status.Runs) != 3 {
+		t.Errorf("expected 3 runs after dedup (asdf-nvim + calibre + nvim-link), got %d", len(status.Runs))
+	}
+}
+
 func TestCheckBlueprintURLs_AllStatusTypes(t *testing.T) {
 	// Verify that all status slice types are checked, not just Packages.
 	staleBlueprint := "git@github.com:corp/blueprint.git"
