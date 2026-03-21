@@ -261,7 +261,6 @@ func TestKnownHostsHandlerDisplayInfo(t *testing.T) {
 	}
 }
 
-
 func TestKnownHostsHandlerGetDependencyKey(t *testing.T) {
 	tests := []struct {
 		name     string

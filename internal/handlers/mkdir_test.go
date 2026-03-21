@@ -336,7 +336,6 @@ func TestMkdirHandlerDisplayInfo(t *testing.T) {
 	}
 }
 
-
 func TestMkdirHandlerGetDependencyKey(t *testing.T) {
 	tests := []struct {
 		name     string

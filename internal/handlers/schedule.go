@@ -205,7 +205,7 @@ func (h *ScheduleHandler) GetCommand() string {
 
 // UpdateStatus updates the status after installing or removing a schedule
 func (h *ScheduleHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
-	blueprint = normalizePath(blueprint)
+	blueprint = normalizeBlueprint(blueprint)
 
 	if h.Rule.Action == "schedule" {
 		_, commandExecuted := commandSuccessfullyExecuted(h.GetCommand(), records)
@@ -218,7 +218,7 @@ func (h *ScheduleHandler) UpdateStatus(status *Status, records []ExecutionRecord
 
 		// Skip duplicates
 		for _, s := range status.Schedules {
-			if s.CronExpr == cronExpr && s.Source == source && normalizePath(s.Blueprint) == blueprint && s.OS == osName {
+			if s.CronExpr == cronExpr && s.Source == source && normalizeBlueprint(s.Blueprint) == blueprint && s.OS == osName {
 				return nil
 			}
 		}
@@ -235,7 +235,7 @@ func (h *ScheduleHandler) UpdateStatus(status *Status, records []ExecutionRecord
 		source := h.Rule.ScheduleSource
 		var newSchedules []ScheduleStatus
 		for _, s := range status.Schedules {
-			if s.CronExpr != cronExpr || s.Source != source || normalizePath(s.Blueprint) != blueprint || s.OS != osName {
+			if s.CronExpr != cronExpr || s.Source != source || normalizeBlueprint(s.Blueprint) != blueprint || s.OS != osName {
 				newSchedules = append(newSchedules, s)
 			}
 		}
@@ -281,7 +281,7 @@ func (h *ScheduleHandler) GetState(isUninstall bool) map[string]string {
 
 // FindUninstallRules compares schedule status against current rules and returns uninstall rules
 func (h *ScheduleHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	// Build set of (cronExpr, file) pairs covered by current schedule rules
 	type key struct{ cron, file string }
@@ -296,7 +296,7 @@ func (h *ScheduleHandler) FindUninstallRules(status *Status, currentRules []pars
 
 	var rules []parser.Rule
 	for _, s := range status.Schedules {
-		if normalizePath(s.Blueprint) == normalizedBlueprint && s.OS == osName {
+		if normalizeBlueprint(s.Blueprint) == normalizedBlueprint && s.OS == osName {
 			if !current[key{s.CronExpr, s.Source}] {
 				rules = append(rules, parser.Rule{
 					Action:         "uninstall",
@@ -313,10 +313,10 @@ func (h *ScheduleHandler) FindUninstallRules(status *Status, currentRules []pars
 
 // IsInstalled returns true if the schedule entry in this rule is already in status.
 func (h *ScheduleHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 	cronExpr := h.cronExpression()
 	for _, s := range status.Schedules {
-		if s.CronExpr == cronExpr && s.Source == h.Rule.ScheduleSource && normalizePath(s.Blueprint) == normalizedBlueprint && s.OS == osName {
+		if s.CronExpr == cronExpr && s.Source == h.Rule.ScheduleSource && normalizeBlueprint(s.Blueprint) == normalizedBlueprint && s.OS == osName {
 			return true
 		}
 	}

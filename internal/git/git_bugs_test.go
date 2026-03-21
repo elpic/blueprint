@@ -9,7 +9,7 @@ import "testing"
 
 func TestIsGitURLFalsePositives(t *testing.T) {
 	falsePositives := []string{
-		"~/projects/dotfiles.git/setup.bp", // local path with .git directory
+		"~/projects/dotfiles.git/setup.bp",  // local path with .git directory
 		"/home/user/mygit-configs/setup.bp", // contains "git" but not .git
 		"./setup.bp",                        // plain relative path
 	}

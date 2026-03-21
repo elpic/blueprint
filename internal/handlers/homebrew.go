@@ -94,7 +94,7 @@ func (h *HomebrewHandler) GetCommand() string {
 
 // UpdateStatus updates the status after installing or uninstalling formulas/casks
 func (h *HomebrewHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
-	blueprint = normalizePath(blueprint)
+	blueprint = normalizeBlueprint(blueprint)
 
 	switch h.Rule.Action {
 	case "homebrew":
@@ -443,7 +443,7 @@ func (h *HomebrewHandler) GetState(isUninstall bool) map[string]string {
 
 // FindUninstallRules compares homebrew status against current rules and returns uninstall rules
 func (h *HomebrewHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	// Build set of current formula and cask keys
 	currentKeys := make(map[string]bool)
@@ -464,7 +464,7 @@ func (h *HomebrewHandler) FindUninstallRules(status *Status, currentRules []pars
 	var casksToUninstall []string
 	if status.Brews != nil {
 		for _, brew := range status.Brews {
-			normalizedStatusBlueprint := normalizePath(brew.Blueprint)
+			normalizedStatusBlueprint := normalizeBlueprint(brew.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && brew.OS == osName && !currentKeys[brew.Formula] {
 				if strings.HasPrefix(brew.Formula, "cask:") {
 					casksToUninstall = append(casksToUninstall, strings.TrimPrefix(brew.Formula, "cask:"))
@@ -489,12 +489,12 @@ func (h *HomebrewHandler) FindUninstallRules(status *Status, currentRules []pars
 
 // IsInstalled returns true if all homebrew formulas and casks in this rule are already in status.
 func (h *HomebrewHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	// Build set of stored formula keys for this blueprint+OS
 	stored := make(map[string]bool)
 	for _, brew := range status.Brews {
-		if normalizePath(brew.Blueprint) == normalizedBlueprint && brew.OS == osName {
+		if normalizeBlueprint(brew.Blueprint) == normalizedBlueprint && brew.OS == osName {
 			stored[brew.Formula] = true
 		}
 	}
@@ -516,9 +516,9 @@ func (h *HomebrewHandler) IsInstalled(status *Status, blueprintFile, osName stri
 // removeHomebrewStatus removes a homebrew formula from the status brews list
 func removeHomebrewStatus(brews []HomebrewStatus, formula string, blueprint string, osName string) []HomebrewStatus {
 	var result []HomebrewStatus
-	normalizedBlueprint := normalizePath(blueprint)
+	normalizedBlueprint := normalizeBlueprint(blueprint)
 	for _, brew := range brews {
-		normalizedStoredBlueprint := normalizePath(brew.Blueprint)
+		normalizedStoredBlueprint := normalizeBlueprint(brew.Blueprint)
 		if brew.Formula != formula || normalizedStoredBlueprint != normalizedBlueprint || brew.OS != osName {
 			result = append(result, brew)
 		}

@@ -129,7 +129,7 @@ func (h *DownloadHandler) GetCommand() string {
 
 // UpdateStatus updates the blueprint status after executing download or uninstall-download
 func (h *DownloadHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
-	blueprint = normalizePath(blueprint)
+	blueprint = normalizeBlueprint(blueprint)
 
 	if h.Rule.Action == "download" {
 		expectedCmd := h.GetCommand()
@@ -207,7 +207,7 @@ func (h *DownloadHandler) GetState(isUninstall bool) map[string]string {
 
 // FindUninstallRules compares download status against current rules and returns uninstall rules
 func (h *DownloadHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	currentDownloadPaths := make(map[string]bool)
 	for _, rule := range currentRules {
@@ -219,7 +219,7 @@ func (h *DownloadHandler) FindUninstallRules(status *Status, currentRules []pars
 	var rules []parser.Rule
 	if status.Downloads != nil {
 		for _, dl := range status.Downloads {
-			normalizedStatusBlueprint := normalizePath(dl.Blueprint)
+			normalizedStatusBlueprint := normalizeBlueprint(dl.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && dl.OS == osName && !currentDownloadPaths[dl.Path] {
 				rules = append(rules, parser.Rule{
 					Action:       "uninstall",
@@ -236,9 +236,9 @@ func (h *DownloadHandler) FindUninstallRules(status *Status, currentRules []pars
 
 // IsInstalled returns true if the download path in this rule is already in status.
 func (h *DownloadHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 	for _, dl := range status.Downloads {
-		if dl.Path == h.Rule.DownloadPath && normalizePath(dl.Blueprint) == normalizedBlueprint && dl.OS == osName {
+		if dl.Path == h.Rule.DownloadPath && normalizeBlueprint(dl.Blueprint) == normalizedBlueprint && dl.OS == osName {
 			return true
 		}
 	}

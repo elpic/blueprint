@@ -278,7 +278,6 @@ func TestDecryptHandlerDisplayInfo(t *testing.T) {
 	}
 }
 
-
 func TestDecryptHandlerGetDependencyKey(t *testing.T) {
 	tests := []struct {
 		name     string

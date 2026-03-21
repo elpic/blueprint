@@ -112,7 +112,7 @@ func (h *MkdirHandler) GetCommand() string {
 // UpdateStatus updates the blueprint status after executing mkdir or uninstall-mkdir
 func (h *MkdirHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
 	// Normalize blueprint path for comparison
-	blueprint = normalizePath(blueprint)
+	blueprint = normalizeBlueprint(blueprint)
 
 	if h.Rule.Action == "mkdir" {
 		// Check if mkdir was executed successfully by looking for the GetCommand output
@@ -202,10 +202,10 @@ func mkdirIsValidOctalPermissions(perms string) bool {
 func removeMkdirStatus(mkdirs []MkdirStatus, path string, blueprint string, osName string) []MkdirStatus {
 	var result []MkdirStatus
 	// Normalize blueprint for comparison to handle path variations like /tmp vs /private/tmp
-	normalizedBlueprint := normalizePath(blueprint)
+	normalizedBlueprint := normalizeBlueprint(blueprint)
 	for _, mkdir := range mkdirs {
 		// Also normalize the stored blueprint for comparison
-		normalizedStoredBlueprint := normalizePath(mkdir.Blueprint)
+		normalizedStoredBlueprint := normalizeBlueprint(mkdir.Blueprint)
 		if mkdir.Path != path || normalizedStoredBlueprint != normalizedBlueprint || mkdir.OS != osName {
 			result = append(result, mkdir)
 		}
@@ -272,7 +272,7 @@ func (h *MkdirHandler) GetState(isUninstall bool) map[string]string {
 
 // FindUninstallRules compares mkdir status against current rules and returns uninstall rules
 func (h *MkdirHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	// Build set of current mkdir paths from mkdir rules
 	currentMkdirPaths := make(map[string]bool)
@@ -286,7 +286,7 @@ func (h *MkdirHandler) FindUninstallRules(status *Status, currentRules []parser.
 	var rules []parser.Rule
 	if status.Mkdirs != nil {
 		for _, mkdir := range status.Mkdirs {
-			normalizedStatusBlueprint := normalizePath(mkdir.Blueprint)
+			normalizedStatusBlueprint := normalizeBlueprint(mkdir.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && mkdir.OS == osName && !currentMkdirPaths[mkdir.Path] {
 				rules = append(rules, parser.Rule{
 					Action: "uninstall",
@@ -302,9 +302,9 @@ func (h *MkdirHandler) FindUninstallRules(status *Status, currentRules []parser.
 
 // IsInstalled returns true if the mkdir path in this rule is already in status.
 func (h *MkdirHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 	for _, mkdir := range status.Mkdirs {
-		if mkdir.Path == h.Rule.Mkdir && normalizePath(mkdir.Blueprint) == normalizedBlueprint && mkdir.OS == osName {
+		if mkdir.Path == h.Rule.Mkdir && normalizeBlueprint(mkdir.Blueprint) == normalizedBlueprint && mkdir.OS == osName {
 			return true
 		}
 	}

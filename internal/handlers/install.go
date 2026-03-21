@@ -69,7 +69,7 @@ func (h *InstallHandler) GetCommand() string {
 // UpdateStatus updates the status after installing or uninstalling packages
 func (h *InstallHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
 	// Normalize blueprint path for consistent storage and comparison
-	blueprint = normalizePath(blueprint)
+	blueprint = normalizeBlueprint(blueprint)
 
 	switch h.Rule.Action {
 	case "install":
@@ -471,7 +471,7 @@ func (h *InstallHandler) GetState(isUninstall bool) map[string]string {
 
 // FindUninstallRules compares package status against current rules and returns uninstall rules
 func (h *InstallHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	// Build set of current package names from install rules
 	currentPackages := make(map[string]bool)
@@ -487,7 +487,7 @@ func (h *InstallHandler) FindUninstallRules(status *Status, currentRules []parse
 	var packagesToUninstall []parser.Package
 	if status.Packages != nil {
 		for _, pkg := range status.Packages {
-			normalizedStatusBlueprint := normalizePath(pkg.Blueprint)
+			normalizedStatusBlueprint := normalizeBlueprint(pkg.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && pkg.OS == osName && !currentPackages[pkg.Name] {
 				packagesToUninstall = append(packagesToUninstall, parser.Package{
 					Name:    pkg.Name,
@@ -511,11 +511,11 @@ func (h *InstallHandler) FindUninstallRules(status *Status, currentRules []parse
 
 // IsInstalled returns true if all packages in this rule are already in status.
 func (h *InstallHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 	for _, pkg := range h.Rule.Packages {
 		found := false
 		for _, s := range status.Packages {
-			if s.Name == pkg.Name && normalizePath(s.Blueprint) == normalizedBlueprint && s.OS == osName {
+			if s.Name == pkg.Name && normalizeBlueprint(s.Blueprint) == normalizedBlueprint && s.OS == osName {
 				found = true
 				break
 			}

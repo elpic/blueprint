@@ -88,7 +88,7 @@ func (h *RunHandler) GetCommand() string {
 
 // UpdateStatus updates the blueprint status after executing run or uninstall-run
 func (h *RunHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
-	blueprint = normalizePath(blueprint)
+	blueprint = normalizeBlueprint(blueprint)
 
 	if h.Rule.Action == "run" {
 		cmd := h.GetCommand()
@@ -175,7 +175,7 @@ func (h *RunHandler) GetState(isUninstall bool) map[string]string {
 
 // FindUninstallRules compares run status against current rules and returns uninstall rules
 func (h *RunHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	currentRunCmds := make(map[string]bool)
 	for _, rule := range currentRules {
@@ -190,7 +190,7 @@ func (h *RunHandler) FindUninstallRules(status *Status, currentRules []parser.Ru
 			if r.Action != "run" {
 				continue
 			}
-			normalizedStatusBlueprint := normalizePath(r.Blueprint)
+			normalizedStatusBlueprint := normalizeBlueprint(r.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && r.OS == osName && !currentRunCmds[r.Command] {
 				// Only emit uninstall if there's an undo command
 				if r.UndoCmd != "" {
@@ -211,9 +211,9 @@ func (h *RunHandler) FindUninstallRules(status *Status, currentRules []parser.Ru
 
 // IsInstalled returns true if the run command in this rule is already in status.
 func (h *RunHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 	for _, r := range status.Runs {
-		if r.Action == "run" && r.Command == h.Rule.RunCommand && normalizePath(r.Blueprint) == normalizedBlueprint && r.OS == osName {
+		if r.Action == "run" && r.Command == h.Rule.RunCommand && normalizeBlueprint(r.Blueprint) == normalizedBlueprint && r.OS == osName {
 			return true
 		}
 	}
@@ -356,7 +356,7 @@ func (h *RunShHandler) GetCommand() string {
 
 // UpdateStatus updates the blueprint status after executing run-sh or uninstall-run-sh
 func (h *RunShHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
-	blueprint = normalizePath(blueprint)
+	blueprint = normalizeBlueprint(blueprint)
 
 	if h.Rule.Action == "run-sh" {
 		cmd := h.GetCommand()
@@ -433,7 +433,7 @@ func (h *RunShHandler) GetState(isUninstall bool) map[string]string {
 
 // FindUninstallRules compares run-sh status against current rules and returns uninstall rules
 func (h *RunShHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	currentRunShURLs := make(map[string]bool)
 	for _, rule := range currentRules {
@@ -448,7 +448,7 @@ func (h *RunShHandler) FindUninstallRules(status *Status, currentRules []parser.
 			if r.Action != "run-sh" {
 				continue
 			}
-			normalizedStatusBlueprint := normalizePath(r.Blueprint)
+			normalizedStatusBlueprint := normalizeBlueprint(r.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && r.OS == osName && !currentRunShURLs[r.Command] {
 				// Only emit uninstall if there's an undo command
 				if r.UndoCmd != "" {
@@ -469,9 +469,9 @@ func (h *RunShHandler) FindUninstallRules(status *Status, currentRules []parser.
 
 // IsInstalled returns true if the run-sh URL in this rule is already in status.
 func (h *RunShHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 	for _, r := range status.Runs {
-		if r.Action == "run-sh" && r.Command == h.Rule.RunShURL && normalizePath(r.Blueprint) == normalizedBlueprint && r.OS == osName {
+		if r.Action == "run-sh" && r.Command == h.Rule.RunShURL && normalizeBlueprint(r.Blueprint) == normalizedBlueprint && r.OS == osName {
 			return true
 		}
 	}

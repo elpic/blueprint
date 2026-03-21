@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"github.com/elpic/blueprint/internal"
 	"fmt"
+	"github.com/elpic/blueprint/internal"
 	"os"
 	"path/filepath"
 	"time"
@@ -105,7 +105,7 @@ func (h *DecryptHandler) GetCommand() string {
 // UpdateStatus updates the status after decrypting or removing a file
 func (h *DecryptHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
 	// Normalize blueprint path for consistent storage and comparison
-	blueprint = normalizePath(blueprint)
+	blueprint = normalizeBlueprint(blueprint)
 
 	if h.Rule.Action == "decrypt" {
 		decryptCmd := h.GetCommand()
@@ -243,7 +243,7 @@ func (h *DecryptHandler) GetState(isUninstall bool) map[string]string {
 
 // FindUninstallRules compares decrypt status against current rules and returns uninstall rules
 func (h *DecryptHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	// Build set of current decrypt paths from decrypt rules
 	currentDecryptPaths := make(map[string]bool)
@@ -257,7 +257,7 @@ func (h *DecryptHandler) FindUninstallRules(status *Status, currentRules []parse
 	var rules []parser.Rule
 	if status.Decrypts != nil {
 		for _, decrypt := range status.Decrypts {
-			normalizedStatusBlueprint := normalizePath(decrypt.Blueprint)
+			normalizedStatusBlueprint := normalizeBlueprint(decrypt.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && decrypt.OS == osName && !currentDecryptPaths[decrypt.DestPath] {
 				rules = append(rules, parser.Rule{
 					Action:      "uninstall",
@@ -273,9 +273,9 @@ func (h *DecryptHandler) FindUninstallRules(status *Status, currentRules []parse
 
 // IsInstalled returns true if the decrypt path in this rule is already in status.
 func (h *DecryptHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 	for _, decrypt := range status.Decrypts {
-		if decrypt.DestPath == h.Rule.DecryptPath && normalizePath(decrypt.Blueprint) == normalizedBlueprint && decrypt.OS == osName {
+		if decrypt.DestPath == h.Rule.DecryptPath && normalizeBlueprint(decrypt.Blueprint) == normalizedBlueprint && decrypt.OS == osName {
 			return true
 		}
 	}

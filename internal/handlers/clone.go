@@ -122,7 +122,7 @@ func (h *CloneHandler) GetCommand() string {
 // UpdateStatus updates the status after cloning or removing a repository
 func (h *CloneHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
 	// Normalize blueprint path for consistent storage and comparison
-	blueprint = normalizePath(blueprint)
+	blueprint = normalizeBlueprint(blueprint)
 
 	if h.Rule.Action == "clone" {
 		cloneCmd := h.GetCommand()
@@ -245,7 +245,7 @@ func (h *CloneHandler) GetState(isUninstall bool) map[string]string {
 
 // FindUninstallRules compares clone status against current rules and returns uninstall rules
 func (h *CloneHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	// Build set of current clone paths from clone rules (using normalized URLs for comparison)
 	currentClonePaths := make(map[string]bool)
@@ -267,7 +267,7 @@ func (h *CloneHandler) FindUninstallRules(status *Status, currentRules []parser.
 	var rules []parser.Rule
 	if status.Clones != nil {
 		for _, clone := range status.Clones {
-			normalizedStatusBlueprint := normalizePath(clone.Blueprint)
+			normalizedStatusBlueprint := normalizeBlueprint(clone.Blueprint)
 			normalizedStatusURL := gitpkg.NormalizeGitURL(clone.URL)
 			// Match by path OR by normalized URL
 			isCurrent := currentClonePaths[clone.Path] || currentCloneURLs[normalizedStatusURL]
@@ -292,9 +292,9 @@ func (h *CloneHandler) FindUninstallRules(status *Status, currentRules []parser.
 // SHA matches the current remote HEAD. Uses clean repository storage when available,
 // falls back to target directory for backward compatibility.
 func (h *CloneHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 	for _, clone := range status.Clones {
-		if clone.Path != h.Rule.ClonePath || normalizePath(clone.Blueprint) != normalizedBlueprint || clone.OS != osName {
+		if clone.Path != h.Rule.ClonePath || normalizeBlueprint(clone.Blueprint) != normalizedBlueprint || clone.OS != osName {
 			continue
 		}
 		// Found a matching status entry — now check SHA currency

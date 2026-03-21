@@ -181,7 +181,7 @@ func (h *SudoersHandler) GetCommand() string {
 
 // UpdateStatus updates the status after adding or removing a sudoers entry
 func (h *SudoersHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
-	blueprint = normalizePath(blueprint)
+	blueprint = normalizeBlueprint(blueprint)
 
 	if h.Rule.Action == "sudoers" {
 		// Use the same command string as GetCommand() for record matching
@@ -198,7 +198,7 @@ func (h *SudoersHandler) UpdateStatus(status *Status, records []ExecutionRecord,
 
 		// Skip duplicates
 		for _, s := range status.Sudoers {
-			if s.User == resolvedUser && normalizePath(s.Blueprint) == blueprint && s.OS == osName {
+			if s.User == resolvedUser && normalizeBlueprint(s.Blueprint) == blueprint && s.OS == osName {
 				return nil
 			}
 		}
@@ -213,7 +213,7 @@ func (h *SudoersHandler) UpdateStatus(status *Status, records []ExecutionRecord,
 		user := h.Rule.SudoersUser
 		var newSudoers []SudoersStatus
 		for _, s := range status.Sudoers {
-			if s.User != user || normalizePath(s.Blueprint) != blueprint || s.OS != osName {
+			if s.User != user || normalizeBlueprint(s.Blueprint) != blueprint || s.OS != osName {
 				newSudoers = append(newSudoers, s)
 			}
 		}
@@ -293,7 +293,7 @@ func (h *SudoersHandler) GetState(isUninstall bool) map[string]string {
 
 // FindUninstallRules compares sudoers status against current rules and returns uninstall rules
 func (h *SudoersHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	// Build set of users covered by current sudoers rules
 	currentUsers := make(map[string]bool)
@@ -311,7 +311,7 @@ func (h *SudoersHandler) FindUninstallRules(status *Status, currentRules []parse
 
 	var rules []parser.Rule
 	for _, s := range status.Sudoers {
-		if normalizePath(s.Blueprint) == normalizedBlueprint && s.OS == osName {
+		if normalizeBlueprint(s.Blueprint) == normalizedBlueprint && s.OS == osName {
 			if !currentUsers[s.User] {
 				rules = append(rules, parser.Rule{
 					Action:      "uninstall",
@@ -327,13 +327,13 @@ func (h *SudoersHandler) FindUninstallRules(status *Status, currentRules []parse
 
 // IsInstalled returns true if the sudoers user in this rule is already in status.
 func (h *SudoersHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 	user := h.Rule.SudoersUser
 	if user == "" {
 		user = os.Getenv("USER")
 	}
 	for _, s := range status.Sudoers {
-		if s.User == user && normalizePath(s.Blueprint) == normalizedBlueprint && s.OS == osName {
+		if s.User == user && normalizeBlueprint(s.Blueprint) == normalizedBlueprint && s.OS == osName {
 			return true
 		}
 	}

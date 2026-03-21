@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
 )
 
@@ -285,6 +286,46 @@ func TestNormalizePath(t *testing.T) {
 			got := normalizePath(tt.input)
 			if got != tt.expected {
 				t.Errorf("normalizePath(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestNormalizeBlueprintEngine tests that normalizeBlueprint in the engine package
+// correctly handles both local paths and git URLs.
+func TestNormalizeBlueprintEngine(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "SSH git URL normalized via NormalizeGitURL",
+			input:    "git@github.com:user/repo.git",
+			expected: gitpkg.NormalizeGitURL("git@github.com:user/repo.git"),
+		},
+		{
+			name:     "HTTPS git URL normalized via NormalizeGitURL",
+			input:    "https://github.com/user/repo.git",
+			expected: gitpkg.NormalizeGitURL("https://github.com/user/repo.git"),
+		},
+		{
+			name:     "SSH and HTTPS produce same normalized form",
+			input:    "git@github.com:user/repo.git",
+			expected: gitpkg.NormalizeGitURL("https://github.com/user/repo"),
+		},
+		{
+			name:     "local path delegates to normalizePath",
+			input:    "/tmp/setup.bp",
+			expected: normalizePath("/tmp/setup.bp"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeBlueprint(tt.input)
+			if got != tt.expected {
+				t.Errorf("normalizeBlueprint(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
 	}

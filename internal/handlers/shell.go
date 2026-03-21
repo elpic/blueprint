@@ -134,10 +134,10 @@ func (h *ShellHandler) Down() (string, error) {
 
 	// Find the shell status entry for this user and blueprint
 	var shellStatus *ShellStatus
-	normalizedBlueprint := normalizePath(h.BasePath)
+	normalizedBlueprint := normalizeBlueprint(h.BasePath)
 	for i, shell := range status.Shells {
 		if shell.User == currentUser.Username &&
-			normalizePath(shell.Blueprint) == normalizedBlueprint &&
+			normalizeBlueprint(shell.Blueprint) == normalizedBlueprint &&
 			shell.OS == runtime.GOOS {
 			shellStatus = &status.Shells[i]
 			break
@@ -202,7 +202,7 @@ func (h *ShellHandler) GetCommand() string {
 // UpdateStatus updates the blueprint status after executing shell change
 func (h *ShellHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
 	// Normalize blueprint path for comparison
-	blueprint = normalizePath(blueprint)
+	blueprint = normalizeBlueprint(blueprint)
 
 	if h.Rule.Action == "shell" {
 		// Check if shell change was executed successfully and extract the shell path
@@ -336,7 +336,7 @@ func (h *ShellHandler) GetState(isUninstall bool) map[string]string {
 
 // IsInstalled returns true if the shell is already set for the current user
 func (h *ShellHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	// Get current user
 	currentUser, err := user.Current()
@@ -347,7 +347,7 @@ func (h *ShellHandler) IsInstalled(status *Status, blueprintFile, osName string)
 	// Check if we have a shell status record
 	for _, shell := range status.Shells {
 		if shell.User == currentUser.Username &&
-			normalizePath(shell.Blueprint) == normalizedBlueprint &&
+			normalizeBlueprint(shell.Blueprint) == normalizedBlueprint &&
 			shell.OS == osName {
 
 			// Cross-validate: verify the shell recorded in status matches the actual current shell
@@ -541,7 +541,7 @@ func (h *ShellHandler) getShellFromPasswd(username string) (string, error) {
 // FindUninstallRules compares shell status against current rules and returns uninstall rules
 func (h *ShellHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	var uninstallRules []parser.Rule
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	// Get current user
 	currentUser, err := user.Current()
@@ -552,7 +552,7 @@ func (h *ShellHandler) FindUninstallRules(status *Status, currentRules []parser.
 	// Check each shell status entry
 	for _, shell := range status.Shells {
 		if shell.User == currentUser.Username &&
-			normalizePath(shell.Blueprint) == normalizedBlueprint &&
+			normalizeBlueprint(shell.Blueprint) == normalizedBlueprint &&
 			shell.OS == osName {
 
 			// Check if this shell is still in the current rules
@@ -639,9 +639,9 @@ func (h *ShellHandler) getStatusPath() (string, error) {
 // removeShellStatus removes a shell entry from the status shells list
 func removeShellStatus(shells []ShellStatus, user string, blueprint string, osName string) []ShellStatus {
 	var result []ShellStatus
-	normalizedBlueprint := normalizePath(blueprint)
+	normalizedBlueprint := normalizeBlueprint(blueprint)
 	for _, shell := range shells {
-		normalizedStoredBlueprint := normalizePath(shell.Blueprint)
+		normalizedStoredBlueprint := normalizeBlueprint(shell.Blueprint)
 		if shell.User != user || normalizedStoredBlueprint != normalizedBlueprint || shell.OS != osName {
 			result = append(result, shell)
 		}
@@ -651,9 +651,9 @@ func removeShellStatus(shells []ShellStatus, user string, blueprint string, osNa
 
 // findShellStatus finds a shell entry in the status shells list and returns it
 func findShellStatus(shells []ShellStatus, user string, blueprint string, osName string) *ShellStatus {
-	normalizedBlueprint := normalizePath(blueprint)
+	normalizedBlueprint := normalizeBlueprint(blueprint)
 	for i, shell := range shells {
-		normalizedStoredBlueprint := normalizePath(shell.Blueprint)
+		normalizedStoredBlueprint := normalizeBlueprint(shell.Blueprint)
 		if shell.User == user && normalizedStoredBlueprint == normalizedBlueprint && shell.OS == osName {
 			return &shells[i]
 		}

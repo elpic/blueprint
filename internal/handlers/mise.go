@@ -332,7 +332,7 @@ func (h *MiseHandler) GetCommand() string {
 
 // UpdateStatus updates the status after installing or uninstalling mise tools
 func (h *MiseHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
-	blueprint = normalizePath(blueprint)
+	blueprint = normalizeBlueprint(blueprint)
 
 	if h.Rule.Action == "mise" {
 		// Check if mise use was executed successfully by matching the recorded command
@@ -355,7 +355,7 @@ func (h *MiseHandler) UpdateStatus(status *Status, records []ExecutionRecord, bl
 				exists := false
 				for _, mise := range status.Mises {
 					if mise.Tool == tool && mise.Version == version &&
-						normalizePath(mise.Blueprint) == blueprint && mise.OS == osName {
+						normalizeBlueprint(mise.Blueprint) == blueprint && mise.OS == osName {
 						exists = true
 						break
 					}
@@ -388,7 +388,7 @@ func (h *MiseHandler) UpdateStatus(status *Status, records []ExecutionRecord, bl
 				var newMises []MiseStatus
 				for _, mise := range status.Mises {
 					if mise.Tool != tool || mise.Version != version ||
-						normalizePath(mise.Blueprint) != blueprint || mise.OS != osName {
+						normalizeBlueprint(mise.Blueprint) != blueprint || mise.OS != osName {
 						newMises = append(newMises, mise)
 					}
 				}
@@ -474,7 +474,7 @@ func (h *MiseHandler) GetState(isUninstall bool) map[string]string {
 
 // FindUninstallRules compares mise status against current rules and returns uninstall rules
 func (h *MiseHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
 	// Build set of current mise packages from rules (tool@version format)
 	currentPackages := make(map[string]bool)
@@ -490,7 +490,7 @@ func (h *MiseHandler) FindUninstallRules(status *Status, currentRules []parser.R
 	var misePackagesToRemove []string
 	if status.Mises != nil {
 		for _, mise := range status.Mises {
-			normalizedStatusBlueprint := normalizePath(mise.Blueprint)
+			normalizedStatusBlueprint := normalizeBlueprint(mise.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && mise.OS == osName {
 				pkgKey := fmt.Sprintf("%s@%s", mise.Tool, mise.Version)
 				if !currentPackages[pkgKey] {
@@ -514,7 +514,7 @@ func (h *MiseHandler) FindUninstallRules(status *Status, currentRules []parser.R
 
 // IsInstalled returns true if all mise packages in this rule are already in status.
 func (h *MiseHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
-	normalizedBlueprint := normalizePath(blueprintFile)
+	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 	for _, pkg := range h.Rule.MisePackages {
 		parts := strings.SplitN(pkg, "@", 2)
 		tool := parts[0]
@@ -524,7 +524,7 @@ func (h *MiseHandler) IsInstalled(status *Status, blueprintFile, osName string) 
 		}
 		found := false
 		for _, s := range status.Mises {
-			if s.Tool == tool && s.Version == version && normalizePath(s.Blueprint) == normalizedBlueprint && s.OS == osName {
+			if s.Tool == tool && s.Version == version && normalizeBlueprint(s.Blueprint) == normalizedBlueprint && s.OS == osName {
 				found = true
 				break
 			}
