@@ -267,7 +267,7 @@ func DoctorCheck(fix bool) {
 
 	// Report mode: print issues and exit 1.
 	for _, issue := range issues {
-		fmt.Printf("  %s\n", ui.FormatError(fmt.Sprintf("✗ %s", issue.description)))
+		fmt.Printf("  %s\n", ui.FormatError(issue.description))
 		for _, ex := range issue.examples {
 			fmt.Printf("    %s\n", ui.FormatDim(ex))
 		}
