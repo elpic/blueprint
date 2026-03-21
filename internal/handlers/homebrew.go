@@ -92,45 +92,64 @@ func (h *HomebrewHandler) GetCommand() string {
 	return h.buildCommand()
 }
 
-// UpdateStatus updates the status after installing or uninstalling formulas/casks
+// UpdateStatus updates the status after installing or uninstalling formulas/casks.
+// It uses execution records to determine success rather than shelling out to brew,
+// which avoids the significant overhead of running brew commands per-package
+// (each brew invocation takes ~1s).
 func (h *HomebrewHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
 	blueprint = normalizeBlueprint(blueprint)
 
 	switch h.Rule.Action {
 	case "homebrew":
-		brew := brewCmd()
+		// Check if the install command succeeded or packages were already installed.
+		// The handler's Up() returns "already installed" when all packages are present,
+		// or runs the install command which appears in records on success.
+		cmd := h.buildCommand()
+		_, commandExecuted := commandSuccessfullyExecuted(cmd, records)
 
-		// Record each formula/cask if installed (either just installed or already present)
-		for _, formulaStr := range h.Rule.HomebrewPackages {
-			parts := strings.Split(formulaStr, "@")
-			formula := parts[0]
-			if isBrewFormulaInstalled(brew, formula) {
-				status.Brews = removeHomebrewStatus(status.Brews, formula, blueprint, osName)
-				version := "latest"
-				if versionStr, err := h.getInstalledFormulaVersion(formula); err == nil && versionStr != "" {
-					version = versionStr
-				}
-				status.Brews = append(status.Brews, HomebrewStatus{
-					Formula:     formula,
-					Version:     version,
-					InstalledAt: time.Now().Format(time.RFC3339),
-					Blueprint:   blueprint,
-					OS:          osName,
-				})
+		// Also check for "already installed" — Up() returns this with no error
+		// when all packages are present, which means the record has status "success"
+		// and output "already installed". In this case the command recorded is the
+		// full install command, so commandSuccessfullyExecuted already catches it.
+		alreadyInstalled := false
+		for i := range records {
+			if records[i].Command == cmd && records[i].Status == "success" && records[i].Output == "already installed" {
+				alreadyInstalled = true
+				break
 			}
 		}
 
-		for _, cask := range h.Rule.HomebrewCasks {
-			if isBrewCaskInstalled(brew, cask) {
-				status.Brews = removeHomebrewStatus(status.Brews, caskKey(cask), blueprint, osName)
-				status.Brews = append(status.Brews, HomebrewStatus{
-					Formula:     caskKey(cask),
-					Version:     "cask",
-					InstalledAt: time.Now().Format(time.RFC3339),
-					Blueprint:   blueprint,
-					OS:          osName,
-				})
+		if !commandExecuted && !alreadyInstalled {
+			return nil // command failed or didn't run — don't update status
+		}
+
+		// Record each formula/cask as installed
+		for _, formulaStr := range h.Rule.HomebrewPackages {
+			parts := strings.Split(formulaStr, "@")
+			formula := parts[0]
+			version := "latest"
+			if len(parts) > 1 {
+				version = parts[1]
 			}
+			status.Brews = removeHomebrewStatus(status.Brews, formula, blueprint, osName)
+			status.Brews = append(status.Brews, HomebrewStatus{
+				Formula:     formula,
+				Version:     version,
+				InstalledAt: time.Now().Format(time.RFC3339),
+				Blueprint:   blueprint,
+				OS:          osName,
+			})
+		}
+
+		for _, cask := range h.Rule.HomebrewCasks {
+			status.Brews = removeHomebrewStatus(status.Brews, caskKey(cask), blueprint, osName)
+			status.Brews = append(status.Brews, HomebrewStatus{
+				Formula:     caskKey(cask),
+				Version:     "cask",
+				InstalledAt: time.Now().Format(time.RFC3339),
+				Blueprint:   blueprint,
+				OS:          osName,
+			})
 		}
 	case "uninstall":
 		for _, formulaStr := range h.Rule.HomebrewPackages {
@@ -278,11 +297,25 @@ func (h *HomebrewHandler) installHomebrewLinux() error {
 // brewCmdFunc is a variable that can be mocked during testing
 var brewCmdFunc = realBrewCmd
 
+// brewCmdCache caches the result of realBrewCmd so sysctl and path lookups
+// are performed at most once per process lifetime.
+var brewCmdCache struct {
+	once sync.Once
+	val  string
+}
+
 func brewCmd() string {
 	return brewCmdFunc()
 }
 
 func realBrewCmd() string {
+	brewCmdCache.once.Do(func() {
+		brewCmdCache.val = detectBrewCmd()
+	})
+	return brewCmdCache.val
+}
+
+func detectBrewCmd() string {
 	if getOSName() != "mac" {
 		// On Linux brew is often not on PATH — check known locations first
 		for _, p := range knownBrewPaths {
@@ -307,9 +340,13 @@ func SetBrewCmdFunc(fn func() string) {
 	brewCmdFunc = fn
 }
 
-// ResetBrewCmd resets the brew command function to default
+// ResetBrewCmd resets the brew command function to default and clears the cache
 func ResetBrewCmd() {
 	brewCmdFunc = realBrewCmd
+	brewCmdCache = struct {
+		once sync.Once
+		val  string
+	}{}
 }
 
 // buildCommand builds the install command for formulas and/or casks

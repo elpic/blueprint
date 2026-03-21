@@ -164,6 +164,133 @@ func TestHomebrewUpSkipsAlreadyInstalled(t *testing.T) {
 	}
 }
 
+func TestHomebrewUpdateStatusRecordsBased(t *testing.T) {
+	SetBrewCmdFunc(func() string { return "brew" })
+	defer ResetBrewCmd()
+
+	t.Run("records formulas on success", func(t *testing.T) {
+		h := NewHomebrewHandler(parser.Rule{
+			Action:           "homebrew",
+			HomebrewPackages: []string{"git", "curl"},
+		}, "")
+		status := &Status{}
+		records := []ExecutionRecord{
+			{Command: h.GetCommand(), Status: "success"},
+		}
+		if err := h.UpdateStatus(status, records, "/tmp/test.bp", "mac"); err != nil {
+			t.Fatalf("UpdateStatus() error = %v", err)
+		}
+		if len(status.Brews) != 2 {
+			t.Fatalf("expected 2 brew entries, got %d", len(status.Brews))
+		}
+		if status.Brews[0].Formula != "git" || status.Brews[1].Formula != "curl" {
+			t.Errorf("unexpected formulas: %v", status.Brews)
+		}
+	})
+
+	t.Run("records casks on success", func(t *testing.T) {
+		h := NewHomebrewHandler(parser.Rule{
+			Action:        "homebrew",
+			HomebrewCasks: []string{"iterm2"},
+		}, "")
+		status := &Status{}
+		records := []ExecutionRecord{
+			{Command: h.GetCommand(), Status: "success"},
+		}
+		if err := h.UpdateStatus(status, records, "/tmp/test.bp", "mac"); err != nil {
+			t.Fatalf("UpdateStatus() error = %v", err)
+		}
+		if len(status.Brews) != 1 {
+			t.Fatalf("expected 1 brew entry, got %d", len(status.Brews))
+		}
+		if status.Brews[0].Formula != "cask:iterm2" {
+			t.Errorf("expected cask:iterm2, got %q", status.Brews[0].Formula)
+		}
+	})
+
+	t.Run("skips status on failed command", func(t *testing.T) {
+		h := NewHomebrewHandler(parser.Rule{
+			Action:           "homebrew",
+			HomebrewPackages: []string{"git"},
+		}, "")
+		status := &Status{}
+		records := []ExecutionRecord{
+			{Command: h.GetCommand(), Status: "error"},
+		}
+		if err := h.UpdateStatus(status, records, "/tmp/test.bp", "mac"); err != nil {
+			t.Fatalf("UpdateStatus() error = %v", err)
+		}
+		if len(status.Brews) != 0 {
+			t.Fatalf("expected 0 brew entries after failed command, got %d", len(status.Brews))
+		}
+	})
+
+	t.Run("records on already installed", func(t *testing.T) {
+		h := NewHomebrewHandler(parser.Rule{
+			Action:           "homebrew",
+			HomebrewPackages: []string{"git"},
+		}, "")
+		status := &Status{}
+		records := []ExecutionRecord{
+			{Command: h.GetCommand(), Status: "success", Output: "already installed"},
+		}
+		if err := h.UpdateStatus(status, records, "/tmp/test.bp", "mac"); err != nil {
+			t.Fatalf("UpdateStatus() error = %v", err)
+		}
+		if len(status.Brews) != 1 {
+			t.Fatalf("expected 1 brew entry, got %d", len(status.Brews))
+		}
+	})
+
+	t.Run("extracts version from package spec", func(t *testing.T) {
+		h := NewHomebrewHandler(parser.Rule{
+			Action:           "homebrew",
+			HomebrewPackages: []string{"node@18"},
+		}, "")
+		status := &Status{}
+		records := []ExecutionRecord{
+			{Command: h.GetCommand(), Status: "success"},
+		}
+		if err := h.UpdateStatus(status, records, "/tmp/test.bp", "mac"); err != nil {
+			t.Fatalf("UpdateStatus() error = %v", err)
+		}
+		if len(status.Brews) != 1 {
+			t.Fatalf("expected 1 brew entry, got %d", len(status.Brews))
+		}
+		if status.Brews[0].Formula != "node" {
+			t.Errorf("expected formula 'node', got %q", status.Brews[0].Formula)
+		}
+		if status.Brews[0].Version != "18" {
+			t.Errorf("expected version '18', got %q", status.Brews[0].Version)
+		}
+	})
+
+	t.Run("uninstall removes from status", func(t *testing.T) {
+		bp := normalizeBlueprint("/tmp/test.bp")
+		h := NewHomebrewHandler(parser.Rule{
+			Action:           "uninstall",
+			HomebrewPackages: []string{"git"},
+			HomebrewCasks:    []string{"iterm2"},
+		}, "")
+		status := &Status{
+			Brews: []HomebrewStatus{
+				{Formula: "git", Blueprint: bp, OS: "mac"},
+				{Formula: "cask:iterm2", Blueprint: bp, OS: "mac"},
+				{Formula: "curl", Blueprint: bp, OS: "mac"},
+			},
+		}
+		if err := h.UpdateStatus(status, nil, "/tmp/test.bp", "mac"); err != nil {
+			t.Fatalf("UpdateStatus() error = %v", err)
+		}
+		if len(status.Brews) != 1 {
+			t.Fatalf("expected 1 remaining brew entry, got %d", len(status.Brews))
+		}
+		if status.Brews[0].Formula != "curl" {
+			t.Errorf("expected remaining formula 'curl', got %q", status.Brews[0].Formula)
+		}
+	})
+}
+
 func TestHomebrewUpInstallsMissingOnly(t *testing.T) {
 	origFormula := isBrewFormulaInstalled
 	origCask := isBrewCaskInstalled
