@@ -523,6 +523,13 @@ func normalizePath(filePath string) string {
 	return filepath.Clean(absPath)
 }
 
+// NormalizeBlueprint is the exported form of normalizeBlueprint, exposed so
+// that external packages (e.g. the engine doctor) can reuse the same logic
+// without duplicating it.
+func NormalizeBlueprint(input string) string {
+	return normalizeBlueprint(input)
+}
+
 // normalizeBlueprint normalizes a blueprint identifier for consistent storage
 // and comparison. Git URLs are normalized via NormalizeGitURL (SSH/HTTPS → canonical
 // lowercase HTTPS form). Local file paths are normalized via normalizePath.
@@ -530,7 +537,357 @@ func normalizeBlueprint(input string) string {
 	if gitpkg.IsGitURL(input) {
 		return gitpkg.NormalizeGitURL(input)
 	}
+	// Detect mangled git URLs: normalizePath() was previously called on git URL
+	// strings, producing absolute paths like "/home/user/https:/github.com/repo.git".
+	// Extract and normalize the embedded URL.
+	for _, prefix := range []string{"https:/", "http:/", "git@"} {
+		if idx := strings.Index(input, prefix); idx > 0 {
+			embedded := input[idx:]
+			if gitpkg.IsGitURL(embedded) {
+				return gitpkg.NormalizeGitURL(embedded)
+			}
+		}
+	}
 	return normalizePath(input)
+}
+
+// MigrateStatus normalizes all Blueprint fields in a Status struct.
+// This is a one-time migration for status files written before URL normalization
+// was added, where blueprint values may have been stored with the raw SSH URL or
+// with a .git suffix (e.g. "git@github.com:user/repo.git" instead of
+// "https://github.com/user/repo").
+func MigrateStatus(s *Status) {
+	for i := range s.Packages {
+		s.Packages[i].Blueprint = normalizeBlueprint(s.Packages[i].Blueprint)
+	}
+	for i := range s.Clones {
+		s.Clones[i].Blueprint = normalizeBlueprint(s.Clones[i].Blueprint)
+	}
+	for i := range s.Decrypts {
+		s.Decrypts[i].Blueprint = normalizeBlueprint(s.Decrypts[i].Blueprint)
+	}
+	for i := range s.Mkdirs {
+		s.Mkdirs[i].Blueprint = normalizeBlueprint(s.Mkdirs[i].Blueprint)
+	}
+	for i := range s.KnownHosts {
+		s.KnownHosts[i].Blueprint = normalizeBlueprint(s.KnownHosts[i].Blueprint)
+	}
+	for i := range s.GPGKeys {
+		s.GPGKeys[i].Blueprint = normalizeBlueprint(s.GPGKeys[i].Blueprint)
+	}
+	for i := range s.Asdfs {
+		s.Asdfs[i].Blueprint = normalizeBlueprint(s.Asdfs[i].Blueprint)
+	}
+	for i := range s.Mises {
+		s.Mises[i].Blueprint = normalizeBlueprint(s.Mises[i].Blueprint)
+	}
+	for i := range s.Sudoers {
+		s.Sudoers[i].Blueprint = normalizeBlueprint(s.Sudoers[i].Blueprint)
+	}
+	for i := range s.Brews {
+		s.Brews[i].Blueprint = normalizeBlueprint(s.Brews[i].Blueprint)
+	}
+	for i := range s.Ollamas {
+		s.Ollamas[i].Blueprint = normalizeBlueprint(s.Ollamas[i].Blueprint)
+	}
+	for i := range s.Downloads {
+		s.Downloads[i].Blueprint = normalizeBlueprint(s.Downloads[i].Blueprint)
+	}
+	for i := range s.Runs {
+		s.Runs[i].Blueprint = normalizeBlueprint(s.Runs[i].Blueprint)
+	}
+	for i := range s.Dotfiles {
+		s.Dotfiles[i].Blueprint = normalizeBlueprint(s.Dotfiles[i].Blueprint)
+	}
+	for i := range s.Schedules {
+		s.Schedules[i].Blueprint = normalizeBlueprint(s.Schedules[i].Blueprint)
+	}
+	for i := range s.Shells {
+		s.Shells[i].Blueprint = normalizeBlueprint(s.Shells[i].Blueprint)
+	}
+	for i := range s.AuthorizedKeys {
+		s.AuthorizedKeys[i].Blueprint = normalizeBlueprint(s.AuthorizedKeys[i].Blueprint)
+	}
+}
+
+// DeduplicateStatus removes duplicate entries from each status slice.
+// An entry is a duplicate when two records have the same resource key, OS, and
+// blueprint after normalization — this happens when the same blueprint was applied
+// twice using different URL forms (e.g. "https:/host/repo.git" and "https://host/repo").
+// The last occurrence (most recent apply) is kept; earlier duplicates are removed.
+func DeduplicateStatus(s *Status) {
+	s.Packages = dedupPackages(s.Packages)
+	s.Clones = dedupClones(s.Clones)
+	s.Decrypts = dedupDecrypts(s.Decrypts)
+	s.Mkdirs = dedupMkdirs(s.Mkdirs)
+	s.KnownHosts = dedupKnownHosts(s.KnownHosts)
+	s.GPGKeys = dedupGPGKeys(s.GPGKeys)
+	s.Asdfs = dedupAsdfs(s.Asdfs)
+	s.Mises = dedupMises(s.Mises)
+	s.Sudoers = dedupSudoers(s.Sudoers)
+	s.Brews = dedupBrews(s.Brews)
+	s.Ollamas = dedupOllamas(s.Ollamas)
+	s.Downloads = dedupDownloads(s.Downloads)
+	s.Runs = dedupRuns(s.Runs)
+	s.Dotfiles = dedupDotfiles(s.Dotfiles)
+	s.Schedules = dedupSchedules(s.Schedules)
+	s.Shells = dedupShells(s.Shells)
+	s.AuthorizedKeys = dedupAuthorizedKeys(s.AuthorizedKeys)
+}
+
+func dedupPackages(sl []PackageStatus) []PackageStatus {
+	seen := map[string]int{}
+	var out []PackageStatus
+	for _, v := range sl {
+		key := v.Name + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v // replace with newer
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupClones(sl []CloneStatus) []CloneStatus {
+	seen := map[string]int{}
+	var out []CloneStatus
+	for _, v := range sl {
+		key := v.Path + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupDecrypts(sl []DecryptStatus) []DecryptStatus {
+	seen := map[string]int{}
+	var out []DecryptStatus
+	for _, v := range sl {
+		key := v.DestPath + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupMkdirs(sl []MkdirStatus) []MkdirStatus {
+	seen := map[string]int{}
+	var out []MkdirStatus
+	for _, v := range sl {
+		key := v.Path + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupKnownHosts(sl []KnownHostsStatus) []KnownHostsStatus {
+	seen := map[string]int{}
+	var out []KnownHostsStatus
+	for _, v := range sl {
+		key := v.Host + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupGPGKeys(sl []GPGKeyStatus) []GPGKeyStatus {
+	seen := map[string]int{}
+	var out []GPGKeyStatus
+	for _, v := range sl {
+		key := v.Keyring + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupAsdfs(sl []AsdfStatus) []AsdfStatus {
+	seen := map[string]int{}
+	var out []AsdfStatus
+	for _, v := range sl {
+		key := v.Plugin + "\x00" + v.Version + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupMises(sl []MiseStatus) []MiseStatus {
+	seen := map[string]int{}
+	var out []MiseStatus
+	for _, v := range sl {
+		key := v.Tool + "\x00" + v.Version + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupSudoers(sl []SudoersStatus) []SudoersStatus {
+	seen := map[string]int{}
+	var out []SudoersStatus
+	for _, v := range sl {
+		key := v.User + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupBrews(sl []HomebrewStatus) []HomebrewStatus {
+	seen := map[string]int{}
+	var out []HomebrewStatus
+	for _, v := range sl {
+		key := v.Formula + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupOllamas(sl []OllamaStatus) []OllamaStatus {
+	seen := map[string]int{}
+	var out []OllamaStatus
+	for _, v := range sl {
+		key := v.Model + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupDownloads(sl []DownloadStatus) []DownloadStatus {
+	seen := map[string]int{}
+	var out []DownloadStatus
+	for _, v := range sl {
+		key := v.Path + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupRuns(sl []RunStatus) []RunStatus {
+	seen := map[string]int{}
+	var out []RunStatus
+	for _, v := range sl {
+		key := v.Command + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupDotfiles(sl []DotfilesStatus) []DotfilesStatus {
+	seen := map[string]int{}
+	var out []DotfilesStatus
+	for _, v := range sl {
+		key := v.URL + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupSchedules(sl []ScheduleStatus) []ScheduleStatus {
+	seen := map[string]int{}
+	var out []ScheduleStatus
+	for _, v := range sl {
+		key := v.Source + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupShells(sl []ShellStatus) []ShellStatus {
+	seen := map[string]int{}
+	var out []ShellStatus
+	for _, v := range sl {
+		key := v.Shell + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func dedupAuthorizedKeys(sl []AuthorizedKeysStatus) []AuthorizedKeysStatus {
+	seen := map[string]int{}
+	var out []AuthorizedKeysStatus
+	for _, v := range sl {
+		key := v.Source + "\x00" + v.OS + "\x00" + v.Blueprint
+		if idx, ok := seen[key]; ok {
+			out[idx] = v
+		} else {
+			seen[key] = len(out)
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func commandSuccessfullyExecuted(cmd string, records []ExecutionRecord) (*ExecutionRecord, bool) {

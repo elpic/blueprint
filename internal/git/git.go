@@ -40,8 +40,12 @@ func IsGitURL(input string) bool {
 	beforeBranch := strings.Split(input, "@")[0]
 
 	// HTTP(S) and git:// protocol URLs are always remote git URLs.
+	// Also accept single-slash variants (https:/host/...) that were produced by
+	// a bug in an older version, so they can be recognized and normalized.
 	if strings.HasPrefix(beforeBranch, "https://") ||
+		strings.HasPrefix(beforeBranch, "https:/") ||
 		strings.HasPrefix(beforeBranch, "http://") ||
+		strings.HasPrefix(beforeBranch, "http:/") ||
 		strings.HasPrefix(beforeBranch, "git://") {
 		return true
 	}
@@ -548,6 +552,14 @@ func generateRepositoryID(url, branch string) string {
 func NormalizeGitURL(url string) string {
 	// Remove .git suffix if present
 	url = strings.TrimSuffix(url, ".git")
+
+	// Repair single-slash http(s):/ → canonical double-slash form before further processing.
+	// These were produced by a bug in an older version of the code.
+	if strings.HasPrefix(url, "https:/") && !strings.HasPrefix(url, "https://") {
+		url = "https://" + url[len("https:/"):]
+	} else if strings.HasPrefix(url, "http:/") && !strings.HasPrefix(url, "http://") {
+		url = "http://" + url[len("http:/"):]
+	}
 
 	// Convert SSH to HTTPS for normalization (for ID generation only)
 	if strings.HasPrefix(url, "git@") {
