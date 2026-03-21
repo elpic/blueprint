@@ -56,6 +56,7 @@ Each line in a `.bp` file maps to an action. Full documentation for each action 
 | [`mise`](docs/mise.md) | Install the mise version manager globally or scoped to a project | mac, linux |
 | [`homebrew`](docs/homebrew.md) | Install Homebrew formulas and casks | mac, linux |
 | [`known_hosts`](docs/known-hosts.md) | Add SSH hosts to `~/.ssh/known_hosts` | mac, linux |
+| [`authorized_keys`](docs/authorized-keys.md) | Add SSH public keys to `~/.ssh/authorized_keys` | mac, linux |
 | [`mkdir`](docs/mkdir.md) | Create directories with optional permissions | mac, linux |
 | [`download`](docs/download.md) | Download a file from a URL | mac, linux |
 | [`run`](docs/run.md) | Execute an arbitrary shell command | mac, linux |
