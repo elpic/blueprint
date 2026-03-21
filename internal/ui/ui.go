@@ -108,19 +108,9 @@ func PrintPlanFooter() {
 // PrintRemoveHeader prints the header for remove mode
 func PrintRemoveHeader(currentOS string, blueprintFile string, numRules int) {
 	fmt.Println(Header.Render("═══ [REMOVE MODE] ═══") + "\n")
-	fmt.Printf("OS: %s\n", FormatHighlight(currentOS))
-	fmt.Printf("Removing %s rules from %s\n\n",
-		FormatHighlight(fmt.Sprint(numRules)),
-		FormatHighlight(blueprintFile))
-}
-
-// PrintRemoveSummary prints a summary of what will be removed
-func PrintRemoveSummary(actions []string) {
-	fmt.Println(FormatHighlight("The following will be removed:"))
-	for _, action := range actions {
-		fmt.Printf("  - %s\n", action)
-	}
-	fmt.Println()
+	fmt.Printf("Blueprint: %s\n", FormatHighlight(blueprintFile))
+	fmt.Printf("Current OS: %s\n", FormatHighlight(currentOS))
+	fmt.Printf("Rules to remove: %s\n\n", FormatHighlight(fmt.Sprint(numRules)))
 }
 
 // ConfirmRemoval is a variable so tests can override it.

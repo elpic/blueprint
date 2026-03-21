@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/elpic/blueprint/internal/parser"
@@ -217,12 +216,13 @@ func RemoveWithSkip(file string, skipGroup string, skipID string, autoConfirm bo
 		return
 	}
 
-	// Build summary of what will be removed
-	summaryLines := buildRemoveSummary(filteredRules)
-
 	// Print header and summary
 	ui.PrintRemoveHeader(currentOS, file, len(filteredRules))
-	ui.PrintRemoveSummary(summaryLines)
+	fmt.Printf("%s\n", ui.FormatError("- will remove:"))
+	for _, rule := range filteredRules {
+		fmt.Printf("  %s %s\n", ui.FormatError("-"), ui.FormatInfo(rule.DisplaySummary()))
+	}
+	fmt.Println()
 
 	// Prompt for confirmation unless --yes was passed
 	if !autoConfirm {
@@ -265,50 +265,3 @@ func RemoveWithSkip(file string, skipGroup string, skipID string, autoConfirm bo
 	clearSudoCache()
 }
 
-// buildRemoveSummary creates human-readable summary lines for the rules to be removed.
-func buildRemoveSummary(rules []parser.Rule) []string {
-	var lines []string
-	for _, rule := range rules {
-		desc := rule.Action
-		switch rule.Action {
-		case "install":
-			var names []string
-			for _, pkg := range rule.Packages {
-				names = append(names, pkg.Name)
-			}
-			if len(names) > 0 {
-				desc = fmt.Sprintf("install: %s", strings.Join(names, ", "))
-			}
-		case "clone":
-			if rule.CloneURL != "" {
-				desc = fmt.Sprintf("clone: %s", rule.CloneURL)
-			}
-		case "dotfiles":
-			if rule.CloneURL != "" {
-				desc = fmt.Sprintf("dotfiles: %s", rule.CloneURL)
-			}
-		case "mise":
-			if len(rule.MisePackages) > 0 {
-				desc = fmt.Sprintf("mise: %s", strings.Join(rule.MisePackages, ", "))
-			}
-		case "homebrew":
-			var names []string
-			for _, pkg := range rule.Packages {
-				names = append(names, pkg.Name)
-			}
-			if len(names) > 0 {
-				desc = fmt.Sprintf("homebrew: %s", strings.Join(names, ", "))
-			}
-		case "shell":
-			if rule.ID != "" {
-				desc = fmt.Sprintf("shell: %s", rule.ID)
-			}
-		default:
-			if rule.ID != "" {
-				desc = fmt.Sprintf("%s: %s", rule.Action, rule.ID)
-			}
-		}
-		lines = append(lines, desc)
-	}
-	return lines
-}
