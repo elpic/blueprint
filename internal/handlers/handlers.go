@@ -628,7 +628,7 @@ func dedupPackages(sl []PackageStatus) []PackageStatus {
 	seen := map[string]int{}
 	var out []PackageStatus
 	for _, v := range sl {
-		key := v.Name + "\x00" + v.OS
+		key := v.Name + "\x00" + v.OS + "\x00" + v.Blueprint
 		if idx, ok := seen[key]; ok {
 			out[idx] = v // replace with newer
 		} else {
@@ -643,7 +643,7 @@ func dedupClones(sl []CloneStatus) []CloneStatus {
 	seen := map[string]int{}
 	var out []CloneStatus
 	for _, v := range sl {
-		key := v.Path + "\x00" + v.OS
+		key := v.Path + "\x00" + v.OS + "\x00" + v.Blueprint
 		if idx, ok := seen[key]; ok {
 			out[idx] = v
 		} else {
@@ -658,7 +658,7 @@ func dedupDecrypts(sl []DecryptStatus) []DecryptStatus {
 	seen := map[string]int{}
 	var out []DecryptStatus
 	for _, v := range sl {
-		key := v.DestPath + "\x00" + v.OS
+		key := v.DestPath + "\x00" + v.OS + "\x00" + v.Blueprint
 		if idx, ok := seen[key]; ok {
 			out[idx] = v
 		} else {
@@ -673,7 +673,7 @@ func dedupMkdirs(sl []MkdirStatus) []MkdirStatus {
 	seen := map[string]int{}
 	var out []MkdirStatus
 	for _, v := range sl {
-		key := v.Path + "\x00" + v.OS
+		key := v.Path + "\x00" + v.OS + "\x00" + v.Blueprint
 		if idx, ok := seen[key]; ok {
 			out[idx] = v
 		} else {
@@ -688,7 +688,7 @@ func dedupKnownHosts(sl []KnownHostsStatus) []KnownHostsStatus {
 	seen := map[string]int{}
 	var out []KnownHostsStatus
 	for _, v := range sl {
-		key := v.Host + "\x00" + v.OS
+		key := v.Host + "\x00" + v.OS + "\x00" + v.Blueprint
 		if idx, ok := seen[key]; ok {
 			out[idx] = v
 		} else {
@@ -703,7 +703,7 @@ func dedupGPGKeys(sl []GPGKeyStatus) []GPGKeyStatus {
 	seen := map[string]int{}
 	var out []GPGKeyStatus
 	for _, v := range sl {
-		key := v.Keyring + "\x00" + v.OS
+		key := v.Keyring + "\x00" + v.OS + "\x00" + v.Blueprint
 		if idx, ok := seen[key]; ok {
 			out[idx] = v
 		} else {
@@ -718,7 +718,7 @@ func dedupAsdfs(sl []AsdfStatus) []AsdfStatus {
 	seen := map[string]int{}
 	var out []AsdfStatus
 	for _, v := range sl {
-		key := v.Plugin + "\x00" + v.Version + "\x00" + v.OS
+		key := v.Plugin + "\x00" + v.Version + "\x00" + v.OS + "\x00" + v.Blueprint
 		if idx, ok := seen[key]; ok {
 			out[idx] = v
 		} else {
@@ -733,7 +733,7 @@ func dedupMises(sl []MiseStatus) []MiseStatus {
 	seen := map[string]int{}
 	var out []MiseStatus
 	for _, v := range sl {
-		key := v.Tool + "\x00" + v.Version + "\x00" + v.OS
+		key := v.Tool + "\x00" + v.Version + "\x00" + v.OS + "\x00" + v.Blueprint
 		if idx, ok := seen[key]; ok {
 			out[idx] = v
 		} else {
@@ -748,7 +748,7 @@ func dedupSudoers(sl []SudoersStatus) []SudoersStatus {
 	seen := map[string]int{}
 	var out []SudoersStatus
 	for _, v := range sl {
-		key := v.User + "\x00" + v.OS
+		key := v.User + "\x00" + v.OS + "\x00" + v.Blueprint
 		if idx, ok := seen[key]; ok {
 			out[idx] = v
 		} else {
@@ -763,7 +763,7 @@ func dedupBrews(sl []HomebrewStatus) []HomebrewStatus {
 	seen := map[string]int{}
 	var out []HomebrewStatus
 	for _, v := range sl {
-		key := v.Formula + "\x00" + v.OS
+		key := v.Formula + "\x00" + v.OS + "\x00" + v.Blueprint
 		if idx, ok := seen[key]; ok {
 			out[idx] = v
 		} else {
@@ -778,7 +778,7 @@ func dedupOllamas(sl []OllamaStatus) []OllamaStatus {
 	seen := map[string]int{}
 	var out []OllamaStatus
 	for _, v := range sl {
-		key := v.Model + "\x00" + v.OS
+		key := v.Model + "\x00" + v.OS + "\x00" + v.Blueprint
 		if idx, ok := seen[key]; ok {
 			out[idx] = v
 		} else {
@@ -793,7 +793,7 @@ func dedupDownloads(sl []DownloadStatus) []DownloadStatus {
 	seen := map[string]int{}
 	var out []DownloadStatus
 	for _, v := range sl {
-		key := v.Path + "\x00" + v.OS
+		key := v.Path + "\x00" + v.OS + "\x00" + v.Blueprint
 		if idx, ok := seen[key]; ok {
 			out[idx] = v
 		} else {
@@ -808,7 +808,7 @@ func dedupRuns(sl []RunStatus) []RunStatus {
 	seen := map[string]int{}
 	var out []RunStatus
 	for _, v := range sl {
-		key := v.Command + "\x00" + v.OS
+		key := v.Command + "\x00" + v.OS + "\x00" + v.Blueprint
 		if idx, ok := seen[key]; ok {
 			out[idx] = v
 		} else {
@@ -823,7 +823,7 @@ func dedupDotfiles(sl []DotfilesStatus) []DotfilesStatus {
 	seen := map[string]int{}
 	var out []DotfilesStatus
 	for _, v := range sl {
-		key := v.URL + "\x00" + v.OS
+		key := v.URL + "\x00" + v.OS + "\x00" + v.Blueprint
 		if idx, ok := seen[key]; ok {
 			out[idx] = v
 		} else {
@@ -838,7 +838,7 @@ func dedupSchedules(sl []ScheduleStatus) []ScheduleStatus {
 	seen := map[string]int{}
 	var out []ScheduleStatus
 	for _, v := range sl {
-		key := v.Source + "\x00" + v.OS
+		key := v.Source + "\x00" + v.OS + "\x00" + v.Blueprint
 		if idx, ok := seen[key]; ok {
 			out[idx] = v
 		} else {
@@ -853,7 +853,7 @@ func dedupShells(sl []ShellStatus) []ShellStatus {
 	seen := map[string]int{}
 	var out []ShellStatus
 	for _, v := range sl {
-		key := v.Shell + "\x00" + v.OS
+		key := v.Shell + "\x00" + v.OS + "\x00" + v.Blueprint
 		if idx, ok := seen[key]; ok {
 			out[idx] = v
 		} else {
@@ -868,7 +868,7 @@ func dedupAuthorizedKeys(sl []AuthorizedKeysStatus) []AuthorizedKeysStatus {
 	seen := map[string]int{}
 	var out []AuthorizedKeysStatus
 	for _, v := range sl {
-		key := v.Source + "\x00" + v.OS
+		key := v.Source + "\x00" + v.OS + "\x00" + v.Blueprint
 		if idx, ok := seen[key]; ok {
 			out[idx] = v
 		} else {

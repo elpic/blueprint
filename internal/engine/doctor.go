@@ -112,17 +112,25 @@ func checkBlueprintURLs(status *handlerskg.Status) []doctorIssue {
 	}
 }
 
-// checkDuplicates detects entries where the same resource appears more than once
-// for the same OS — regardless of which blueprint URL form was used. This catches
-// duplicates even when the blueprint URL stored in the old entry is a malformed
-// form that cannot yet be normalized (e.g. pre-fix single-slash URLs).
+// normalizeBlueprintForDoctor normalizes a blueprint value for duplicate comparison.
+// It handles both well-formed and malformed URL forms (e.g. single-slash https:/)
+// by always delegating to NormalizeBlueprint, which now recognises all known variants.
+func normalizeBlueprintForDoctor(bp string) string {
+	return handlerskg.NormalizeBlueprint(bp)
+}
+
+// checkDuplicates detects entries where the same resource+OS pair appears more than
+// once under blueprint URLs that normalize to the same value. This is more precise
+// than ignoring blueprint entirely: resources genuinely installed from two different
+// blueprints are not flagged, while entries that only differ because of URL form
+// variants (e.g. "https:/host/repo.git" vs "https://host/repo") are caught.
 func checkDuplicates(status *handlerskg.Status) []doctorIssue {
-	type key struct{ resource, os string }
+	type key struct{ resource, os, blueprint string }
 	seen := map[key]bool{}
 	count := 0
 
-	track := func(resource, os string) {
-		k := key{resource, os}
+	track := func(resource, os, blueprint string) {
+		k := key{resource, os, normalizeBlueprintForDoctor(blueprint)}
 		if seen[k] {
 			count++
 		}
@@ -130,55 +138,55 @@ func checkDuplicates(status *handlerskg.Status) []doctorIssue {
 	}
 
 	for _, v := range status.Packages {
-		track(v.Name, v.OS)
+		track(v.Name, v.OS, v.Blueprint)
 	}
 	for _, v := range status.Clones {
-		track(v.Path, v.OS)
+		track(v.Path, v.OS, v.Blueprint)
 	}
 	for _, v := range status.Decrypts {
-		track(v.DestPath, v.OS)
+		track(v.DestPath, v.OS, v.Blueprint)
 	}
 	for _, v := range status.Mkdirs {
-		track(v.Path, v.OS)
+		track(v.Path, v.OS, v.Blueprint)
 	}
 	for _, v := range status.KnownHosts {
-		track(v.Host, v.OS)
+		track(v.Host, v.OS, v.Blueprint)
 	}
 	for _, v := range status.GPGKeys {
-		track(v.Keyring, v.OS)
+		track(v.Keyring, v.OS, v.Blueprint)
 	}
 	for _, v := range status.Asdfs {
-		track(v.Plugin+"\x00"+v.Version, v.OS)
+		track(v.Plugin+"\x00"+v.Version, v.OS, v.Blueprint)
 	}
 	for _, v := range status.Mises {
-		track(v.Tool+"\x00"+v.Version, v.OS)
+		track(v.Tool+"\x00"+v.Version, v.OS, v.Blueprint)
 	}
 	for _, v := range status.Sudoers {
-		track(v.User, v.OS)
+		track(v.User, v.OS, v.Blueprint)
 	}
 	for _, v := range status.Brews {
-		track(v.Formula, v.OS)
+		track(v.Formula, v.OS, v.Blueprint)
 	}
 	for _, v := range status.Ollamas {
-		track(v.Model, v.OS)
+		track(v.Model, v.OS, v.Blueprint)
 	}
 	for _, v := range status.Downloads {
-		track(v.Path, v.OS)
+		track(v.Path, v.OS, v.Blueprint)
 	}
 	for _, v := range status.Runs {
-		track(v.Command, v.OS)
+		track(v.Command, v.OS, v.Blueprint)
 	}
 	for _, v := range status.Dotfiles {
-		track(v.URL, v.OS)
+		track(v.URL, v.OS, v.Blueprint)
 	}
 	for _, v := range status.Schedules {
-		track(v.Source, v.OS)
+		track(v.Source, v.OS, v.Blueprint)
 	}
 	for _, v := range status.Shells {
-		track(v.Shell, v.OS)
+		track(v.Shell, v.OS, v.Blueprint)
 	}
 	for _, v := range status.AuthorizedKeys {
-		track(v.Source, v.OS)
+		track(v.Source, v.OS, v.Blueprint)
 	}
 
 	if count == 0 {
