@@ -12,8 +12,8 @@ import (
 var version = "dev"
 var commit = "none"
 
-// parseFlags extracts --skip-group, --skip-id, --skip-decrypt, and --only flags from arguments
-func parseFlags(args []string) (skipGroup, skipID, onlyID string, skipDecrypt bool) {
+// parseFlags extracts --skip-group, --skip-id, --skip-decrypt, --only, and --yes/-y flags from arguments
+func parseFlags(args []string) (skipGroup, skipID, onlyID string, skipDecrypt, autoConfirm bool) {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--skip-group":
@@ -33,13 +33,15 @@ func parseFlags(args []string) (skipGroup, skipID, onlyID string, skipDecrypt bo
 			}
 		case "--skip-decrypt":
 			skipDecrypt = true
+		case "--yes", "-y":
+			autoConfirm = true
 		}
 	}
 	return
 }
 
 var knownCommands = map[string]bool{
-	"plan": true, "apply": true, "encrypt": true,
+	"plan": true, "apply": true, "remove": true, "encrypt": true,
 	"status": true, "history": true, "ps": true, "slow": true, "diff": true,
 	"version": true,
 }
@@ -49,12 +51,12 @@ func isKnownCommand(cmd string) bool {
 }
 
 func unknownCommandMessage(cmd string) string {
-	return fmt.Sprintf("unknown command: %q\nUsage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff|version> [<file>]", cmd)
+	return fmt.Sprintf("unknown command: %q\nUsage: blueprint <plan|apply|remove|encrypt|status|history|ps|slow|diff|version> [<file>]", cmd)
 }
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff|version> [<file|run_number>]")
+		fmt.Println("Usage: blueprint <plan|apply|remove|encrypt|status|history|ps|slow|diff|version> [<file|run_number>]")
 		os.Exit(1)
 	}
 
@@ -86,7 +88,7 @@ func main() {
 			os.Exit(1)
 		}
 		file := os.Args[2]
-		skipGroup, skipID, onlyID, skipDecrypt := parseFlags(os.Args[3:])
+		skipGroup, skipID, onlyID, skipDecrypt, _ := parseFlags(os.Args[3:])
 		engine.RunWithSkip(file, true, skipGroup, skipID, onlyID, skipDecrypt) // dry-run
 	case "apply":
 		if len(os.Args) < 3 {
@@ -94,8 +96,16 @@ func main() {
 			os.Exit(1)
 		}
 		file := os.Args[2]
-		skipGroup, skipID, onlyID, skipDecrypt := parseFlags(os.Args[3:])
+		skipGroup, skipID, onlyID, skipDecrypt, _ := parseFlags(os.Args[3:])
 		engine.RunWithSkip(file, false, skipGroup, skipID, onlyID, skipDecrypt)
+	case "remove":
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: blueprint remove <file.bp> [--skip-group <name>] [--skip-id <name>] [--yes|-y]")
+			os.Exit(1)
+		}
+		file := os.Args[2]
+		skipGroup, skipID, _, _, autoConfirm := parseFlags(os.Args[3:])
+		engine.RemoveWithSkip(file, skipGroup, skipID, autoConfirm)
 	case "encrypt":
 		if len(os.Args) < 3 {
 			fmt.Println("Usage: blueprint encrypt <file> [--password-id <id>]")

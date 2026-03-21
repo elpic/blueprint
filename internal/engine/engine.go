@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/elpic/blueprint/internal/parser"
@@ -177,4 +178,137 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 
 func Run(file string, dry bool) {
 	RunWithSkip(file, dry, "", "", "", false)
+}
+
+// RemoveWithSkip parses a blueprint file and calls Down() on all rules,
+// effectively undoing everything apply did. It prompts for confirmation
+// unless autoConfirm is true.
+func RemoveWithSkip(file string, skipGroup string, skipID string, autoConfirm bool) {
+	setupPath, cleanup, err := resolveBlueprintFile(file, false)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+	defer cleanup()
+
+	rules, err := parser.ParseFile(setupPath)
+	if err != nil {
+		fmt.Println("Parse error:", err)
+		return
+	}
+
+	currentOS := getOSName()
+	osRules := filterRulesByOS(rules)
+
+	// Apply skip flags
+	var filteredRules []parser.Rule
+	for _, rule := range osRules {
+		if skipGroup != "" && rule.Group == skipGroup {
+			continue
+		}
+		if skipID != "" && rule.ID == skipID {
+			continue
+		}
+		filteredRules = append(filteredRules, rule)
+	}
+
+	if len(filteredRules) == 0 {
+		fmt.Println("No applicable rules found.")
+		return
+	}
+
+	// Build summary of what will be removed
+	summaryLines := buildRemoveSummary(filteredRules)
+
+	// Print header and summary
+	ui.PrintRemoveHeader(currentOS, file, len(filteredRules))
+	ui.PrintRemoveSummary(summaryLines)
+
+	// Prompt for confirmation unless --yes was passed
+	if !autoConfirm {
+		if !ui.ConfirmRemoval() {
+			fmt.Println("Remove cancelled.")
+			return
+		}
+		fmt.Println()
+	}
+
+	// Get next run number for history
+	runNumber, err := getNextRunNumber()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to get run number: %v\n", err)
+		runNumber = 0
+	}
+
+	// Set all rules to "uninstall" so executeRules calls Down()
+	for i := range filteredRules {
+		filteredRules[i].Action = "uninstall"
+	}
+
+	basePath := filepath.Dir(setupPath)
+
+	// Prompt for sudo password if needed
+	if err := promptForSudoPasswordWithOS(filteredRules, currentOS); err != nil {
+		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error prompting for sudo password: %v", err)))
+		return
+	}
+
+	records := executeRules(filteredRules, file, currentOS, basePath, runNumber)
+	if err := saveHistory(records); err != nil {
+		fmt.Printf("Warning: Failed to save history: %v\n", err)
+	}
+	if err := saveStatus(filteredRules, records, file, currentOS); err != nil {
+		fmt.Printf("Warning: Failed to save status: %v\n", err)
+	}
+
+	// Clear sudo cache
+	clearSudoCache()
+}
+
+// buildRemoveSummary creates human-readable summary lines for the rules to be removed.
+func buildRemoveSummary(rules []parser.Rule) []string {
+	var lines []string
+	for _, rule := range rules {
+		desc := rule.Action
+		switch rule.Action {
+		case "install":
+			var names []string
+			for _, pkg := range rule.Packages {
+				names = append(names, pkg.Name)
+			}
+			if len(names) > 0 {
+				desc = fmt.Sprintf("install: %s", strings.Join(names, ", "))
+			}
+		case "clone":
+			if rule.CloneURL != "" {
+				desc = fmt.Sprintf("clone: %s", rule.CloneURL)
+			}
+		case "dotfiles":
+			if rule.CloneURL != "" {
+				desc = fmt.Sprintf("dotfiles: %s", rule.CloneURL)
+			}
+		case "mise":
+			if len(rule.MisePackages) > 0 {
+				desc = fmt.Sprintf("mise: %s", strings.Join(rule.MisePackages, ", "))
+			}
+		case "homebrew":
+			var names []string
+			for _, pkg := range rule.Packages {
+				names = append(names, pkg.Name)
+			}
+			if len(names) > 0 {
+				desc = fmt.Sprintf("homebrew: %s", strings.Join(names, ", "))
+			}
+		case "shell":
+			if rule.ID != "" {
+				desc = fmt.Sprintf("shell: %s", rule.ID)
+			}
+		default:
+			if rule.ID != "" {
+				desc = fmt.Sprintf("%s: %s", rule.Action, rule.ID)
+			}
+		}
+		lines = append(lines, desc)
+	}
+	return lines
 }

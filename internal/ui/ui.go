@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -102,6 +103,37 @@ func PrintAutoUninstallSection() {
 // PrintPlanFooter prints the footer message for plan mode
 func PrintPlanFooter() {
 	fmt.Println("\n" + FormatInfo("[No changes will be applied]"))
+}
+
+// PrintRemoveHeader prints the header for remove mode
+func PrintRemoveHeader(currentOS string, blueprintFile string, numRules int) {
+	fmt.Println(Header.Render("═══ [REMOVE MODE] ═══") + "\n")
+	fmt.Printf("OS: %s\n", FormatHighlight(currentOS))
+	fmt.Printf("Removing %s rules from %s\n\n",
+		FormatHighlight(fmt.Sprint(numRules)),
+		FormatHighlight(blueprintFile))
+}
+
+// PrintRemoveSummary prints a summary of what will be removed
+func PrintRemoveSummary(actions []string) {
+	fmt.Println(FormatHighlight("The following will be removed:"))
+	for _, action := range actions {
+		fmt.Printf("  - %s\n", action)
+	}
+	fmt.Println()
+}
+
+// ConfirmRemoval is a variable so tests can override it.
+// It prompts the user for confirmation and returns true if they confirm.
+var ConfirmRemoval = func() bool {
+	fmt.Print(FormatHighlight("Proceed with removal? [y/N] "))
+	var response string
+	_, err := fmt.Scanln(&response)
+	if err != nil {
+		return false
+	}
+	response = strings.ToLower(strings.TrimSpace(response))
+	return response == "y" || response == "yes"
 }
 
 // PrintProgressBar prints a simple progress indicator
