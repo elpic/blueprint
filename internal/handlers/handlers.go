@@ -148,6 +148,14 @@ type RunStatus struct {
 	OS        string `json:"os"`
 }
 
+// AuthorizedKeysStatus tracks an added authorized key
+type AuthorizedKeysStatus struct {
+	Source    string `json:"source"`
+	AddedAt   string `json:"added_at"`
+	Blueprint string `json:"blueprint"`
+	OS        string `json:"os"`
+}
+
 // DotfilesStatus tracks a managed dotfiles repository
 type DotfilesStatus struct {
 	URL       string   `json:"url"`
@@ -162,22 +170,23 @@ type DotfilesStatus struct {
 
 // Status represents the current blueprint state
 type Status struct {
-	Packages   []PackageStatus    `json:"packages"`
-	Clones     []CloneStatus      `json:"clones"`
-	Decrypts   []DecryptStatus    `json:"decrypts"`
-	Mkdirs     []MkdirStatus      `json:"mkdirs"`
-	KnownHosts []KnownHostsStatus `json:"known_hosts"`
-	GPGKeys    []GPGKeyStatus     `json:"gpg_keys"`
-	Asdfs      []AsdfStatus       `json:"asdfs"`
-	Mises      []MiseStatus       `json:"mises"`
-	Sudoers    []SudoersStatus    `json:"sudoers"`
-	Brews      []HomebrewStatus   `json:"brews"`
-	Ollamas    []OllamaStatus     `json:"ollamas"`
-	Downloads  []DownloadStatus   `json:"downloads"`
-	Runs       []RunStatus        `json:"runs"`
-	Dotfiles   []DotfilesStatus   `json:"dotfiles"`
-	Schedules  []ScheduleStatus   `json:"schedules"`
-	Shells     []ShellStatus      `json:"shells"`
+	Packages       []PackageStatus        `json:"packages"`
+	Clones         []CloneStatus          `json:"clones"`
+	Decrypts       []DecryptStatus        `json:"decrypts"`
+	Mkdirs         []MkdirStatus          `json:"mkdirs"`
+	KnownHosts     []KnownHostsStatus     `json:"known_hosts"`
+	GPGKeys        []GPGKeyStatus         `json:"gpg_keys"`
+	Asdfs          []AsdfStatus           `json:"asdfs"`
+	Mises          []MiseStatus           `json:"mises"`
+	Sudoers        []SudoersStatus        `json:"sudoers"`
+	Brews          []HomebrewStatus       `json:"brews"`
+	Ollamas        []OllamaStatus         `json:"ollamas"`
+	Downloads      []DownloadStatus       `json:"downloads"`
+	Runs           []RunStatus            `json:"runs"`
+	Dotfiles       []DotfilesStatus       `json:"dotfiles"`
+	Schedules      []ScheduleStatus       `json:"schedules"`
+	Shells         []ShellStatus          `json:"shells"`
+	AuthorizedKeys []AuthorizedKeysStatus `json:"authorized_keys"`
 }
 
 // Handler is the interface that all command handlers must implement
@@ -342,6 +351,11 @@ func RuleKey(rule parser.Rule) string {
 		return "schedule"
 	case "shell":
 		return rule.ShellName
+	case "authorized_keys":
+		if rule.AuthorizedKeysFile != "" {
+			return rule.AuthorizedKeysFile
+		}
+		return rule.AuthorizedKeysEncrypted
 	default:
 		return rule.Action
 	}
@@ -408,6 +422,9 @@ func DetectRuleType(rule parser.Rule) string {
 	if rule.ShellName != "" {
 		return "shell"
 	}
+	if rule.AuthorizedKeysFile != "" || rule.AuthorizedKeysEncrypted != "" {
+		return "authorized_keys"
+	}
 	return ""
 }
 
@@ -462,6 +479,8 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 		return NewScheduleHandler(rule, basePath)
 	case "shell":
 		return NewShellHandler(rule, basePath)
+	case "authorized_keys":
+		return NewAuthorizedKeysHandler(rule, basePath, passwordCache)
 	default:
 		return nil
 	}
@@ -489,6 +508,7 @@ func GetStatusProviderHandlers() []Handler {
 		NewSudoersHandler(parser.Rule{}, ""),
 		NewScheduleHandler(parser.Rule{}, ""),
 		NewShellHandler(parser.Rule{}, ""),
+		NewAuthorizedKeysHandler(parser.Rule{}, "", nil),
 	}
 }
 
@@ -637,6 +657,19 @@ func removeDownloadStatus(downloads []DownloadStatus, path string, blueprint str
 		normalizedStoredBlueprint := normalizeBlueprint(dl.Blueprint)
 		if dl.Path != path || normalizedStoredBlueprint != normalizedBlueprint || dl.OS != osName {
 			result = append(result, dl)
+		}
+	}
+	return result
+}
+
+// removeAuthorizedKeysStatus removes an authorized keys entry from the status list
+func removeAuthorizedKeysStatus(authorizedKeys []AuthorizedKeysStatus, source string, blueprint string, osName string) []AuthorizedKeysStatus {
+	var result []AuthorizedKeysStatus
+	normalizedBlueprint := normalizeBlueprint(blueprint)
+	for _, ak := range authorizedKeys {
+		normalizedStoredBlueprint := normalizeBlueprint(ak.Blueprint)
+		if ak.Source != source || normalizedStoredBlueprint != normalizedBlueprint || ak.OS != osName {
+			result = append(result, ak)
 		}
 	}
 	return result
