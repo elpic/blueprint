@@ -73,6 +73,10 @@ func ensureSymlink(src, dst string) (created bool, skipReason string) {
 func (h *DotfilesHandler) Up() (string, error) {
 	clonePath := h.expandedDotfilesPath()
 
+	// Detect update scenario: clone directory already exists before pull
+	_, statErr := os.Stat(clonePath)
+	isUpdate := statErr == nil
+
 	_, _, _, err := gitpkg.CloneOrUpdateRepository(
 		h.Rule.DotfilesURL,
 		clonePath,
@@ -85,6 +89,13 @@ func (h *DotfilesHandler) Up() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	// On update, remove all managed symlinks first so renames, deletions, and
+	// reorganizations in the repo are reflected correctly. See ADR:
+	// .brain/adr-dotfiles-recreate-on-update.md
+	if isUpdate {
+		h.removeAllManagedSymlinks(clonePath, homeDir)
 	}
 
 	var created, already int
@@ -474,59 +485,118 @@ func (h *DotfilesHandler) FindUninstallRules(status *Status, currentRules []pars
 	return rules
 }
 
-// IsInstalled returns true if the dotfiles URL is already installed and up to date.
-// It checks the URL, SHA, and verifies all expected symlinks are present and correct.
+// DotfilesLinksForDiff walks the local dotfiles clone and returns symlink paths
+// that would be created by Up() but don't exist yet as correct symlinks.
+// This mirrors the Up() linking logic: top-level files/symlinks link into ~,
+// top-level directories are descended one level. Entries that are already
+// correctly symlinked are excluded — only missing or wrong ones are returned.
+// Paths are abbreviated with ~ for readability.
+// homeDirOverride is used in tests to inject a custom home directory; pass ""
+// to use the real home directory.
+func DotfilesLinksForDiff(h *DotfilesHandler, homeDirOverride ...string) []string {
+	clonePath := h.expandedDotfilesPath()
+	var homeDir string
+	if len(homeDirOverride) > 0 && homeDirOverride[0] != "" {
+		homeDir = homeDirOverride[0]
+	} else {
+		var err error
+		homeDir, err = os.UserHomeDir()
+		if err != nil {
+			return nil
+		}
+	}
+
+	entries, err := os.ReadDir(clonePath)
+	if err != nil {
+		return nil
+	}
+
+	abbrev := func(p string) string {
+		if strings.HasPrefix(p, homeDir) {
+			return "~" + p[len(homeDir):]
+		}
+		return p
+	}
+
+	// symlinkNeeded returns true if dst is not already a correct symlink to src.
+	symlinkNeeded := func(src, dst string) bool {
+		info, err := os.Lstat(dst)
+		if err != nil {
+			return true // doesn't exist
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			return false // real file/dir exists — Up() would skip it too
+		}
+		target, err := os.Readlink(dst)
+		return err != nil || target != src
+	}
+
+	var missing []string
+	for _, entry := range entries {
+		if shouldSkipEntry(entry.Name(), h.Rule.DotfilesSkip) {
+			continue
+		}
+		src := filepath.Join(clonePath, entry.Name())
+		if entry.IsDir() {
+			// Descend one level — link each item inside into ~/dir/
+			subEntries, err := os.ReadDir(src)
+			if err != nil {
+				continue
+			}
+			dstDir := filepath.Join(homeDir, entry.Name())
+			for _, sub := range subEntries {
+				subSrc := filepath.Join(src, sub.Name())
+				subDst := filepath.Join(dstDir, sub.Name())
+				if symlinkNeeded(subSrc, subDst) {
+					missing = append(missing, abbrev(subDst))
+				}
+			}
+		} else {
+			dst := filepath.Join(homeDir, entry.Name())
+			if symlinkNeeded(src, dst) {
+				missing = append(missing, abbrev(dst))
+			}
+		}
+	}
+	return missing
+}
+
+// IsInstalled returns true if the dotfiles repo is up to date and all expected
+// symlinks are present and correct. It compares the local clone SHA against the
+// remote HEAD — if the remote has new commits, it returns false so PrintDiff
+// shows the rule as needing an update. The engine always calls Up() for
+// dotfiles regardless of this result (see command.go).
 func (h *DotfilesHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
 	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 	normalizedRuleURL := gitpkg.NormalizeGitURL(h.Rule.DotfilesURL)
 	for _, d := range status.Dotfiles {
 		normalizedStatusURL := gitpkg.NormalizeGitURL(d.URL)
 		if normalizedStatusURL == normalizedRuleURL && normalizeBlueprint(d.Blueprint) == normalizedBlueprint && d.OS == osName {
-			// Check if SHA matches - if different, repo has changes that need to be applied
-			if d.SHA != "" {
-				currentSHA := gitpkg.LocalSHA(h.expandedDotfilesPath())
-				if currentSHA != "" && currentSHA != d.SHA {
-					// SHA changed - new files might have been added, need to re-process
+			// Check if remote has new commits
+			clonePath := h.expandedDotfilesPath()
+			localSHA := gitpkg.LocalSHA(clonePath)
+			if localSHA != "" {
+				remoteSHA := gitpkg.RemoteHeadSHA(h.Rule.DotfilesURL, "")
+				if remoteSHA != "" && remoteSHA != localSHA {
 					return false
 				}
 			}
-
-			// Check if all expected links are present and correct
-			if len(d.Links) > 0 {
-				clonePath := h.expandedDotfilesPath()
-
-				for _, linkPath := range d.Links {
-					// Check if the link exists
-					info, err := os.Lstat(linkPath)
-					if err != nil {
-						// Link doesn't exist
-						return false
-					}
-
-					// Check if it's a symlink
-					if info.Mode()&os.ModeSymlink == 0 {
-						// Not a symlink anymore
-						return false
-					}
-
-					// Check if it points to the correct location
-					target, err := os.Readlink(linkPath)
-					if err != nil {
-						return false
-					}
-
-					// Resolve both paths for comparison
-					resolvedTarget, _ := filepath.EvalSymlinks(target)
-					resolvedClonePath, _ := filepath.EvalSymlinks(clonePath)
-
-					// Check if the symlink target is within the clone directory
-					if !strings.HasPrefix(resolvedTarget, resolvedClonePath+string(filepath.Separator)) && resolvedTarget != resolvedClonePath {
-						// Symlink points to wrong location
-						return false
-					}
+			// Check all expected symlinks are present and correct
+			for _, linkPath := range d.Links {
+				info, err := os.Lstat(linkPath)
+				if err != nil || info.Mode()&os.ModeSymlink == 0 {
+					return false
+				}
+				target, err := os.Readlink(linkPath)
+				if err != nil {
+					return false
+				}
+				resolvedTarget, _ := filepath.EvalSymlinks(target)
+				resolvedClonePath, _ := filepath.EvalSymlinks(clonePath)
+				if !strings.HasPrefix(resolvedTarget, resolvedClonePath+string(filepath.Separator)) && resolvedTarget != resolvedClonePath {
+					return false
 				}
 			}
-
 			return true
 		}
 	}

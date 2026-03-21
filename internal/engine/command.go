@@ -196,7 +196,10 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 					output, err = handler.Down()
 				}
 			} else {
-				if handler.IsInstalled(&currentStatus, blueprint, osName) {
+				// Dotfiles always run Up() — it is idempotent (pulls latest commits,
+				// removes and recreates symlinks). IsInstalled() cannot detect remote
+				// changes without a network fetch, so we always let Up() run.
+				if rule.Action != "dotfiles" && handler.IsInstalled(&currentStatus, blueprint, osName) {
 					output = "already installed"
 				} else {
 					output, err = handler.Up()
