@@ -260,7 +260,34 @@ func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []par
 		rs := ruleSet{}
 		for _, r := range rules {
 			rs[handlerskg.RuleKey(r)] = true
-			// Also index every package / homebrew formula individually.
+			// Also index the natural resource identity for each action type so
+			// that status entries (which store the resource path/name, not the
+			// rule id) are matched correctly even when the rule has an id:.
+			switch r.Action {
+			case "clone":
+				rs[r.ClonePath] = true
+			case "decrypt":
+				rs[r.DecryptPath] = true
+			case "download":
+				rs[r.DownloadPath] = true
+			case "mkdir":
+				rs[r.Mkdir] = true
+			case "known_hosts":
+				rs[r.KnownHosts] = true
+			case "gpg_key", "gpg-key":
+				rs[r.GPGKeyring] = true
+			case "dotfiles":
+				rs[r.DotfilesURL] = true
+			case "schedule":
+				rs[r.ScheduleSource] = true
+				rs[handlerskg.NormalizeBlueprint(r.ScheduleSource)] = true
+			case "shell":
+				rs[r.ShellName] = true
+			case "authorized_keys":
+				rs[r.AuthorizedKeysFile] = true
+				rs[r.AuthorizedKeysEncrypted] = true
+			}
+			// Index every package / homebrew formula / ollama model individually.
 			for _, pkg := range r.Packages {
 				rs[pkg.Name] = true
 			}
@@ -282,7 +309,9 @@ func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []par
 		if rs == nil {
 			return // blueprint not cached — skip
 		}
-		if !rs[resource] {
+		// Check both the raw resource value and its normalized form (handles
+		// git URLs stored with/without .git suffix, e.g. schedule sources).
+		if !rs[resource] && !rs[handlerskg.NormalizeBlueprint(resource)] {
 			orphans = append(orphans, fmt.Sprintf("%s (blueprint: %s)", resource, handlerskg.NormalizeBlueprint(bp)))
 		}
 	}
