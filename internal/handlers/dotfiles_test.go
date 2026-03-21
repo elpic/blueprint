@@ -342,8 +342,12 @@ func TestEnsureSymlinkFailsOnWrongTarget(t *testing.T) {
 	newTarget := filepath.Join(dir, "new")
 	link := filepath.Join(dir, "link")
 
-	os.WriteFile(oldTarget, []byte("old"), 0644)
-	os.WriteFile(newTarget, []byte("new"), 0644)
+	if err := os.WriteFile(oldTarget, []byte("old"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newTarget, []byte("new"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create symlink pointing to old target
 	if err := os.Symlink(oldTarget, link); err != nil {
@@ -380,7 +384,9 @@ func TestUpdateRemovesOldSymlinksAndCreatesNew(t *testing.T) {
 	}
 
 	// Now simulate the rename: remove old file, create new file
-	os.Remove(oldFile)
+	if err := os.Remove(oldFile); err != nil {
+		t.Fatal(err)
+	}
 	newFile := filepath.Join(cloneDir, ".new_config")
 	if err := os.WriteFile(newFile, []byte("new"), 0644); err != nil {
 		t.Fatal(err)
@@ -620,7 +626,9 @@ func TestBrokenSymlinksCleanedUpOnUpdate(t *testing.T) {
 	if err := os.Symlink(brokenTarget, brokenLink); err != nil {
 		t.Fatal(err)
 	}
-	os.Remove(brokenTarget) // Now the symlink is broken
+	if err := os.Remove(brokenTarget); err != nil { // Now the symlink is broken
+		t.Fatal(err)
+	}
 
 	// Also create a broken symlink one level deep (in a subdirectory)
 	subDir := filepath.Join(homeDir, ".config")
@@ -639,7 +647,9 @@ func TestBrokenSymlinksCleanedUpOnUpdate(t *testing.T) {
 	if err := os.Symlink(deepBrokenTarget, deepBrokenLink); err != nil {
 		t.Fatal(err)
 	}
-	os.Remove(deepBrokenTarget) // Now this symlink is also broken
+	if err := os.Remove(deepBrokenTarget); err != nil { // Now this symlink is also broken
+		t.Fatal(err)
+	}
 
 	h := NewDotfilesHandler(parser.Rule{Action: "dotfiles"}, "")
 	removed := h.removeAllManagedSymlinks(cloneDir, homeDir)
