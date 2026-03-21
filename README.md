@@ -14,7 +14,7 @@ dotfiles ~/.dotfiles on: [mac]
 ## Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/elpic/blueprint/main/install.sh | sh
+curl -fsSL https://install.getbp.dev | sh
 ```
 
 Or download the latest binary from [releases](https://github.com/elpic/blueprint/releases).
