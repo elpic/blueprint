@@ -80,7 +80,7 @@ func authorizedKeysFile(create bool) (string, error) {
 	authKeysPath := filepath.Join(sshPath, "authorized_keys")
 	if create {
 		if _, err := os.Stat(authKeysPath); os.IsNotExist(err) {
-			if err := os.WriteFile(authKeysPath, []byte{}, internal.FilePermission); err != nil {
+			if err := os.WriteFile(authKeysPath, []byte{}, internal.FilePermission); err != nil { // #nosec G703 -- path is always ~/.ssh/authorized_keys, constructed internally // #nosec G703 -- path is always ~/.ssh/authorized_keys
 				return "", fmt.Errorf("failed to create authorized_keys file: %w", err)
 			}
 		}
@@ -120,7 +120,7 @@ func (h *AuthorizedKeysHandler) Up() (string, error) {
 	newKeys := parseKeyLines(content)
 	added := 0
 
-	f, err := os.OpenFile(authKeysPath, os.O_APPEND|os.O_WRONLY, internal.FilePermission)
+	f, err := os.OpenFile(authKeysPath, os.O_APPEND|os.O_WRONLY, internal.FilePermission) // #nosec G703 -- path is always ~/.ssh/authorized_keys, constructed internally
 	if err != nil {
 		return "", fmt.Errorf("failed to open authorized_keys for writing: %w", err)
 	}
@@ -172,7 +172,7 @@ func (h *AuthorizedKeysHandler) Down() (string, error) {
 	}
 
 	newContent := strings.Join(kept, "\n")
-	if err := os.WriteFile(authKeysPath, []byte(newContent), internal.FilePermission); err != nil {
+	if err := os.WriteFile(authKeysPath, []byte(newContent), internal.FilePermission); err != nil { // #nosec G703 -- authKeysPath is always ~/.ssh/authorized_keys, constructed internally
 		return "", fmt.Errorf("failed to rewrite authorized_keys: %w", err)
 	}
 
