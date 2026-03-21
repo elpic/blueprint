@@ -533,6 +533,65 @@ func normalizeBlueprint(input string) string {
 	return normalizePath(input)
 }
 
+// MigrateStatus normalizes all Blueprint fields in a Status struct.
+// This is a one-time migration for status files written before URL normalization
+// was added, where blueprint values may have been stored with the raw SSH URL or
+// with a .git suffix (e.g. "git@github.com:user/repo.git" instead of
+// "https://github.com/user/repo").
+func MigrateStatus(s *Status) {
+	for i := range s.Packages {
+		s.Packages[i].Blueprint = normalizeBlueprint(s.Packages[i].Blueprint)
+	}
+	for i := range s.Clones {
+		s.Clones[i].Blueprint = normalizeBlueprint(s.Clones[i].Blueprint)
+	}
+	for i := range s.Decrypts {
+		s.Decrypts[i].Blueprint = normalizeBlueprint(s.Decrypts[i].Blueprint)
+	}
+	for i := range s.Mkdirs {
+		s.Mkdirs[i].Blueprint = normalizeBlueprint(s.Mkdirs[i].Blueprint)
+	}
+	for i := range s.KnownHosts {
+		s.KnownHosts[i].Blueprint = normalizeBlueprint(s.KnownHosts[i].Blueprint)
+	}
+	for i := range s.GPGKeys {
+		s.GPGKeys[i].Blueprint = normalizeBlueprint(s.GPGKeys[i].Blueprint)
+	}
+	for i := range s.Asdfs {
+		s.Asdfs[i].Blueprint = normalizeBlueprint(s.Asdfs[i].Blueprint)
+	}
+	for i := range s.Mises {
+		s.Mises[i].Blueprint = normalizeBlueprint(s.Mises[i].Blueprint)
+	}
+	for i := range s.Sudoers {
+		s.Sudoers[i].Blueprint = normalizeBlueprint(s.Sudoers[i].Blueprint)
+	}
+	for i := range s.Brews {
+		s.Brews[i].Blueprint = normalizeBlueprint(s.Brews[i].Blueprint)
+	}
+	for i := range s.Ollamas {
+		s.Ollamas[i].Blueprint = normalizeBlueprint(s.Ollamas[i].Blueprint)
+	}
+	for i := range s.Downloads {
+		s.Downloads[i].Blueprint = normalizeBlueprint(s.Downloads[i].Blueprint)
+	}
+	for i := range s.Runs {
+		s.Runs[i].Blueprint = normalizeBlueprint(s.Runs[i].Blueprint)
+	}
+	for i := range s.Dotfiles {
+		s.Dotfiles[i].Blueprint = normalizeBlueprint(s.Dotfiles[i].Blueprint)
+	}
+	for i := range s.Schedules {
+		s.Schedules[i].Blueprint = normalizeBlueprint(s.Schedules[i].Blueprint)
+	}
+	for i := range s.Shells {
+		s.Shells[i].Blueprint = normalizeBlueprint(s.Shells[i].Blueprint)
+	}
+	for i := range s.AuthorizedKeys {
+		s.AuthorizedKeys[i].Blueprint = normalizeBlueprint(s.AuthorizedKeys[i].Blueprint)
+	}
+}
+
 func commandSuccessfullyExecuted(cmd string, records []ExecutionRecord) (*ExecutionRecord, bool) {
 	var resultRecord *ExecutionRecord
 	commandExecuted := false
