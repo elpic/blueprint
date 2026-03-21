@@ -36,27 +36,34 @@ func (h *KnownHostsHandler) Up() (string, error) {
 		return "", fmt.Errorf("invalid hostname: %s (contains invalid characters)", h.Rule.KnownHosts)
 	}
 
-	if _, err := knownHostsFile(true); err != nil {
+	knownHostsPath, err := knownHostsFile(true)
+	if err != nil {
 		return "", err
 	}
 
 	cmd := exec.Command("sh", "-c", h.GetCommand())
 	output, err := cmd.Output()
 
-	if err == nil {
-		// Successfully added the host
-		// TODO: create a function to get keyType
-		// return fmt.Sprintf("Added %s to known_hosts (key type: %s)", h.Rule.KnownHosts, keyType), nil
-		return fmt.Sprintf("Added %s to known_hosts", h.Rule.KnownHosts), nil
+	if err != nil {
+		// Collect error messages for each key type
+		errMsg := strings.TrimSpace(string(output))
+		if errMsg == "" {
+			errMsg = "unknown error"
+		}
+		return "", fmt.Errorf("failed to add host to known_hosts - \nDetails:\n%s", errMsg)
 	}
 
-	// Collect error messages for each key type
-	errMsg := strings.TrimSpace(string(output))
-	if errMsg == "" {
-		errMsg = "unknown error"
+	// Append the scanned key to known_hosts
+	f, openErr := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	if openErr != nil {
+		return "", fmt.Errorf("failed to open known_hosts for writing: %w", openErr)
+	}
+	defer f.Close() //nolint:errcheck
+	if _, writeErr := f.Write(output); writeErr != nil {
+		return "", fmt.Errorf("failed to write to known_hosts: %w", writeErr)
 	}
 
-	return "", fmt.Errorf("failed to add host to known_hosts - \nDetails:\n%s", errMsg)
+	return fmt.Sprintf("Added %s to known_hosts", h.Rule.KnownHosts), nil
 }
 
 // DownWithRunner removes the host using an injectable command runner (for testing).
@@ -341,11 +348,32 @@ func (h *KnownHostsHandler) FindUninstallRules(status *Status, currentRules []pa
 	return rules
 }
 
-// IsInstalled returns true if the known host in this rule is already in status.
+// IsInstalled returns true if the known host is recorded in status AND is present in ~/.ssh/known_hosts.
+// Checking the file prevents stale status entries from causing the key write to be skipped.
 func (h *KnownHostsHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
 	normalizedBlueprint := normalizeBlueprint(blueprintFile)
+	inStatus := false
 	for _, host := range status.KnownHosts {
 		if host.Host == h.Rule.KnownHosts && normalizeBlueprint(host.Blueprint) == normalizedBlueprint && host.OS == osName {
+			inStatus = true
+			break
+		}
+	}
+	if !inStatus {
+		return false
+	}
+
+	// Verify the key is actually present in the file — status can be stale if the file was deleted.
+	knownHostsPath, err := knownHostsFile(false)
+	if err != nil {
+		return false
+	}
+	data, err := os.ReadFile(knownHostsPath)
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, h.Rule.KnownHosts) {
 			return true
 		}
 	}
