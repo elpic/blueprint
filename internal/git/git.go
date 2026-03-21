@@ -343,36 +343,44 @@ func repoAuth(url string) (transport.AuthMethod, error) {
 // Returns empty string if the check fails (network unavailable, auth issue, etc.) —
 // callers should fall back to a full fetch in that case.
 func remoteRef(url, ref string) string {
+	// Try go-git first
 	remote := git.NewRemote(nil, &config.RemoteConfig{
 		Name: "origin",
 		URLs: []string{url},
 	})
-	refs, err := remote.List(&git.ListOptions{})
-	if err != nil {
-		return ""
-	}
-	// Build a map of ref name → SHA for easy lookup
-	refMap := make(map[string]string, len(refs))
-	for _, r := range refs {
-		if !r.Hash().IsZero() {
-			refMap[r.Name().String()] = r.Hash().String()
-		}
-	}
-
-	// Direct match (e.g. refs/heads/main)
-	if sha, ok := refMap[ref]; ok {
-		return sha
-	}
-
-	// For "HEAD", resolve through the symbolic ref target
-	if ref == "HEAD" {
+	auth, _ := repoAuth(url)
+	refs, err := remote.List(&git.ListOptions{Auth: auth})
+	if err == nil {
+		refMap := make(map[string]string, len(refs))
 		for _, r := range refs {
-			if r.Name().String() == "HEAD" && r.Type() == plumbing.SymbolicReference {
-				return refMap[r.Target().String()]
+			if !r.Hash().IsZero() {
+				refMap[r.Name().String()] = r.Hash().String()
+			}
+		}
+		if sha, ok := refMap[ref]; ok {
+			return sha
+		}
+		if ref == "HEAD" {
+			for _, r := range refs {
+				if r.Name().String() == "HEAD" && r.Type() == plumbing.SymbolicReference {
+					return refMap[r.Target().String()]
+				}
 			}
 		}
 	}
 
+	// Fall back to system git ls-remote (handles SSH agent, keychain, etc.)
+	out, cmdErr := exec.Command("git", "ls-remote", "--symref", url, ref).Output()
+	if cmdErr != nil {
+		return ""
+	}
+	// Output format: "<sha>\t<refname>\n" or "ref: refs/heads/main\tHEAD\n<sha>\t..."
+	for _, line := range strings.Split(string(out), "\n") {
+		parts := strings.Fields(line)
+		if len(parts) == 2 && parts[1] == ref && len(parts[0]) == 40 {
+			return parts[0]
+		}
+	}
 	return ""
 }
 
