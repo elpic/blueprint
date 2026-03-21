@@ -110,9 +110,11 @@ func executeCommand(cmdStr string) (string, error) {
 	return string(output), err
 }
 
-// executeRules executes rules using the handler pattern
-
-func executeRules(rules []parser.Rule, blueprint string, osName string, basePath string, runNumber int) []ExecutionRecord {
+// executeRules executes rules using the handler pattern.
+// When forceDown is true, Down() is called unconditionally without the IsInstalled guard
+// (used by blueprint remove which must attempt removal regardless of tracked status).
+func executeRules(rules []parser.Rule, blueprint string, osName string, basePath string, runNumber int, forceDown ...bool) []ExecutionRecord {
+	forcingDown := len(forceDown) > 0 && forceDown[0]
 	var records []ExecutionRecord
 
 	// Set up the handler package with our command executor
@@ -190,7 +192,9 @@ func executeRules(rules []parser.Rule, blueprint string, osName string, basePath
 			// Execute handler — skip if already in desired state
 			start := time.Now()
 			if isUninstall {
-				if !handler.IsInstalled(&currentStatus, blueprint, osName) {
+				// forcingDown bypasses the IsInstalled guard — used by blueprint remove
+				// so that Down() is always attempted even if status.json has no entry
+				if !forcingDown && !handler.IsInstalled(&currentStatus, blueprint, osName) {
 					output = "not installed"
 				} else {
 					output, err = handler.Down()

@@ -261,7 +261,7 @@ func RemoveWithSkip(file string, skipGroup string, skipID string, autoConfirm bo
 		return
 	}
 
-	records := executeRules(filteredRules, file, currentOS, basePath, runNumber)
+	records := executeRules(filteredRules, file, currentOS, basePath, runNumber, true)
 	if err := saveHistory(records); err != nil {
 		fmt.Printf("Warning: Failed to save history: %v\n", err)
 	}

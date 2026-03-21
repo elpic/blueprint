@@ -375,7 +375,7 @@ func DetectRuleType(rule parser.Rule) string {
 	if len(rule.MisePackages) > 0 {
 		return "mise"
 	}
-	if len(rule.HomebrewPackages) > 0 {
+	if len(rule.HomebrewPackages) > 0 || len(rule.HomebrewCasks) > 0 {
 		return "homebrew"
 	}
 	if len(rule.OllamaModels) > 0 {
