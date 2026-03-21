@@ -348,11 +348,32 @@ func (h *KnownHostsHandler) FindUninstallRules(status *Status, currentRules []pa
 	return rules
 }
 
-// IsInstalled returns true if the known host in this rule is already in status.
+// IsInstalled returns true if the known host is recorded in status AND is present in ~/.ssh/known_hosts.
+// Checking the file prevents stale status entries from causing the key write to be skipped.
 func (h *KnownHostsHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
 	normalizedBlueprint := normalizeBlueprint(blueprintFile)
+	inStatus := false
 	for _, host := range status.KnownHosts {
 		if host.Host == h.Rule.KnownHosts && normalizeBlueprint(host.Blueprint) == normalizedBlueprint && host.OS == osName {
+			inStatus = true
+			break
+		}
+	}
+	if !inStatus {
+		return false
+	}
+
+	// Verify the key is actually present in the file — status can be stale if the file was deleted.
+	knownHostsPath, err := knownHostsFile(false)
+	if err != nil {
+		return false
+	}
+	data, err := os.ReadFile(knownHostsPath)
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, h.Rule.KnownHosts) {
 			return true
 		}
 	}
