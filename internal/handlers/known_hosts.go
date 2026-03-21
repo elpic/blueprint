@@ -36,27 +36,34 @@ func (h *KnownHostsHandler) Up() (string, error) {
 		return "", fmt.Errorf("invalid hostname: %s (contains invalid characters)", h.Rule.KnownHosts)
 	}
 
-	if _, err := knownHostsFile(true); err != nil {
+	knownHostsPath, err := knownHostsFile(true)
+	if err != nil {
 		return "", err
 	}
 
 	cmd := exec.Command("sh", "-c", h.GetCommand())
 	output, err := cmd.Output()
 
-	if err == nil {
-		// Successfully added the host
-		// TODO: create a function to get keyType
-		// return fmt.Sprintf("Added %s to known_hosts (key type: %s)", h.Rule.KnownHosts, keyType), nil
-		return fmt.Sprintf("Added %s to known_hosts", h.Rule.KnownHosts), nil
+	if err != nil {
+		// Collect error messages for each key type
+		errMsg := strings.TrimSpace(string(output))
+		if errMsg == "" {
+			errMsg = "unknown error"
+		}
+		return "", fmt.Errorf("failed to add host to known_hosts - \nDetails:\n%s", errMsg)
 	}
 
-	// Collect error messages for each key type
-	errMsg := strings.TrimSpace(string(output))
-	if errMsg == "" {
-		errMsg = "unknown error"
+	// Append the scanned key to known_hosts
+	f, openErr := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	if openErr != nil {
+		return "", fmt.Errorf("failed to open known_hosts for writing: %w", openErr)
+	}
+	defer f.Close() //nolint:errcheck
+	if _, writeErr := f.Write(output); writeErr != nil {
+		return "", fmt.Errorf("failed to write to known_hosts: %w", writeErr)
 	}
 
-	return "", fmt.Errorf("failed to add host to known_hosts - \nDetails:\n%s", errMsg)
+	return fmt.Sprintf("Added %s to known_hosts", h.Rule.KnownHosts), nil
 }
 
 // DownWithRunner removes the host using an injectable command runner (for testing).

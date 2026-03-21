@@ -470,7 +470,22 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 				// Fall back to FETCH_HEAD
 				ref, refErr = repo.Reference("FETCH_HEAD", true)
 				if refErr != nil {
-					return oldSHA, "", "", fmt.Errorf("failed to resolve fetch target: %w", refErr)
+					// Fall back to any available remote tracking branch (e.g. origin/master, origin/main)
+					remoteRefs, listErr := repo.References()
+					if listErr != nil {
+						return oldSHA, "", "", fmt.Errorf("failed to resolve fetch target: %w", refErr)
+					}
+					var fallbackRef *plumbing.Reference
+					_ = remoteRefs.ForEach(func(r *plumbing.Reference) error {
+						if fallbackRef == nil && strings.HasPrefix(r.Name().String(), "refs/remotes/origin/") {
+							fallbackRef = r
+						}
+						return nil
+					})
+					if fallbackRef == nil {
+						return oldSHA, "", "", fmt.Errorf("failed to resolve fetch target: %w", refErr)
+					}
+					ref = fallbackRef
 				}
 			}
 			targetHash = ref.Hash()
