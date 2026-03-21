@@ -64,7 +64,9 @@ Each line in a `.bp` file maps to an action. Full documentation for each action 
 | [`gpg-key`](docs/gpg-key.md) | Add a GPG key and configure a Debian repository | linux |
 | [`decrypt`](docs/decrypt.md) | Decrypt AES-256-GCM encrypted files | mac, linux |
 | [`sudoers`](docs/sudoers.md) | Grant a user passwordless sudo via `/etc/sudoers.d/` | mac, linux |
+| [`ollama`](docs/ollama.md) | Pull and manage local LLM models via Ollama | mac, linux |
 | [`schedule`](docs/schedule.md) | Install a crontab entry to run blueprint on a schedule | mac, linux |
+| [`shell`](docs/shell.md) | Set the default login shell | mac, linux |
 
 All actions share common optional clauses:
 - `id: <rule-id>` -- unique identifier for dependency references
