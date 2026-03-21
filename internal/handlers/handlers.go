@@ -523,6 +523,13 @@ func normalizePath(filePath string) string {
 	return filepath.Clean(absPath)
 }
 
+// NormalizeBlueprint is the exported form of normalizeBlueprint, exposed so
+// that external packages (e.g. the engine doctor) can reuse the same logic
+// without duplicating it.
+func NormalizeBlueprint(input string) string {
+	return normalizeBlueprint(input)
+}
+
 // normalizeBlueprint normalizes a blueprint identifier for consistent storage
 // and comparison. Git URLs are normalized via NormalizeGitURL (SSH/HTTPS → canonical
 // lowercase HTTPS form). Local file paths are normalized via normalizePath.

@@ -128,9 +128,6 @@ func loadCurrentStatus() handlerskg.Status {
 		return status
 	}
 	_ = json.Unmarshal(data, &status)
-	// Normalize all blueprint fields on load — migrates stale entries written
-	// before URL normalization was added (e.g. "git@host:user/repo.git" → canonical form).
-	handlerskg.MigrateStatus(&status)
 	return status
 }
 

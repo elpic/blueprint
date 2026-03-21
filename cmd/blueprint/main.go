@@ -41,7 +41,7 @@ func parseFlags(args []string) (skipGroup, skipID, onlyID string, skipDecrypt bo
 var knownCommands = map[string]bool{
 	"plan": true, "apply": true, "encrypt": true,
 	"status": true, "history": true, "ps": true, "slow": true, "diff": true,
-	"version": true,
+	"version": true, "doctor": true,
 }
 
 func isKnownCommand(cmd string) bool {
@@ -49,7 +49,7 @@ func isKnownCommand(cmd string) bool {
 }
 
 func unknownCommandMessage(cmd string) string {
-	return fmt.Sprintf("unknown command: %q\nUsage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff|version> [<file>]", cmd)
+	return fmt.Sprintf("unknown command: %q\nUsage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff|doctor|version> [<file>]", cmd)
 }
 
 func main() {
@@ -130,6 +130,14 @@ func main() {
 			}
 		}
 		engine.PrintSlow(topN)
+	case "doctor":
+		fix := false
+		for _, arg := range os.Args[2:] {
+			if arg == "--fix" {
+				fix = true
+			}
+		}
+		engine.DoctorCheck(fix)
 	default:
 		// Short mode: treat as file path only if it looks like a path (not a known command typo).
 		if !isKnownCommand(mode) {
