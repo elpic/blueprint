@@ -117,6 +117,42 @@ func TestCheckDuplicates_NoDuplicates(t *testing.T) {
 	}
 }
 
+func TestCheckBlueprintURLs_MangledAbsPath(t *testing.T) {
+	// The exact form found on the remote machine: normalizePath() prepended
+	// the home directory to the single-slash URL, producing an absolute path.
+	status := &handlerskg.Status{
+		Packages: []handlerskg.PackageStatus{
+			{Name: "vim", Blueprint: "/home/elpic/https:/github.com/elpic/setup.git", OS: "linux"},
+		},
+	}
+
+	issues := checkBlueprintURLs(status)
+	if len(issues) == 0 {
+		t.Fatal("expected issues for mangled absolute path blueprint, got none")
+	}
+	if issues[0].examples[0] != "/home/elpic/https:/github.com/elpic/setup.git → https://github.com/elpic/setup" {
+		t.Errorf("unexpected example: %s", issues[0].examples[0])
+	}
+}
+
+func TestCheckDuplicates_MangledAbsPath(t *testing.T) {
+	// Mangled path + correct URL should be detected as duplicates.
+	status := &handlerskg.Status{
+		Packages: []handlerskg.PackageStatus{
+			{Name: "vim", Blueprint: "/home/elpic/https:/github.com/elpic/setup.git", OS: "linux"},
+			{Name: "vim", Blueprint: "https://github.com/elpic/setup", OS: "linux"},
+		},
+	}
+
+	issues := checkDuplicates(status)
+	if len(issues) == 0 {
+		t.Fatal("expected duplicate issues for mangled+correct blueprint pair, got none")
+	}
+	if issues[0].count != 1 {
+		t.Errorf("expected count 1, got %d", issues[0].count)
+	}
+}
+
 func TestCheckBlueprintURLs_SingleSlash(t *testing.T) {
 	// The single-slash form "https:/host/repo.git" should be detected as stale.
 	status := &handlerskg.Status{

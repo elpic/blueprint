@@ -537,6 +537,17 @@ func normalizeBlueprint(input string) string {
 	if gitpkg.IsGitURL(input) {
 		return gitpkg.NormalizeGitURL(input)
 	}
+	// Detect mangled git URLs: normalizePath() was previously called on git URL
+	// strings, producing absolute paths like "/home/user/https:/github.com/repo.git".
+	// Extract and normalize the embedded URL.
+	for _, prefix := range []string{"https:/", "http:/", "git@"} {
+		if idx := strings.Index(input, prefix); idx > 0 {
+			embedded := input[idx:]
+			if gitpkg.IsGitURL(embedded) {
+				return gitpkg.NormalizeGitURL(embedded)
+			}
+		}
+	}
 	return normalizePath(input)
 }
 
