@@ -81,6 +81,59 @@ func TestCheckBlueprintURLs_EmptyStatus(t *testing.T) {
 	}
 }
 
+func TestCheckDuplicates_SingleSlashAndNormal(t *testing.T) {
+	// Simulates the exact scenario from the remote machine:
+	// same packages installed twice — once under "https:/host/repo.git" (old, malformed)
+	// and once under "https://host/repo" (correct).
+	status := &handlerskg.Status{
+		Packages: []handlerskg.PackageStatus{
+			{Name: "vim", Blueprint: "https:/github.com/elpic/setup.git", OS: "linux"},
+			{Name: "vim", Blueprint: "https://github.com/elpic/setup", OS: "linux"},
+			{Name: "git", Blueprint: "https:/github.com/elpic/setup.git", OS: "linux"},
+			{Name: "git", Blueprint: "https://github.com/elpic/setup", OS: "linux"},
+		},
+	}
+
+	issues := checkDuplicates(status)
+	if len(issues) == 0 {
+		t.Fatal("expected duplicate issues, got none")
+	}
+	if issues[0].count != 2 {
+		t.Errorf("expected count 2 (2 duplicate packages), got %d", issues[0].count)
+	}
+}
+
+func TestCheckDuplicates_NoDuplicates(t *testing.T) {
+	status := &handlerskg.Status{
+		Packages: []handlerskg.PackageStatus{
+			{Name: "vim", Blueprint: "https://github.com/elpic/setup", OS: "linux"},
+			{Name: "git", Blueprint: "https://github.com/elpic/setup", OS: "linux"},
+		},
+	}
+
+	issues := checkDuplicates(status)
+	if len(issues) != 0 {
+		t.Errorf("expected 0 duplicate issues, got %d: %+v", len(issues), issues)
+	}
+}
+
+func TestCheckBlueprintURLs_SingleSlash(t *testing.T) {
+	// The single-slash form "https:/host/repo.git" should be detected as stale.
+	status := &handlerskg.Status{
+		Packages: []handlerskg.PackageStatus{
+			{Name: "vim", Blueprint: "https:/github.com/elpic/setup.git", OS: "linux"},
+		},
+	}
+
+	issues := checkBlueprintURLs(status)
+	if len(issues) == 0 {
+		t.Fatal("expected issues for single-slash blueprint URL, got none")
+	}
+	if issues[0].examples[0] != "https:/github.com/elpic/setup.git → https://github.com/elpic/setup" {
+		t.Errorf("unexpected example: %s", issues[0].examples[0])
+	}
+}
+
 func TestCheckBlueprintURLs_AllStatusTypes(t *testing.T) {
 	// Verify that all status slice types are checked, not just Packages.
 	staleBlueprint := "git@github.com:corp/blueprint.git"
