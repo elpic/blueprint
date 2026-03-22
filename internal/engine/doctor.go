@@ -38,56 +38,8 @@ func checkBlueprintURLs(status *handlerskg.Status) []doctorIssue {
 		}
 	}
 
-	for _, v := range status.Packages {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Clones {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Decrypts {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Mkdirs {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.KnownHosts {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.GPGKeys {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Asdfs {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Mises {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Sudoers {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Brews {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Ollamas {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Downloads {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Runs {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Dotfiles {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Schedules {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Shells {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.AuthorizedKeys {
-		collect(v.Blueprint)
+	for _, e := range status.AllEntries() {
+		collect(e.GetBlueprint())
 	}
 
 	if len(stale) == 0 {
@@ -141,56 +93,8 @@ func checkDuplicates(status *handlerskg.Status) []doctorIssue {
 		seen[k] = true
 	}
 
-	for _, v := range status.Packages {
-		track(v.Name, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Clones {
-		track(v.Path, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Decrypts {
-		track(v.DestPath, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Mkdirs {
-		track(v.Path, v.OS, v.Blueprint)
-	}
-	for _, v := range status.KnownHosts {
-		track(v.Host, v.OS, v.Blueprint)
-	}
-	for _, v := range status.GPGKeys {
-		track(v.Keyring, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Asdfs {
-		track(v.Plugin+"\x00"+v.Version, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Mises {
-		track(v.Tool+"\x00"+v.Version, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Sudoers {
-		track(v.User, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Brews {
-		track(v.Formula, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Ollamas {
-		track(v.Model, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Downloads {
-		track(v.Path, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Runs {
-		track(v.Command, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Dotfiles {
-		track(v.URL, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Schedules {
-		track(v.Source, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Shells {
-		track(v.Shell, v.OS, v.Blueprint)
-	}
-	for _, v := range status.AuthorizedKeys {
-		track(v.Source, v.OS, v.Blueprint)
+	for _, e := range status.AllEntries() {
+		track(e.GetResourceKey(), e.GetOS(), e.GetBlueprint())
 	}
 
 	if count == 0 {
@@ -249,126 +153,131 @@ func rulesForBlueprint(blueprintURL, sha string) ([]parser.Rule, error) {
 	return parser.ParseFile(setupPath)
 }
 
-// removeOrphanFromStatus removes a single orphaned entry from status in-place.
-func removeOrphanFromStatus(status *handlerskg.Status, kind, resource, bp, os string) {
-	norm := func(s string) string { return handlerskg.NormalizeBlueprint(s) }
-	match := func(resBP, resOS, entryBP, entryOS string) bool {
-		return norm(entryBP) == bp && entryOS == os && resBP == resource
+// filterOrphans removes all entries from status whose (normalized resource key,
+// normalized blueprint, OS) triple appears in the orphaned set. The orphaned map
+// key is "<normalizedBlueprint>\x00<os>\x00<normalizedResourceKey>".
+// ScheduleStatus entries are matched against both the raw and normalized source
+// to preserve the existing special-case behaviour.
+func filterOrphans(status *handlerskg.Status, orphaned map[string]bool) {
+	norm := handlerskg.NormalizeBlueprint
+
+	match := func(resource, blueprint, os string) bool {
+		k := norm(blueprint) + "\x00" + os + "\x00" + resource
+		kn := norm(blueprint) + "\x00" + os + "\x00" + norm(resource)
+		return orphaned[k] || orphaned[kn]
 	}
-	switch kind {
-	case "package":
-		var out []handlerskg.PackageStatus
-		for _, v := range status.Packages {
-			if !match(v.Name, v.OS, v.Blueprint, v.OS) {
-				out = append(out, v)
-			}
+
+	var pkgs []handlerskg.PackageStatus
+	for _, v := range status.Packages {
+		if !match(v.Name, v.Blueprint, v.OS) {
+			pkgs = append(pkgs, v)
 		}
-		status.Packages = out
-	case "clone":
-		var out []handlerskg.CloneStatus
-		for _, v := range status.Clones {
-			if !match(v.Path, v.OS, v.Blueprint, v.OS) {
-				out = append(out, v)
-			}
-		}
-		status.Clones = out
-	case "decrypt":
-		var out []handlerskg.DecryptStatus
-		for _, v := range status.Decrypts {
-			if !match(v.DestPath, v.OS, v.Blueprint, v.OS) {
-				out = append(out, v)
-			}
-		}
-		status.Decrypts = out
-	case "mkdir":
-		var out []handlerskg.MkdirStatus
-		for _, v := range status.Mkdirs {
-			if !match(v.Path, v.OS, v.Blueprint, v.OS) {
-				out = append(out, v)
-			}
-		}
-		status.Mkdirs = out
-	case "known_hosts":
-		var out []handlerskg.KnownHostsStatus
-		for _, v := range status.KnownHosts {
-			if !match(v.Host, v.OS, v.Blueprint, v.OS) {
-				out = append(out, v)
-			}
-		}
-		status.KnownHosts = out
-	case "gpg_key":
-		var out []handlerskg.GPGKeyStatus
-		for _, v := range status.GPGKeys {
-			if !match(v.Keyring, v.OS, v.Blueprint, v.OS) {
-				out = append(out, v)
-			}
-		}
-		status.GPGKeys = out
-	case "brew":
-		var out []handlerskg.HomebrewStatus
-		for _, v := range status.Brews {
-			if !match(v.Formula, v.OS, v.Blueprint, v.OS) {
-				out = append(out, v)
-			}
-		}
-		status.Brews = out
-	case "ollama":
-		var out []handlerskg.OllamaStatus
-		for _, v := range status.Ollamas {
-			if !match(v.Model, v.OS, v.Blueprint, v.OS) {
-				out = append(out, v)
-			}
-		}
-		status.Ollamas = out
-	case "download":
-		var out []handlerskg.DownloadStatus
-		for _, v := range status.Downloads {
-			if !match(v.Path, v.OS, v.Blueprint, v.OS) {
-				out = append(out, v)
-			}
-		}
-		status.Downloads = out
-	case "run":
-		var out []handlerskg.RunStatus
-		for _, v := range status.Runs {
-			if !match(v.Command, v.OS, v.Blueprint, v.OS) {
-				out = append(out, v)
-			}
-		}
-		status.Runs = out
-	case "dotfiles":
-		var out []handlerskg.DotfilesStatus
-		for _, v := range status.Dotfiles {
-			if !match(v.URL, v.OS, v.Blueprint, v.OS) {
-				out = append(out, v)
-			}
-		}
-		status.Dotfiles = out
-	case "schedule":
-		var out []handlerskg.ScheduleStatus
-		for _, v := range status.Schedules {
-			if !match(v.Source, v.OS, v.Blueprint, v.OS) && !match(norm(v.Source), v.OS, v.Blueprint, v.OS) {
-				out = append(out, v)
-			}
-		}
-		status.Schedules = out
-	case "shell":
-		var out []handlerskg.ShellStatus
-		for _, v := range status.Shells {
-			if !match(v.Shell, v.OS, v.Blueprint, v.OS) {
-				out = append(out, v)
-			}
-		}
-		status.Shells = out
-	case "authorized_keys":
-		var out []handlerskg.AuthorizedKeysStatus
-		for _, v := range status.AuthorizedKeys {
-			if !match(v.Source, v.OS, v.Blueprint, v.OS) {
-				out = append(out, v)
-			}
-		}
-		status.AuthorizedKeys = out
 	}
+	status.Packages = pkgs
+
+	var clones []handlerskg.CloneStatus
+	for _, v := range status.Clones {
+		if !match(v.Path, v.Blueprint, v.OS) {
+			clones = append(clones, v)
+		}
+	}
+	status.Clones = clones
+
+	var decrypts []handlerskg.DecryptStatus
+	for _, v := range status.Decrypts {
+		if !match(v.DestPath, v.Blueprint, v.OS) {
+			decrypts = append(decrypts, v)
+		}
+	}
+	status.Decrypts = decrypts
+
+	var mkdirs []handlerskg.MkdirStatus
+	for _, v := range status.Mkdirs {
+		if !match(v.Path, v.Blueprint, v.OS) {
+			mkdirs = append(mkdirs, v)
+		}
+	}
+	status.Mkdirs = mkdirs
+
+	var kh []handlerskg.KnownHostsStatus
+	for _, v := range status.KnownHosts {
+		if !match(v.Host, v.Blueprint, v.OS) {
+			kh = append(kh, v)
+		}
+	}
+	status.KnownHosts = kh
+
+	var gpg []handlerskg.GPGKeyStatus
+	for _, v := range status.GPGKeys {
+		if !match(v.Keyring, v.Blueprint, v.OS) {
+			gpg = append(gpg, v)
+		}
+	}
+	status.GPGKeys = gpg
+
+	var brews []handlerskg.HomebrewStatus
+	for _, v := range status.Brews {
+		if !match(v.Formula, v.Blueprint, v.OS) {
+			brews = append(brews, v)
+		}
+	}
+	status.Brews = brews
+
+	var ollamas []handlerskg.OllamaStatus
+	for _, v := range status.Ollamas {
+		if !match(v.Model, v.Blueprint, v.OS) {
+			ollamas = append(ollamas, v)
+		}
+	}
+	status.Ollamas = ollamas
+
+	var downloads []handlerskg.DownloadStatus
+	for _, v := range status.Downloads {
+		if !match(v.Path, v.Blueprint, v.OS) {
+			downloads = append(downloads, v)
+		}
+	}
+	status.Downloads = downloads
+
+	var runs []handlerskg.RunStatus
+	for _, v := range status.Runs {
+		if !match(v.Command, v.Blueprint, v.OS) {
+			runs = append(runs, v)
+		}
+	}
+	status.Runs = runs
+
+	var dotfiles []handlerskg.DotfilesStatus
+	for _, v := range status.Dotfiles {
+		if !match(v.URL, v.Blueprint, v.OS) {
+			dotfiles = append(dotfiles, v)
+		}
+	}
+	status.Dotfiles = dotfiles
+
+	var schedules []handlerskg.ScheduleStatus
+	for _, v := range status.Schedules {
+		if !match(v.Source, v.Blueprint, v.OS) {
+			schedules = append(schedules, v)
+		}
+	}
+	status.Schedules = schedules
+
+	var shells []handlerskg.ShellStatus
+	for _, v := range status.Shells {
+		if !match(v.Shell, v.Blueprint, v.OS) {
+			shells = append(shells, v)
+		}
+	}
+	status.Shells = shells
+
+	var ak []handlerskg.AuthorizedKeysStatus
+	for _, v := range status.AuthorizedKeys {
+		if !match(v.Source, v.Blueprint, v.OS) {
+			ak = append(ak, v)
+		}
+	}
+	status.AuthorizedKeys = ak
 }
 
 // checkOrphansWithLoader is the testable core of checkOrphans.
@@ -435,73 +344,45 @@ func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []par
 	}
 
 	type orphanEntry struct {
-		display  string
-		removeID string // key used to remove the entry from status
-		kind     string // "run", "package", "clone", etc.
-		bp       string
-		os       string
+		display string
+		// orphanKey is the lookup key used to build the orphaned set passed to
+		// filterOrphans: "<normalizedBlueprint>\x00<os>\x00<resource>".
+		orphanKey string
 	}
 	var orphans []orphanEntry
 
-	check := func(resource, bp, kind, os string) {
+	// Asdf and Mise use compound keys (plugin+version, tool+version) that cannot
+	// be matched against individual blueprint rule resource keys, so they are
+	// intentionally excluded from orphan detection.
+	isExcluded := func(e handlerskg.StatusEntry) bool {
+		switch e.(type) {
+		case *handlerskg.AsdfStatus, *handlerskg.MiseStatus, *handlerskg.SudoersStatus:
+			return true
+		}
+		return false
+	}
+
+	for _, e := range status.AllEntries() {
+		if isExcluded(e) {
+			continue
+		}
+		resource := e.GetResourceKey()
+		bp := e.GetBlueprint()
+		os := e.GetOS()
+
 		rs := rulesFor(bp)
 		if rs == nil {
-			return // blueprint not cached — skip
+			continue // blueprint not cached — skip
 		}
 		// Check both the raw resource value and its normalized form (handles
 		// git URLs stored with/without .git suffix, e.g. schedule sources).
 		if !rs[resource] && !rs[handlerskg.NormalizeBlueprint(resource)] {
+			normBP := handlerskg.NormalizeBlueprint(bp)
 			orphans = append(orphans, orphanEntry{
-				display:  fmt.Sprintf("%s (blueprint: %s)", resource, handlerskg.NormalizeBlueprint(bp)),
-				removeID: resource,
-				kind:     kind,
-				bp:       handlerskg.NormalizeBlueprint(bp),
-				os:       os,
+				display:   fmt.Sprintf("%s (blueprint: %s)", resource, normBP),
+				orphanKey: normBP + "\x00" + os + "\x00" + resource,
 			})
 		}
-	}
-
-	for _, v := range status.Packages {
-		check(v.Name, v.Blueprint, "package", v.OS)
-	}
-	for _, v := range status.Clones {
-		check(v.Path, v.Blueprint, "clone", v.OS)
-	}
-	for _, v := range status.Decrypts {
-		check(v.DestPath, v.Blueprint, "decrypt", v.OS)
-	}
-	for _, v := range status.Mkdirs {
-		check(v.Path, v.Blueprint, "mkdir", v.OS)
-	}
-	for _, v := range status.KnownHosts {
-		check(v.Host, v.Blueprint, "known_hosts", v.OS)
-	}
-	for _, v := range status.GPGKeys {
-		check(v.Keyring, v.Blueprint, "gpg_key", v.OS)
-	}
-	for _, v := range status.Brews {
-		check(v.Formula, v.Blueprint, "brew", v.OS)
-	}
-	for _, v := range status.Ollamas {
-		check(v.Model, v.Blueprint, "ollama", v.OS)
-	}
-	for _, v := range status.Downloads {
-		check(v.Path, v.Blueprint, "download", v.OS)
-	}
-	for _, v := range status.Runs {
-		check(v.Command, v.Blueprint, "run", v.OS)
-	}
-	for _, v := range status.Dotfiles {
-		check(v.URL, v.Blueprint, "dotfiles", v.OS)
-	}
-	for _, v := range status.Schedules {
-		check(v.Source, v.Blueprint, "schedule", v.OS)
-	}
-	for _, v := range status.Shells {
-		check(v.Shell, v.Blueprint, "shell", v.OS)
-	}
-	for _, v := range status.AuthorizedKeys {
-		check(v.Source, v.Blueprint, "authorized_keys", v.OS)
 	}
 
 	if len(orphans) == 0 {
@@ -516,11 +397,13 @@ func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []par
 		examples = append(examples, o.display)
 	}
 
-	// Attach the removal function as metadata via the fix field on doctorIssue.
+	// Build the orphaned set and attach the removal function.
+	orphanedSet := make(map[string]bool, len(orphans))
+	for _, o := range orphans {
+		orphanedSet[o.orphanKey] = true
+	}
 	removeOrphans := func() {
-		for _, o := range orphans {
-			removeOrphanFromStatus(status, o.kind, o.removeID, o.bp, o.os)
-		}
+		filterOrphans(status, orphanedSet)
 	}
 
 	return []doctorIssue{
