@@ -148,14 +148,11 @@ fi
 [tasks."deploy:test"]
 description = "Deploy to remote and run a blueprint command. Usage: mise run deploy:test -- doctor"
 depends = ["deploy"]
+usage = "arg <cmd> 'blueprint command to run on the remote host'"
 run = '''
 if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_USER" ]; then
   echo "DEPLOY_HOST and DEPLOY_USER must be set" >&2
   exit 1
 fi
-if [ -z "$1" ]; then
-  echo "Usage: mise run deploy:test -- <command>" >&2
-  exit 1
-fi
-ssh "$DEPLOY_USER@$DEPLOY_HOST" "~/blueprint $*"
+ssh "$DEPLOY_USER@$DEPLOY_HOST" "~/blueprint $usage_cmd"
 '''
