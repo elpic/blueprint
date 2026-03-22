@@ -214,11 +214,11 @@ func findBlueprintSetupFile(localPath string) (string, error) {
 	return p, nil
 }
 
-// rulesForBlueprint loads the parsed rules for a blueprint URL. It uses the
-// local cache at ~/.blueprint/repos/<host>/<org>/<repo> if present, otherwise
-// clones the repo on demand so that `blueprint doctor` works without requiring
-// a prior `blueprint apply`.
-func rulesForBlueprint(blueprintURL string) ([]parser.Rule, error) {
+// rulesForBlueprint loads the parsed rules for a blueprint URL at a specific
+// git SHA. It clones/updates the repo on demand, then checks out the given SHA
+// so the orphan check uses the exact version that was applied. If sha is empty
+// it uses HEAD (safe fallback for local blueprints or old status files).
+func rulesForBlueprint(blueprintURL, sha string) ([]parser.Rule, error) {
 	if !gitpkg.IsGitURL(blueprintURL) {
 		// Local file — parse directly.
 		return parser.ParseFile(blueprintURL)
@@ -226,10 +226,19 @@ func rulesForBlueprint(blueprintURL string) ([]parser.Rule, error) {
 
 	localPath := blueprintRepoPath(blueprintURL)
 
-	// Clone or update the repo so doctor always has fresh rules.
+	// Clone or update so we have the repo locally.
 	params := gitpkg.ParseGitURL(blueprintURL)
 	if _, _, _, err := gitpkg.CloneOrUpdateRepository(params.URL, localPath, params.Branch); err != nil {
 		return nil, fmt.Errorf("failed to fetch blueprint %s: %w", blueprintURL, err)
+	}
+
+	// Checkout the specific SHA that was applied so we compare against the
+	// exact version of the blueprint the user ran, not the current HEAD.
+	if sha != "" {
+		if err := gitpkg.CheckoutSHA(localPath, sha); err != nil {
+			// Non-fatal: fall through and use whatever is checked out.
+			fmt.Printf("  Warning: could not checkout SHA %s for %s: %v\n", sha, blueprintURL, err)
+		}
 	}
 
 	setupPath, err := findBlueprintSetupFile(localPath)
@@ -377,15 +386,21 @@ func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []par
 }
 
 // checkOrphans detects status entries whose resource no longer exists in the
-// blueprint file they were installed from.
+// blueprint file they were installed from. Uses status.BlueprintSHA to check
+// against the exact version that was applied.
 func checkOrphans(status *handlerskg.Status) []doctorIssue {
 	fetched := map[string]bool{}
+	sha := status.BlueprintSHA
 	return checkOrphansWithLoader(status, func(norm string) []parser.Rule {
 		if !fetched[norm] {
 			fetched[norm] = true
-			fmt.Printf("  Fetching blueprint %s...\n", norm)
+			if sha != "" {
+				fmt.Printf("  Fetching blueprint %s @ %s...\n", norm, sha[:8])
+			} else {
+				fmt.Printf("  Fetching blueprint %s...\n", norm)
+			}
 		}
-		rules, err := rulesForBlueprint(norm)
+		rules, err := rulesForBlueprint(norm, sha)
 		if err != nil {
 			fmt.Printf("  %s\n", ui.FormatError(fmt.Sprintf("could not fetch %s: %v", norm, err)))
 			return nil

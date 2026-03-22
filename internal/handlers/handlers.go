@@ -170,6 +170,7 @@ type DotfilesStatus struct {
 
 // Status represents the current blueprint state
 type Status struct {
+	BlueprintSHA   string                 `json:"blueprint_sha,omitempty"` // git SHA of the blueprint repo at last apply
 	Packages       []PackageStatus        `json:"packages"`
 	Clones         []CloneStatus          `json:"clones"`
 	Decrypts       []DecryptStatus        `json:"decrypts"`

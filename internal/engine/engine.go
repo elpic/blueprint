@@ -66,7 +66,7 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 		}
 	}
 
-	setupPath, cleanup, err := resolveBlueprintFile(file, dry)
+	setupPath, blueprintSHA, cleanup, err := resolveBlueprintFile(file, dry)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -166,7 +166,7 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 			fmt.Printf("Warning: Failed to save history: %v\n", err)
 		}
 		// Use the original file path/URL for status (never temp paths)
-		if err := saveStatus(allRules, records, file, currentOS); err != nil {
+		if err := saveStatus(allRules, records, file, blueprintSHA, currentOS); err != nil {
 			fmt.Printf("Warning: Failed to save status: %v\n", err)
 		}
 

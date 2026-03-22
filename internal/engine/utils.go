@@ -209,27 +209,28 @@ func normalizeBlueprint(input string) string {
 // resolveBlueprintFile resolves a blueprint file path or git URL to a local path.
 // If input is a git URL the repo is cloned/updated to a stable cache directory so
 // that subsequent commands (e.g. `blueprint doctor`) can inspect its contents.
+// Returns the git SHA of the resolved repo (empty string for local files).
 // The caller must call cleanup() when done (no-op for git URLs since the cache is kept).
-func resolveBlueprintFile(input string, verbose bool) (setupPath string, cleanup func(), err error) {
+func resolveBlueprintFile(input string, verbose bool) (setupPath string, sha string, cleanup func(), err error) {
 	cleanup = func() {}
 
 	if gitpkg.IsGitURL(input) {
 		params := gitpkg.ParseGitURL(input)
 		localPath := blueprintRepoPath(input)
 
-		_, _, _, cloneErr := gitpkg.CloneOrUpdateRepository(params.URL, localPath, params.Branch)
+		_, newSHA, _, cloneErr := gitpkg.CloneOrUpdateRepository(params.URL, localPath, params.Branch)
 		if cloneErr != nil {
-			return "", cleanup, fmt.Errorf("error cloning repository: %w", cloneErr)
+			return "", "", cleanup, fmt.Errorf("error cloning repository: %w", cloneErr)
 		}
 
 		setupPath, err = gitpkg.FindSetupFile(localPath, params.Path)
 		if err != nil {
-			return "", cleanup, fmt.Errorf("error finding setup file: %w", err)
+			return "", "", cleanup, fmt.Errorf("error finding setup file: %w", err)
 		}
-		return setupPath, cleanup, nil
+		return setupPath, newSHA, cleanup, nil
 	}
 
-	return input, cleanup, nil
+	return input, "", cleanup, nil
 }
 
 // blueprintRepoPath returns the stable local cache path for a blueprint git URL.
