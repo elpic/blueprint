@@ -719,27 +719,43 @@ func MigrateStatus(s *Status) {
 	}
 }
 
-// dedupSlice removes duplicate entries from a typed status slice. Two entries
-// are considered duplicates when they share the same resource key, OS, and
-// normalized blueprint URL. The last occurrence (most recent apply) is kept.
+// filterSlice keeps only elements of sl whose pointer passes keep.
 // T must be a value type whose pointer implements StatusEntry.
-func dedupSlice[T any, PT interface {
+func filterSlice[T any, PT interface {
 	*T
 	StatusEntry
-}](sl []T) []T {
-	seen := map[string]int{}
+}](sl []T, keep func(StatusEntry) bool) []T {
 	var out []T
 	for i := range sl {
-		p := PT(&sl[i])
-		key := p.GetResourceKey() + "\x00" + p.GetOS() + "\x00" + normalizeBlueprint(p.GetBlueprint())
-		if idx, ok := seen[key]; ok {
-			out[idx] = sl[i] // replace with newer
-		} else {
-			seen[key] = len(out)
+		if keep(PT(&sl[i])) {
 			out = append(out, sl[i])
 		}
 	}
 	return out
+}
+
+// FilterEntries rebuilds every status slice keeping only entries for which
+// keep returns true. It is the single generic filtering point for all
+// cross-cutting operations (orphan removal, dedup, etc.) — callers do not
+// need to enumerate the concrete slice types.
+func (s *Status) FilterEntries(keep func(StatusEntry) bool) {
+	s.Packages = filterSlice[PackageStatus, *PackageStatus](s.Packages, keep)
+	s.Clones = filterSlice[CloneStatus, *CloneStatus](s.Clones, keep)
+	s.Decrypts = filterSlice[DecryptStatus, *DecryptStatus](s.Decrypts, keep)
+	s.Mkdirs = filterSlice[MkdirStatus, *MkdirStatus](s.Mkdirs, keep)
+	s.KnownHosts = filterSlice[KnownHostsStatus, *KnownHostsStatus](s.KnownHosts, keep)
+	s.GPGKeys = filterSlice[GPGKeyStatus, *GPGKeyStatus](s.GPGKeys, keep)
+	s.Asdfs = filterSlice[AsdfStatus, *AsdfStatus](s.Asdfs, keep)
+	s.Mises = filterSlice[MiseStatus, *MiseStatus](s.Mises, keep)
+	s.Sudoers = filterSlice[SudoersStatus, *SudoersStatus](s.Sudoers, keep)
+	s.Brews = filterSlice[HomebrewStatus, *HomebrewStatus](s.Brews, keep)
+	s.Ollamas = filterSlice[OllamaStatus, *OllamaStatus](s.Ollamas, keep)
+	s.Downloads = filterSlice[DownloadStatus, *DownloadStatus](s.Downloads, keep)
+	s.Runs = filterSlice[RunStatus, *RunStatus](s.Runs, keep)
+	s.Dotfiles = filterSlice[DotfilesStatus, *DotfilesStatus](s.Dotfiles, keep)
+	s.Schedules = filterSlice[ScheduleStatus, *ScheduleStatus](s.Schedules, keep)
+	s.Shells = filterSlice[ShellStatus, *ShellStatus](s.Shells, keep)
+	s.AuthorizedKeys = filterSlice[AuthorizedKeysStatus, *AuthorizedKeysStatus](s.AuthorizedKeys, keep)
 }
 
 // DeduplicateStatus removes duplicate entries from each status slice.
@@ -748,23 +764,17 @@ func dedupSlice[T any, PT interface {
 // twice using different URL forms (e.g. "https:/host/repo.git" and "https://host/repo").
 // The last occurrence (most recent apply) is kept; earlier duplicates are removed.
 func DeduplicateStatus(s *Status) {
-	s.Packages = dedupSlice(s.Packages)
-	s.Clones = dedupSlice(s.Clones)
-	s.Decrypts = dedupSlice(s.Decrypts)
-	s.Mkdirs = dedupSlice(s.Mkdirs)
-	s.KnownHosts = dedupSlice(s.KnownHosts)
-	s.GPGKeys = dedupSlice(s.GPGKeys)
-	s.Asdfs = dedupSlice(s.Asdfs)
-	s.Mises = dedupSlice(s.Mises)
-	s.Sudoers = dedupSlice(s.Sudoers)
-	s.Brews = dedupSlice(s.Brews)
-	s.Ollamas = dedupSlice(s.Ollamas)
-	s.Downloads = dedupSlice(s.Downloads)
-	s.Runs = dedupSlice(s.Runs)
-	s.Dotfiles = dedupSlice(s.Dotfiles)
-	s.Schedules = dedupSlice(s.Schedules)
-	s.Shells = dedupSlice(s.Shells)
-	s.AuthorizedKeys = dedupSlice(s.AuthorizedKeys)
+	// Build a set of pointers for the last occurrence of each (resource, os, blueprint) key.
+	lastSeen := map[string]StatusEntry{}
+	for _, e := range s.AllEntries() {
+		key := e.GetResourceKey() + "\x00" + e.GetOS() + "\x00" + normalizeBlueprint(e.GetBlueprint())
+		lastSeen[key] = e
+	}
+	keepSet := map[StatusEntry]bool{}
+	for _, e := range lastSeen {
+		keepSet[e] = true
+	}
+	s.FilterEntries(func(e StatusEntry) bool { return keepSet[e] })
 }
 
 func commandSuccessfullyExecuted(cmd string, records []ExecutionRecord) (*ExecutionRecord, bool) {

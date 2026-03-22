@@ -156,128 +156,16 @@ func rulesForBlueprint(blueprintURL, sha string) ([]parser.Rule, error) {
 // filterOrphans removes all entries from status whose (normalized resource key,
 // normalized blueprint, OS) triple appears in the orphaned set. The orphaned map
 // key is "<normalizedBlueprint>\x00<os>\x00<normalizedResourceKey>".
-// ScheduleStatus entries are matched against both the raw and normalized source
-// to preserve the existing special-case behaviour.
 func filterOrphans(status *handlerskg.Status, orphaned map[string]bool) {
 	norm := handlerskg.NormalizeBlueprint
-
-	match := func(resource, blueprint, os string) bool {
-		k := norm(blueprint) + "\x00" + os + "\x00" + resource
-		kn := norm(blueprint) + "\x00" + os + "\x00" + norm(resource)
-		return orphaned[k] || orphaned[kn]
-	}
-
-	var pkgs []handlerskg.PackageStatus
-	for _, v := range status.Packages {
-		if !match(v.Name, v.Blueprint, v.OS) {
-			pkgs = append(pkgs, v)
-		}
-	}
-	status.Packages = pkgs
-
-	var clones []handlerskg.CloneStatus
-	for _, v := range status.Clones {
-		if !match(v.Path, v.Blueprint, v.OS) {
-			clones = append(clones, v)
-		}
-	}
-	status.Clones = clones
-
-	var decrypts []handlerskg.DecryptStatus
-	for _, v := range status.Decrypts {
-		if !match(v.DestPath, v.Blueprint, v.OS) {
-			decrypts = append(decrypts, v)
-		}
-	}
-	status.Decrypts = decrypts
-
-	var mkdirs []handlerskg.MkdirStatus
-	for _, v := range status.Mkdirs {
-		if !match(v.Path, v.Blueprint, v.OS) {
-			mkdirs = append(mkdirs, v)
-		}
-	}
-	status.Mkdirs = mkdirs
-
-	var kh []handlerskg.KnownHostsStatus
-	for _, v := range status.KnownHosts {
-		if !match(v.Host, v.Blueprint, v.OS) {
-			kh = append(kh, v)
-		}
-	}
-	status.KnownHosts = kh
-
-	var gpg []handlerskg.GPGKeyStatus
-	for _, v := range status.GPGKeys {
-		if !match(v.Keyring, v.Blueprint, v.OS) {
-			gpg = append(gpg, v)
-		}
-	}
-	status.GPGKeys = gpg
-
-	var brews []handlerskg.HomebrewStatus
-	for _, v := range status.Brews {
-		if !match(v.Formula, v.Blueprint, v.OS) {
-			brews = append(brews, v)
-		}
-	}
-	status.Brews = brews
-
-	var ollamas []handlerskg.OllamaStatus
-	for _, v := range status.Ollamas {
-		if !match(v.Model, v.Blueprint, v.OS) {
-			ollamas = append(ollamas, v)
-		}
-	}
-	status.Ollamas = ollamas
-
-	var downloads []handlerskg.DownloadStatus
-	for _, v := range status.Downloads {
-		if !match(v.Path, v.Blueprint, v.OS) {
-			downloads = append(downloads, v)
-		}
-	}
-	status.Downloads = downloads
-
-	var runs []handlerskg.RunStatus
-	for _, v := range status.Runs {
-		if !match(v.Command, v.Blueprint, v.OS) {
-			runs = append(runs, v)
-		}
-	}
-	status.Runs = runs
-
-	var dotfiles []handlerskg.DotfilesStatus
-	for _, v := range status.Dotfiles {
-		if !match(v.URL, v.Blueprint, v.OS) {
-			dotfiles = append(dotfiles, v)
-		}
-	}
-	status.Dotfiles = dotfiles
-
-	var schedules []handlerskg.ScheduleStatus
-	for _, v := range status.Schedules {
-		if !match(v.Source, v.Blueprint, v.OS) {
-			schedules = append(schedules, v)
-		}
-	}
-	status.Schedules = schedules
-
-	var shells []handlerskg.ShellStatus
-	for _, v := range status.Shells {
-		if !match(v.Shell, v.Blueprint, v.OS) {
-			shells = append(shells, v)
-		}
-	}
-	status.Shells = shells
-
-	var ak []handlerskg.AuthorizedKeysStatus
-	for _, v := range status.AuthorizedKeys {
-		if !match(v.Source, v.Blueprint, v.OS) {
-			ak = append(ak, v)
-		}
-	}
-	status.AuthorizedKeys = ak
+	status.FilterEntries(func(e handlerskg.StatusEntry) bool {
+		resource := e.GetResourceKey()
+		bp := norm(e.GetBlueprint())
+		os := e.GetOS()
+		k := bp + "\x00" + os + "\x00" + resource
+		kn := bp + "\x00" + os + "\x00" + norm(resource)
+		return !orphaned[k] && !orphaned[kn]
+	})
 }
 
 // checkOrphansWithLoader is the testable core of checkOrphans.
