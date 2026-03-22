@@ -533,15 +533,6 @@ func (h *HomebrewHandler) IsInstalled(status *Status, blueprintFile, osName stri
 	return true
 }
 
-// removeHomebrewStatus removes a homebrew formula from the status brews list
-func removeHomebrewStatus(brews []HomebrewStatus, formula string, blueprint string, osName string) []HomebrewStatus {
-	var result []HomebrewStatus
-	normalizedBlueprint := normalizeBlueprint(blueprint)
-	for _, brew := range brews {
-		normalizedStoredBlueprint := normalizeBlueprint(brew.Blueprint)
-		if brew.Formula != formula || normalizedStoredBlueprint != normalizedBlueprint || brew.OS != osName {
-			result = append(result, brew)
-		}
-	}
-	return result
+func removeHomebrewStatus(sl []HomebrewStatus, formula, blueprint, osName string) []HomebrewStatus {
+	return removeStatusEntry[HomebrewStatus, *HomebrewStatus](sl, formula, blueprint, osName)
 }

@@ -178,7 +178,9 @@ type StatusEntry interface {
 	GetOS() string
 }
 
-// StatusEntry implementations for all 17 status structs.
+// StatusEntry implementations for all status structs.
+// Each struct implements GetBlueprint, SetBlueprint, GetOS (identical across all),
+// plus GetResourceKey which is the type-specific identity field.
 
 func (v *PackageStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *PackageStatus) SetBlueprint(s string)  { v.Blueprint = s }
@@ -255,15 +257,17 @@ func (v *ScheduleStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *ScheduleStatus) GetResourceKey() string { return v.Source }
 func (v *ScheduleStatus) GetOS() string          { return v.OS }
 
-func (v *ShellStatus) GetBlueprint() string   { return v.Blueprint }
-func (v *ShellStatus) SetBlueprint(s string)  { v.Blueprint = s }
-func (v *ShellStatus) GetResourceKey() string { return v.Shell }
-func (v *ShellStatus) GetOS() string          { return v.OS }
-
 func (v *AuthorizedKeysStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *AuthorizedKeysStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *AuthorizedKeysStatus) GetResourceKey() string { return v.Source }
 func (v *AuthorizedKeysStatus) GetOS() string          { return v.OS }
+
+// ShellStatus StatusEntry methods are defined here alongside the other 16 types.
+// GetResourceKey returns the user field since shell entries are keyed by user.
+func (v *ShellStatus) GetBlueprint() string   { return v.Blueprint }
+func (v *ShellStatus) SetBlueprint(s string)  { v.Blueprint = s }
+func (v *ShellStatus) GetResourceKey() string { return v.User }
+func (v *ShellStatus) GetOS() string          { return v.OS }
 
 // Status represents the current blueprint state
 type Status struct {
@@ -802,121 +806,54 @@ func extractSHAFromOutput(output string) string {
 	return ""
 }
 
-// removePackageStatus removes a package from the status packages list
-func removePackageStatus(packages []PackageStatus, name string, blueprint string, osName string) []PackageStatus {
-	var result []PackageStatus
+// removeStatusEntry removes all entries from sl whose resource key, blueprint
+// (after normalization), and OS match the given values. T must be a value type
+// whose pointer implements StatusEntry — this single generic replaces the
+// per-type removeXxxStatus functions that all had identical logic.
+func removeStatusEntry[T any, PT interface {
+	*T
+	StatusEntry
+}](sl []T, resourceKey, blueprint, osName string) []T {
 	normalizedBlueprint := normalizeBlueprint(blueprint)
-	for _, pkg := range packages {
-		normalizedStoredBlueprint := normalizeBlueprint(pkg.Blueprint)
-		if pkg.Name != name || normalizedStoredBlueprint != normalizedBlueprint || pkg.OS != osName {
-			result = append(result, pkg)
+	var result []T
+	for i := range sl {
+		e := PT(&sl[i])
+		if e.GetResourceKey() != resourceKey ||
+			normalizeBlueprint(e.GetBlueprint()) != normalizedBlueprint ||
+			e.GetOS() != osName {
+			result = append(result, sl[i])
 		}
 	}
 	return result
 }
 
-// removeCloneStatus removes a clone from the status clones list
-func removeCloneStatus(clones []CloneStatus, path string, blueprint string, osName string) []CloneStatus {
-	var result []CloneStatus
-	normalizedBlueprint := normalizeBlueprint(blueprint)
-	for _, clone := range clones {
-		normalizedStoredBlueprint := normalizeBlueprint(clone.Blueprint)
-		if clone.Path != path || normalizedStoredBlueprint != normalizedBlueprint || clone.OS != osName {
-			result = append(result, clone)
-		}
-	}
-	return result
+// Typed wrappers so call sites stay readable without repeating the type parameters.
+func removePackageStatus(sl []PackageStatus, key, bp, os string) []PackageStatus {
+	return removeStatusEntry[PackageStatus, *PackageStatus](sl, key, bp, os)
 }
-
-// removeDecryptStatus removes a decrypt from the status decrypts list
-func removeDecryptStatus(decrypts []DecryptStatus, destPath string, blueprint string, osName string) []DecryptStatus {
-	var result []DecryptStatus
-	normalizedBlueprint := normalizeBlueprint(blueprint)
-	for _, decrypt := range decrypts {
-		normalizedStoredBlueprint := normalizeBlueprint(decrypt.Blueprint)
-		if decrypt.DestPath != destPath || normalizedStoredBlueprint != normalizedBlueprint || decrypt.OS != osName {
-			result = append(result, decrypt)
-		}
-	}
-	return result
+func removeCloneStatus(sl []CloneStatus, key, bp, os string) []CloneStatus {
+	return removeStatusEntry[CloneStatus, *CloneStatus](sl, key, bp, os)
 }
-
-// removeKnownHostsStatus removes a known host from the status known_hosts list
-func removeKnownHostsStatus(knownHosts []KnownHostsStatus, host string, blueprint string, osName string) []KnownHostsStatus {
-	var result []KnownHostsStatus
-	normalizedBlueprint := normalizeBlueprint(blueprint)
-	for _, kh := range knownHosts {
-		normalizedStoredBlueprint := normalizeBlueprint(kh.Blueprint)
-		if kh.Host != host || normalizedStoredBlueprint != normalizedBlueprint || kh.OS != osName {
-			result = append(result, kh)
-		}
-	}
-	return result
+func removeDecryptStatus(sl []DecryptStatus, key, bp, os string) []DecryptStatus {
+	return removeStatusEntry[DecryptStatus, *DecryptStatus](sl, key, bp, os)
 }
-
-// removeGPGKeyStatus removes a GPG key from the status gpg_keys list
-func removeGPGKeyStatus(gpgKeys []GPGKeyStatus, keyring string, blueprint string, osName string) []GPGKeyStatus {
-	var result []GPGKeyStatus
-	normalizedBlueprint := normalizeBlueprint(blueprint)
-	for _, gk := range gpgKeys {
-		normalizedStoredBlueprint := normalizeBlueprint(gk.Blueprint)
-		if gk.Keyring != keyring || normalizedStoredBlueprint != normalizedBlueprint || gk.OS != osName {
-			result = append(result, gk)
-		}
-	}
-	return result
+func removeKnownHostsStatus(sl []KnownHostsStatus, key, bp, os string) []KnownHostsStatus {
+	return removeStatusEntry[KnownHostsStatus, *KnownHostsStatus](sl, key, bp, os)
 }
-
-// removeRunStatus removes a run entry from the status runs list by command key
-func removeRunStatus(runs []RunStatus, command string, blueprint string, osName string) []RunStatus {
-	var result []RunStatus
-	normalizedBlueprint := normalizeBlueprint(blueprint)
-	for _, r := range runs {
-		normalizedStoredBlueprint := normalizeBlueprint(r.Blueprint)
-		if r.Command != command || normalizedStoredBlueprint != normalizedBlueprint || r.OS != osName {
-			result = append(result, r)
-		}
-	}
-	return result
+func removeGPGKeyStatus(sl []GPGKeyStatus, key, bp, os string) []GPGKeyStatus {
+	return removeStatusEntry[GPGKeyStatus, *GPGKeyStatus](sl, key, bp, os)
 }
-
-// removeDotfilesStatus removes a dotfiles entry from the status dotfiles list
-func removeDotfilesStatus(dotfiles []DotfilesStatus, url, blueprint, osName string) []DotfilesStatus {
-	var result []DotfilesStatus
-	normalizedBlueprint := normalizeBlueprint(blueprint)
-	for _, d := range dotfiles {
-		normalizedStoredBlueprint := normalizeBlueprint(d.Blueprint)
-		if d.URL != url || normalizedStoredBlueprint != normalizedBlueprint || d.OS != osName {
-			result = append(result, d)
-		}
-	}
-	return result
+func removeRunStatus(sl []RunStatus, key, bp, os string) []RunStatus {
+	return removeStatusEntry[RunStatus, *RunStatus](sl, key, bp, os)
 }
-
-// removeDownloadStatus removes a download from the status downloads list
-func removeDownloadStatus(downloads []DownloadStatus, path string, blueprint string, osName string) []DownloadStatus {
-	var result []DownloadStatus
-	normalizedBlueprint := normalizeBlueprint(blueprint)
-	for _, dl := range downloads {
-		normalizedStoredBlueprint := normalizeBlueprint(dl.Blueprint)
-		if dl.Path != path || normalizedStoredBlueprint != normalizedBlueprint || dl.OS != osName {
-			result = append(result, dl)
-		}
-	}
-	return result
+func removeDotfilesStatus(sl []DotfilesStatus, key, bp, os string) []DotfilesStatus {
+	return removeStatusEntry[DotfilesStatus, *DotfilesStatus](sl, key, bp, os)
 }
-
-// removeAuthorizedKeysStatus removes an authorized keys entry from the status list
-func removeAuthorizedKeysStatus(authorizedKeys []AuthorizedKeysStatus, source string, blueprint string, osName string) []AuthorizedKeysStatus {
-	var result []AuthorizedKeysStatus
-	normalizedBlueprint := normalizeBlueprint(blueprint)
-	for _, ak := range authorizedKeys {
-		normalizedStoredBlueprint := normalizeBlueprint(ak.Blueprint)
-		if ak.Source != source || normalizedStoredBlueprint != normalizedBlueprint || ak.OS != osName {
-			result = append(result, ak)
-		}
-	}
-	return result
+func removeDownloadStatus(sl []DownloadStatus, key, bp, os string) []DownloadStatus {
+	return removeStatusEntry[DownloadStatus, *DownloadStatus](sl, key, bp, os)
+}
+func removeAuthorizedKeysStatus(sl []AuthorizedKeysStatus, key, bp, os string) []AuthorizedKeysStatus {
+	return removeStatusEntry[AuthorizedKeysStatus, *AuthorizedKeysStatus](sl, key, bp, os)
 }
 
 // abbreviateBlueprintPath shortens blueprint paths for display

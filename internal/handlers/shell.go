@@ -636,17 +636,8 @@ func (h *ShellHandler) getStatusPath() (string, error) {
 	return filepath.Join(blueprintDir, "status.json"), nil
 }
 
-// removeShellStatus removes a shell entry from the status shells list
-func removeShellStatus(shells []ShellStatus, user string, blueprint string, osName string) []ShellStatus {
-	var result []ShellStatus
-	normalizedBlueprint := normalizeBlueprint(blueprint)
-	for _, shell := range shells {
-		normalizedStoredBlueprint := normalizeBlueprint(shell.Blueprint)
-		if shell.User != user || normalizedStoredBlueprint != normalizedBlueprint || shell.OS != osName {
-			result = append(result, shell)
-		}
-	}
-	return result
+func removeShellStatus(sl []ShellStatus, user, blueprint, osName string) []ShellStatus {
+	return removeStatusEntry[ShellStatus, *ShellStatus](sl, user, blueprint, osName)
 }
 
 // findShellStatus finds a shell entry in the status shells list and returns it
