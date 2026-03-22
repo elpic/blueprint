@@ -144,3 +144,12 @@ if [ -n "$DEPLOY_HOST" ] && [ -n "$DEPLOY_USER" ] && [ -n "$DEPLOY_TARGET" ]; th
   scp blueprint-$DEPLOY_TARGET "$DEPLOY_USER@$DEPLOY_HOST:blueprint"
 fi
 '''
+
+[tasks."deploy:test"]
+description = "Deploy to remote host and run 'blueprint doctor' to verify"
+depends = ["deploy"]
+run = '''
+if [ -n "$DEPLOY_HOST" ] && [ -n "$DEPLOY_USER" ]; then
+  ssh "$DEPLOY_USER@$DEPLOY_HOST" "~/blueprint doctor"
+fi
+'''
