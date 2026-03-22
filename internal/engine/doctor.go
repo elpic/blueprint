@@ -16,8 +16,8 @@ import (
 type doctorIssue struct {
 	description string
 	count       int
-	examples    []string    // up to a small number of representative entries
-	fix         func()      // optional: called in --fix mode to repair the issue in-place
+	examples    []string // up to a small number of representative entries
+	fix         func()   // optional: called in --fix mode to repair the issue in-place
 }
 
 // checkBlueprintURLs scans all Blueprint fields in the status for entries
