@@ -146,10 +146,65 @@ fi
 '''
 
 [tasks."deploy:test"]
-description = "Deploy to remote host and run 'blueprint doctor' to verify"
+description = "Deploy to remote and test doctor: backs up status.json, injects issues, runs command, restores. Usage: mise run deploy:test [-- doctor|doctor --fix|ps]"
 depends = ["deploy"]
 run = '''
-if [ -n "$DEPLOY_HOST" ] && [ -n "$DEPLOY_USER" ]; then
-  ssh "$DEPLOY_USER@$DEPLOY_HOST" "~/blueprint doctor"
+if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_USER" ]; then
+  echo "DEPLOY_HOST and DEPLOY_USER must be set" >&2
+  exit 1
 fi
+
+CMD="${1:-doctor}"
+
+ssh "$DEPLOY_USER@$DEPLOY_HOST" bash << 'REMOTE'
+set -e
+STATUS=~/.blueprint/status.json
+BACKUP=~/.blueprint/status.json.bak
+
+# Back up current status
+if [ -f "$STATUS" ]; then
+  cp "$STATUS" "$BACKUP"
+  echo "Backed up $STATUS -> $BACKUP"
+fi
+
+# Inject issues: duplicate the first run entry and mangle one blueprint URL
+python3 - "$STATUS" << 'PY'
+import json, sys, copy
+
+path = sys.argv[1]
+with open(path) as f:
+    data = json.load(f)
+
+runs = data.get("runs", [])
+if runs:
+    # Duplicate first run (creates a duplicate entry)
+    data["runs"] = [runs[0]] + runs
+
+    # Mangle blueprint URL on the duplicate to create a stale URL
+    raw = data["runs"][0].get("blueprint", "")
+    if raw.startswith("https://"):
+        data["runs"][0]["blueprint"] = raw.replace("https://", "https:/", 1)
+
+with open(path, "w") as f:
+    json.dump(data, f, indent=2)
+
+print(f"Injected: 1 duplicate run entry, 1 stale blueprint URL")
+PY
+REMOTE
+
+# Run the requested command
+ssh "$DEPLOY_USER@$DEPLOY_HOST" "~/blueprint $CMD"
+EXIT=$?
+
+# Restore the backup
+ssh "$DEPLOY_USER@$DEPLOY_HOST" bash << 'REMOTE'
+BACKUP=~/.blueprint/status.json.bak
+STATUS=~/.blueprint/status.json
+if [ -f "$BACKUP" ]; then
+  mv "$BACKUP" "$STATUS"
+  echo "Restored $STATUS"
+fi
+REMOTE
+
+exit $EXIT
 '''
