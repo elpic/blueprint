@@ -439,3 +439,46 @@ func TestCheckOrphans_ElpicSetupRealStatus(t *testing.T) {
 		t.Errorf("unexpected orphan example:\n  got:  %s\n  want: %s (blueprint: https://github.com/elpic/setup)", issues[0].examples[0], want)
 	}
 }
+
+func TestCheckOrphans_FixRemovesOrphanedEntry(t *testing.T) {
+	// Verifies that the fix func attached to the orphan issue actually removes
+	// the orphaned run entry from status, leaving the two valid entries intact.
+	status := &handlerskg.Status{
+		Runs: []handlerskg.RunStatus{
+			{
+				Action:    "run",
+				Command:   "rm -rf ~/.local/bin/vim && ln -s $(asdf which nvim) ~/.local/bin/vim",
+				Blueprint: "https://github.com/elpic/setup",
+				OS:        "linux",
+			},
+			{
+				Action:    "run-sh",
+				Command:   "https://download.calibre-ebook.com/linux-installer.sh",
+				Blueprint: "https://github.com/elpic/setup",
+				OS:        "linux",
+			},
+			{
+				Action:    "run",
+				Command:   "rm -rf ~/.local/bin/vim && ln -s $(which nvim) ~/.local/bin/vim",
+				Blueprint: "https://github.com/elpic/setup",
+				OS:        "linux",
+			},
+		},
+	}
+
+	issues := checkOrphansWithLoader(status, loaderFromFile(t, "elpic-setup-runs.bp"))
+	if len(issues) == 0 || issues[0].fix == nil {
+		t.Fatal("expected orphan issue with fix func")
+	}
+
+	issues[0].fix()
+
+	if len(status.Runs) != 2 {
+		t.Errorf("expected 2 runs after fix, got %d", len(status.Runs))
+	}
+	for _, r := range status.Runs {
+		if r.Command == "rm -rf ~/.local/bin/vim && ln -s $(asdf which nvim) ~/.local/bin/vim" {
+			t.Error("orphaned 'asdf which nvim' run entry was not removed")
+		}
+	}
+}

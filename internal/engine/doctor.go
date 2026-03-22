@@ -16,7 +16,8 @@ import (
 type doctorIssue struct {
 	description string
 	count       int
-	examples    []string // up to a small number of representative entries
+	examples    []string    // up to a small number of representative entries
+	fix         func()      // optional: called in --fix mode to repair the issue in-place
 }
 
 // checkBlueprintURLs scans all Blueprint fields in the status for entries
@@ -248,6 +249,128 @@ func rulesForBlueprint(blueprintURL, sha string) ([]parser.Rule, error) {
 	return parser.ParseFile(setupPath)
 }
 
+// removeOrphanFromStatus removes a single orphaned entry from status in-place.
+func removeOrphanFromStatus(status *handlerskg.Status, kind, resource, bp, os string) {
+	norm := func(s string) string { return handlerskg.NormalizeBlueprint(s) }
+	match := func(resBP, resOS, entryBP, entryOS string) bool {
+		return norm(entryBP) == bp && entryOS == os && resBP == resource
+	}
+	switch kind {
+	case "package":
+		var out []handlerskg.PackageStatus
+		for _, v := range status.Packages {
+			if !match(v.Name, v.OS, v.Blueprint, v.OS) {
+				out = append(out, v)
+			}
+		}
+		status.Packages = out
+	case "clone":
+		var out []handlerskg.CloneStatus
+		for _, v := range status.Clones {
+			if !match(v.Path, v.OS, v.Blueprint, v.OS) {
+				out = append(out, v)
+			}
+		}
+		status.Clones = out
+	case "decrypt":
+		var out []handlerskg.DecryptStatus
+		for _, v := range status.Decrypts {
+			if !match(v.DestPath, v.OS, v.Blueprint, v.OS) {
+				out = append(out, v)
+			}
+		}
+		status.Decrypts = out
+	case "mkdir":
+		var out []handlerskg.MkdirStatus
+		for _, v := range status.Mkdirs {
+			if !match(v.Path, v.OS, v.Blueprint, v.OS) {
+				out = append(out, v)
+			}
+		}
+		status.Mkdirs = out
+	case "known_hosts":
+		var out []handlerskg.KnownHostsStatus
+		for _, v := range status.KnownHosts {
+			if !match(v.Host, v.OS, v.Blueprint, v.OS) {
+				out = append(out, v)
+			}
+		}
+		status.KnownHosts = out
+	case "gpg_key":
+		var out []handlerskg.GPGKeyStatus
+		for _, v := range status.GPGKeys {
+			if !match(v.Keyring, v.OS, v.Blueprint, v.OS) {
+				out = append(out, v)
+			}
+		}
+		status.GPGKeys = out
+	case "brew":
+		var out []handlerskg.HomebrewStatus
+		for _, v := range status.Brews {
+			if !match(v.Formula, v.OS, v.Blueprint, v.OS) {
+				out = append(out, v)
+			}
+		}
+		status.Brews = out
+	case "ollama":
+		var out []handlerskg.OllamaStatus
+		for _, v := range status.Ollamas {
+			if !match(v.Model, v.OS, v.Blueprint, v.OS) {
+				out = append(out, v)
+			}
+		}
+		status.Ollamas = out
+	case "download":
+		var out []handlerskg.DownloadStatus
+		for _, v := range status.Downloads {
+			if !match(v.Path, v.OS, v.Blueprint, v.OS) {
+				out = append(out, v)
+			}
+		}
+		status.Downloads = out
+	case "run":
+		var out []handlerskg.RunStatus
+		for _, v := range status.Runs {
+			if !match(v.Command, v.OS, v.Blueprint, v.OS) {
+				out = append(out, v)
+			}
+		}
+		status.Runs = out
+	case "dotfiles":
+		var out []handlerskg.DotfilesStatus
+		for _, v := range status.Dotfiles {
+			if !match(v.URL, v.OS, v.Blueprint, v.OS) {
+				out = append(out, v)
+			}
+		}
+		status.Dotfiles = out
+	case "schedule":
+		var out []handlerskg.ScheduleStatus
+		for _, v := range status.Schedules {
+			if !match(v.Source, v.OS, v.Blueprint, v.OS) && !match(norm(v.Source), v.OS, v.Blueprint, v.OS) {
+				out = append(out, v)
+			}
+		}
+		status.Schedules = out
+	case "shell":
+		var out []handlerskg.ShellStatus
+		for _, v := range status.Shells {
+			if !match(v.Shell, v.OS, v.Blueprint, v.OS) {
+				out = append(out, v)
+			}
+		}
+		status.Shells = out
+	case "authorized_keys":
+		var out []handlerskg.AuthorizedKeysStatus
+		for _, v := range status.AuthorizedKeys {
+			if !match(v.Source, v.OS, v.Blueprint, v.OS) {
+				out = append(out, v)
+			}
+		}
+		status.AuthorizedKeys = out
+	}
+}
+
 // checkOrphansWithLoader is the testable core of checkOrphans.
 // loader is called with a normalized blueprint URL and returns the parsed rules
 // for that blueprint, or nil if the blueprint is not available locally.
@@ -311,9 +434,16 @@ func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []par
 		return rs
 	}
 
-	var orphans []string
+	type orphanEntry struct {
+		display  string
+		removeID string // key used to remove the entry from status
+		kind     string // "run", "package", "clone", etc.
+		bp       string
+		os       string
+	}
+	var orphans []orphanEntry
 
-	check := func(resource, bp string) {
+	check := func(resource, bp, kind, os string) {
 		rs := rulesFor(bp)
 		if rs == nil {
 			return // blueprint not cached — skip
@@ -321,66 +451,84 @@ func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []par
 		// Check both the raw resource value and its normalized form (handles
 		// git URLs stored with/without .git suffix, e.g. schedule sources).
 		if !rs[resource] && !rs[handlerskg.NormalizeBlueprint(resource)] {
-			orphans = append(orphans, fmt.Sprintf("%s (blueprint: %s)", resource, handlerskg.NormalizeBlueprint(bp)))
+			orphans = append(orphans, orphanEntry{
+				display:  fmt.Sprintf("%s (blueprint: %s)", resource, handlerskg.NormalizeBlueprint(bp)),
+				removeID: resource,
+				kind:     kind,
+				bp:       handlerskg.NormalizeBlueprint(bp),
+				os:       os,
+			})
 		}
 	}
 
 	for _, v := range status.Packages {
-		check(v.Name, v.Blueprint)
+		check(v.Name, v.Blueprint, "package", v.OS)
 	}
 	for _, v := range status.Clones {
-		check(v.Path, v.Blueprint)
+		check(v.Path, v.Blueprint, "clone", v.OS)
 	}
 	for _, v := range status.Decrypts {
-		check(v.DestPath, v.Blueprint)
+		check(v.DestPath, v.Blueprint, "decrypt", v.OS)
 	}
 	for _, v := range status.Mkdirs {
-		check(v.Path, v.Blueprint)
+		check(v.Path, v.Blueprint, "mkdir", v.OS)
 	}
 	for _, v := range status.KnownHosts {
-		check(v.Host, v.Blueprint)
+		check(v.Host, v.Blueprint, "known_hosts", v.OS)
 	}
 	for _, v := range status.GPGKeys {
-		check(v.Keyring, v.Blueprint)
+		check(v.Keyring, v.Blueprint, "gpg_key", v.OS)
 	}
 	for _, v := range status.Brews {
-		check(v.Formula, v.Blueprint)
+		check(v.Formula, v.Blueprint, "brew", v.OS)
 	}
 	for _, v := range status.Ollamas {
-		check(v.Model, v.Blueprint)
+		check(v.Model, v.Blueprint, "ollama", v.OS)
 	}
 	for _, v := range status.Downloads {
-		check(v.Path, v.Blueprint)
+		check(v.Path, v.Blueprint, "download", v.OS)
 	}
 	for _, v := range status.Runs {
-		check(v.Command, v.Blueprint)
+		check(v.Command, v.Blueprint, "run", v.OS)
 	}
 	for _, v := range status.Dotfiles {
-		check(v.URL, v.Blueprint)
+		check(v.URL, v.Blueprint, "dotfiles", v.OS)
 	}
 	for _, v := range status.Schedules {
-		check(v.Source, v.Blueprint)
+		check(v.Source, v.Blueprint, "schedule", v.OS)
 	}
 	for _, v := range status.Shells {
-		check(v.Shell, v.Blueprint)
+		check(v.Shell, v.Blueprint, "shell", v.OS)
 	}
 	for _, v := range status.AuthorizedKeys {
-		check(v.Source, v.Blueprint)
+		check(v.Source, v.Blueprint, "authorized_keys", v.OS)
 	}
 
 	if len(orphans) == 0 {
 		return nil
 	}
 
-	examples := orphans
-	if len(examples) > 3 {
-		examples = examples[:3]
+	examples := make([]string, 0, 3)
+	for i, o := range orphans {
+		if i >= 3 {
+			break
+		}
+		examples = append(examples, o.display)
 	}
+
+	// Attach the removal function as metadata via the fix field on doctorIssue.
+	removeOrphans := func() {
+		for _, o := range orphans {
+			removeOrphanFromStatus(status, o.kind, o.removeID, o.bp, o.os)
+		}
+	}
+
 	return []doctorIssue{
 		{
 			description: fmt.Sprintf("%d orphaned entries (resource no longer exists in blueprint)", len(orphans)),
 			count:       len(orphans),
 			examples:    examples,
+			fix:         removeOrphans,
 		},
 	}
 }
@@ -455,9 +603,14 @@ func DoctorCheck(fix bool) {
 	}
 
 	if fix {
-		// First normalize URLs, then deduplicate (order matters).
+		// Normalize URLs and deduplicate first, then run any issue-specific fixes.
 		handlerskg.MigrateStatus(&status)
 		handlerskg.DeduplicateStatus(&status)
+		for _, issue := range issues {
+			if issue.fix != nil {
+				issue.fix()
+			}
+		}
 
 		fixed, err := json.MarshalIndent(status, "", "  ")
 		if err != nil {
