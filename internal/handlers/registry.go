@@ -73,8 +73,9 @@ func AllActions() []*ActionDef {
 	return out
 }
 
-// findActionByPrefix returns the ActionDef whose Prefix matches line (longest match wins).
-func findActionByPrefix(line string) *ActionDef {
+// FindActionByPrefix returns the ActionDef whose Prefix matches line (longest match wins).
+// Used by the parser dispatch (Site 1 of the action registry migration).
+func FindActionByPrefix(line string) *ActionDef {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 	var best *ActionDef
