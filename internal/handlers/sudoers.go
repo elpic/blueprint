@@ -12,6 +12,26 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
+func init() {
+	RegisterAction(ActionDef{
+		Name:   "sudoers",
+		Prefix: "sudoers",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewSudoersHandler(rule, basePath)
+		},
+		RuleKey: func(rule parser.Rule) string {
+			return rule.SudoersUser
+		},
+		Detect: func(rule parser.Rule) bool {
+			return rule.SudoersUser != ""
+		},
+		Summary: func(rule parser.Rule) string {
+			return rule.SudoersUser
+		},
+		ExcludeFromOrphanDetection: true,
+	})
+}
+
 // SudoersHandler adds the current user (or a specified user) to sudoers
 // with NOPASSWD: ALL, writing to /etc/sudoers.d/<username>.
 type SudoersHandler struct {

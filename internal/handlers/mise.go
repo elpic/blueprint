@@ -34,6 +34,26 @@ var miseInstalledCheck = func() bool {
 	return err == nil
 }
 
+func init() {
+	RegisterAction(ActionDef{
+		Name:   "mise",
+		Prefix: "mise",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewMiseHandler(rule, basePath)
+		},
+		RuleKey: func(rule parser.Rule) string {
+			return "mise"
+		},
+		Detect: func(rule parser.Rule) bool {
+			return len(rule.MisePackages) > 0
+		},
+		Summary: func(rule parser.Rule) string {
+			return strings.Join(rule.MisePackages, ", ")
+		},
+		ExcludeFromOrphanDetection: true,
+	})
+}
+
 // MiseHandler handles mise version manager operations
 type MiseHandler struct {
 	BaseHandler

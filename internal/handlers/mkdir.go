@@ -14,6 +14,28 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
+func init() {
+	RegisterAction(ActionDef{
+		Name:   "mkdir",
+		Prefix: "mkdir ",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewMkdirHandler(rule, basePath, platform.NewContainer())
+		},
+		RuleKey: func(rule parser.Rule) string {
+			return rule.Mkdir
+		},
+		Detect: func(rule parser.Rule) bool {
+			return rule.Mkdir != ""
+		},
+		Summary: func(rule parser.Rule) string {
+			return rule.Mkdir
+		},
+		OrphanIndex: func(rule parser.Rule, index func(string)) {
+			index(rule.Mkdir)
+		},
+	})
+}
+
 // MkdirHandler handles directory creation with optional permissions
 type MkdirHandler struct {
 	BaseHandler

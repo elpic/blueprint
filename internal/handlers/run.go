@@ -13,6 +13,41 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
+func init() {
+	RegisterAction(ActionDef{
+		Name:   "run",
+		Prefix: "run ",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewRunHandler(rule, basePath)
+		},
+		RuleKey: func(rule parser.Rule) string {
+			return rule.RunCommand
+		},
+		Detect: func(rule parser.Rule) bool {
+			return rule.RunCommand != ""
+		},
+		Summary: func(rule parser.Rule) string {
+			return rule.RunCommand
+		},
+	})
+	RegisterAction(ActionDef{
+		Name:   "run-sh",
+		Prefix: "run-sh ",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewRunShHandler(rule, basePath)
+		},
+		RuleKey: func(rule parser.Rule) string {
+			return rule.RunShURL
+		},
+		Detect: func(rule parser.Rule) bool {
+			return rule.RunShURL != ""
+		},
+		Summary: func(rule parser.Rule) string {
+			return rule.RunShURL
+		},
+	})
+}
+
 // RunHandler handles executing arbitrary shell commands
 type RunHandler struct {
 	BaseHandler

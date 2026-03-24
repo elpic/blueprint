@@ -13,6 +13,28 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
+func init() {
+	RegisterAction(ActionDef{
+		Name:   "download",
+		Prefix: "download ",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewDownloadHandler(rule, basePath)
+		},
+		RuleKey: func(rule parser.Rule) string {
+			return rule.DownloadPath
+		},
+		Detect: func(rule parser.Rule) bool {
+			return rule.DownloadURL != ""
+		},
+		Summary: func(rule parser.Rule) string {
+			return rule.DownloadURL + " → " + rule.DownloadPath
+		},
+		OrphanIndex: func(rule parser.Rule, index func(string)) {
+			index(rule.DownloadPath)
+		},
+	})
+}
+
 // DownloadHandler handles downloading files from URLs
 type DownloadHandler struct {
 	BaseHandler

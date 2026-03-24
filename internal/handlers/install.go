@@ -16,6 +16,48 @@ type InstallHandler struct {
 	BaseHandler
 }
 
+func init() {
+	RegisterAction(ActionDef{
+		Name:   "install",
+		Prefix: "install ",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewInstallHandler(rule, basePath, platform.NewContainer())
+		},
+		RuleKey: func(rule parser.Rule) string {
+			if len(rule.Packages) > 0 {
+				return rule.Packages[0].Name
+			}
+			return "install"
+		},
+		Detect: func(rule parser.Rule) bool {
+			return len(rule.Packages) > 0
+		},
+		Summary: func(rule parser.Rule) string {
+			names := make([]string, len(rule.Packages))
+			for i, p := range rule.Packages {
+				names[i] = p.Name
+			}
+			return strings.Join(names, ", ")
+		},
+		OrphanIndex: func(rule parser.Rule, index func(string)) {
+			for _, pkg := range rule.Packages {
+				index(pkg.Name)
+			}
+		},
+	})
+	RegisterAction(ActionDef{
+		Name:   "uninstall",
+		Prefix: "uninstall ",
+		// NewHandler is nil; uninstall delegates through NewHandler() via DetectRuleType.
+		RuleKey: func(rule parser.Rule) string {
+			if len(rule.Packages) > 0 {
+				return rule.Packages[0].Name
+			}
+			return "install"
+		},
+	})
+}
+
 // NewInstallHandler creates a new install handler
 func NewInstallHandler(rule parser.Rule, basePath string, container platform.Container) *InstallHandler {
 	return &InstallHandler{

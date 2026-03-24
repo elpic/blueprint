@@ -11,6 +11,33 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
+func init() {
+	RegisterAction(ActionDef{
+		Name:   "ollama",
+		Prefix: "ollama",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewOllamaHandler(rule, basePath)
+		},
+		RuleKey: func(rule parser.Rule) string {
+			if len(rule.OllamaModels) > 0 {
+				return rule.OllamaModels[0]
+			}
+			return "ollama"
+		},
+		Detect: func(rule parser.Rule) bool {
+			return len(rule.OllamaModels) > 0
+		},
+		Summary: func(rule parser.Rule) string {
+			return strings.Join(rule.OllamaModels, ", ")
+		},
+		OrphanIndex: func(rule parser.Rule, index func(string)) {
+			for _, model := range rule.OllamaModels {
+				index(model)
+			}
+		},
+	})
+}
+
 // OllamaHandler handles ollama model installation and uninstallation
 type OllamaHandler struct {
 	BaseHandler

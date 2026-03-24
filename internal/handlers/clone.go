@@ -10,6 +10,28 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
+func init() {
+	RegisterAction(ActionDef{
+		Name:   "clone",
+		Prefix: "clone ",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewCloneHandler(rule, basePath, platform.NewContainer())
+		},
+		RuleKey: func(rule parser.Rule) string {
+			return rule.ClonePath
+		},
+		Detect: func(rule parser.Rule) bool {
+			return rule.CloneURL != ""
+		},
+		Summary: func(rule parser.Rule) string {
+			return rule.CloneURL + " → " + rule.ClonePath
+		},
+		OrphanIndex: func(rule parser.Rule, index func(string)) {
+			index(rule.ClonePath)
+		},
+	})
+}
+
 // localSHA returns the HEAD SHA of a local repository. Var for test stubbing.
 var localSHA = func(path string) string {
 	return gitpkg.LocalSHA(path)

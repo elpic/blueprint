@@ -469,57 +469,11 @@ func RuleKey(rule parser.Rule) string {
 	if rule.ID != "" {
 		return rule.ID
 	}
-	switch rule.Action {
-	case "install", "uninstall":
-		if len(rule.Packages) > 0 {
-			return rule.Packages[0].Name
-		}
-		return "install"
-	case "clone":
-		return rule.ClonePath
-	case "decrypt":
-		return rule.DecryptPath
-	case "download":
-		return rule.DownloadPath
-	case "known_hosts":
-		return rule.KnownHosts
-	case "mkdir":
-		return rule.Mkdir
-	case "run":
-		return rule.RunCommand
-	case "run-sh":
-		return rule.RunShURL
-	case "gpg_key":
-		return rule.GPGKeyring
-	case "homebrew":
-		if len(rule.HomebrewPackages) > 0 {
-			return rule.HomebrewPackages[0]
-		}
-		return "homebrew"
-	case "asdf":
-		return "asdf"
-	case "mise":
-		return "mise"
-	case "ollama":
-		if len(rule.OllamaModels) > 0 {
-			return rule.OllamaModels[0]
-		}
-		return "ollama"
-	case "schedule":
-		if rule.ScheduleSource != "" {
-			return "schedule-" + rule.ScheduleSource
-		}
-		return "schedule"
-	case "shell":
-		return rule.ShellName
-	case "authorized_keys":
-		if rule.AuthorizedKeysFile != "" {
-			return rule.AuthorizedKeysFile
-		}
-		return rule.AuthorizedKeysEncrypted
-	default:
-		return rule.Action
+	def := GetAction(rule.Action)
+	if def != nil && def.RuleKey != nil {
+		return def.RuleKey(rule)
 	}
+	return rule.Action
 }
 
 // GetFallbackDependencyKey returns the handler-specific fallback key when rule.ID is not present.
@@ -529,75 +483,23 @@ func (h *BaseHandler) GetFallbackDependencyKey() string {
 	return h.Rule.Action
 }
 
-// DetectRuleType determines the actual rule type based on the rule's content
-// This is used for "uninstall" actions where the original action is lost
+// DetectRuleType determines the actual rule type based on the rule's content.
+// This is used for "uninstall" actions where the original action is lost.
 func DetectRuleType(rule parser.Rule) string {
-	if len(rule.Packages) > 0 {
-		return "install"
-	}
-	if rule.CloneURL != "" {
-		return "clone"
-	}
-	if rule.DecryptFile != "" {
-		return "decrypt"
-	}
-	if rule.Mkdir != "" {
-		return "mkdir"
-	}
-	if len(rule.AsdfPackages) > 0 {
-		return "asdf"
-	}
-	if len(rule.MisePackages) > 0 {
-		return "mise"
-	}
-	if len(rule.HomebrewPackages) > 0 {
-		return "homebrew"
-	}
-	if len(rule.OllamaModels) > 0 {
-		return "ollama"
-	}
-	if rule.KnownHosts != "" {
-		return "known_hosts"
-	}
-	if rule.GPGKeyring != "" {
-		return "gpg-key"
-	}
-	if rule.DownloadURL != "" {
-		return "download"
-	}
-	if rule.RunCommand != "" {
-		return "run"
-	}
-	if rule.RunShURL != "" {
-		return "run-sh"
-	}
-	if rule.DotfilesURL != "" {
-		return "dotfiles"
-	}
-	if rule.SudoersUser != "" {
-		return "sudoers"
-	}
-	if rule.ScheduleSource != "" {
-		return "schedule"
-	}
-	if rule.ShellName != "" {
-		return "shell"
-	}
-	if rule.AuthorizedKeysFile != "" || rule.AuthorizedKeysEncrypted != "" {
-		return "authorized_keys"
+	for _, def := range AllActions() {
+		if def.Detect != nil && def.Detect(rule) {
+			return def.Name
+		}
 	}
 	return ""
 }
 
-// NewHandler creates a handler for the given rule
-// Returns nil if the action is not recognized
+// NewHandler creates a handler for the given rule.
+// Returns nil if the action is not recognized.
 func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
-	// Create production container
-	container := platform.NewContainer()
-
 	action := rule.Action
 
-	// For uninstall actions, detect the actual rule type from the rule's content
+	// For uninstall actions, detect the actual rule type from the rule's content.
 	if action == "uninstall" {
 		action = DetectRuleType(rule)
 		if action == "" {
@@ -605,72 +507,27 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 		}
 	}
 
-	switch action {
-	case "install":
-		return NewInstallHandler(rule, basePath, container)
-	case "clone":
-		return NewCloneHandler(rule, basePath, container)
-	case "decrypt":
-		return NewDecryptHandler(rule, basePath, passwordCache)
-	case "mkdir":
-		return NewMkdirHandler(rule, basePath, container)
-	case "asdf":
-		return NewAsdfHandler(rule, basePath)
-	case "mise":
-		return NewMiseHandler(rule, basePath)
-	case "homebrew":
-		return NewHomebrewHandler(rule, basePath)
-	case "ollama":
-		return NewOllamaHandler(rule, basePath)
-	case "known_hosts":
-		return NewKnownHostsHandler(rule, basePath)
-	case "gpg-key":
-		return NewGPGKeyHandlerWithPassword(rule, basePath, passwordCache["sudo"])
-	case "download":
-		return NewDownloadHandler(rule, basePath)
-	case "run":
-		return NewRunHandler(rule, basePath)
-	case "run-sh":
-		return NewRunShHandler(rule, basePath)
-	case "dotfiles":
-		return NewDotfilesHandler(rule, basePath)
-	case "sudoers":
-		return NewSudoersHandler(rule, basePath)
-	case "schedule":
-		return NewScheduleHandler(rule, basePath)
-	case "shell":
-		return NewShellHandler(rule, basePath)
-	case "authorized_keys":
-		return NewAuthorizedKeysHandler(rule, basePath, passwordCache)
-	default:
+	def := GetAction(action)
+	if def == nil || def.NewHandler == nil {
 		return nil
 	}
+	return def.NewHandler(rule, basePath, passwordCache)
 }
 
-// GetStatusProviderHandlers returns all handler instances that implement StatusProvider
-// This is the single place where all handler instantiation happens for status comparisons
-// Used by engine for getAutoUninstallRules and other status-related operations
+// GetStatusProviderHandlers returns all handler instances that implement StatusProvider.
+// This is used by the engine for getAutoUninstallRules and other status-related operations.
 func GetStatusProviderHandlers() []Handler {
-	return []Handler{
-		NewInstallHandlerLegacy(parser.Rule{}, ""),
-		NewCloneHandlerLegacy(parser.Rule{}, ""),
-		NewDecryptHandler(parser.Rule{}, "", nil),
-		NewAsdfHandler(parser.Rule{}, ""),
-		NewMiseHandler(parser.Rule{}, ""),
-		NewHomebrewHandler(parser.Rule{}, ""),
-		NewOllamaHandler(parser.Rule{}, ""),
-		NewMkdirHandlerLegacy(parser.Rule{}, ""),
-		NewKnownHostsHandler(parser.Rule{}, ""),
-		NewGPGKeyHandler(parser.Rule{}, ""),
-		NewDownloadHandler(parser.Rule{}, ""),
-		NewRunHandler(parser.Rule{}, ""),
-		NewRunShHandler(parser.Rule{}, ""),
-		NewDotfilesHandler(parser.Rule{}, ""),
-		NewSudoersHandler(parser.Rule{}, ""),
-		NewScheduleHandler(parser.Rule{}, ""),
-		NewShellHandler(parser.Rule{}, ""),
-		NewAuthorizedKeysHandler(parser.Rule{}, "", nil),
+	var result []Handler
+	for _, def := range AllActions() {
+		if def.NewHandler == nil || def.IsAlias {
+			continue
+		}
+		h := def.NewHandler(parser.Rule{Action: def.Name}, "", nil)
+		if _, ok := h.(StatusProvider); ok {
+			result = append(result, h)
+		}
 	}
+	return result
 }
 
 // Shared utility functions for status management

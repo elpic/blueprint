@@ -28,6 +28,28 @@ type ShellStatus struct {
 	OS            string `json:"os"`
 }
 
+func init() {
+	RegisterAction(ActionDef{
+		Name:   "shell",
+		Prefix: "shell ",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewShellHandler(rule, basePath)
+		},
+		RuleKey: func(rule parser.Rule) string {
+			return rule.ShellName
+		},
+		Detect: func(rule parser.Rule) bool {
+			return rule.ShellName != ""
+		},
+		Summary: func(rule parser.Rule) string {
+			return rule.ShellName
+		},
+		OrphanIndex: func(rule parser.Rule, index func(string)) {
+			index(rule.ShellName)
+		},
+	})
+}
+
 // ShellHandler handles setting the default login shell
 type ShellHandler struct {
 	BaseHandler

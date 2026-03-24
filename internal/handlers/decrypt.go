@@ -12,6 +12,28 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
+func init() {
+	RegisterAction(ActionDef{
+		Name:   "decrypt",
+		Prefix: "decrypt ",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewDecryptHandler(rule, basePath, passwordCache)
+		},
+		RuleKey: func(rule parser.Rule) string {
+			return rule.DecryptPath
+		},
+		Detect: func(rule parser.Rule) bool {
+			return rule.DecryptFile != ""
+		},
+		Summary: func(rule parser.Rule) string {
+			return rule.DecryptFile + " → " + rule.DecryptPath
+		},
+		OrphanIndex: func(rule parser.Rule, index func(string)) {
+			index(rule.DecryptPath)
+		},
+	})
+}
+
 // DecryptHandler handles file decryption and cleanup
 type DecryptHandler struct {
 	BaseHandler

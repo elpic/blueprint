@@ -12,6 +12,28 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
+func init() {
+	RegisterAction(ActionDef{
+		Name:   "dotfiles",
+		Prefix: "dotfiles ",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewDotfilesHandler(rule, basePath)
+		},
+		RuleKey: func(rule parser.Rule) string {
+			return rule.DotfilesURL
+		},
+		Detect: func(rule parser.Rule) bool {
+			return rule.DotfilesURL != ""
+		},
+		Summary: func(rule parser.Rule) string {
+			return rule.DotfilesURL
+		},
+		OrphanIndex: func(rule parser.Rule, index func(string)) {
+			index(rule.DotfilesURL)
+		},
+	})
+}
+
 // DotfilesHandler handles dotfiles repository cloning and symlink management
 type DotfilesHandler struct {
 	BaseHandler

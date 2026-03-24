@@ -12,6 +12,33 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
+func init() {
+	RegisterAction(ActionDef{
+		Name:   "homebrew",
+		Prefix: "homebrew",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewHomebrewHandler(rule, basePath)
+		},
+		RuleKey: func(rule parser.Rule) string {
+			if len(rule.HomebrewPackages) > 0 {
+				return rule.HomebrewPackages[0]
+			}
+			return "homebrew"
+		},
+		Detect: func(rule parser.Rule) bool {
+			return len(rule.HomebrewPackages) > 0
+		},
+		Summary: func(rule parser.Rule) string {
+			return strings.Join(append(rule.HomebrewPackages, rule.HomebrewCasks...), ", ")
+		},
+		OrphanIndex: func(rule parser.Rule, index func(string)) {
+			for _, formula := range rule.HomebrewPackages {
+				index(formula)
+			}
+		},
+	})
+}
+
 // HomebrewHandler handles homebrew package installation and uninstallation
 type HomebrewHandler struct {
 	BaseHandler

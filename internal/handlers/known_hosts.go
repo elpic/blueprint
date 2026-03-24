@@ -14,6 +14,28 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
+func init() {
+	RegisterAction(ActionDef{
+		Name:   "known_hosts",
+		Prefix: "known_hosts ",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewKnownHostsHandler(rule, basePath)
+		},
+		RuleKey: func(rule parser.Rule) string {
+			return rule.KnownHosts
+		},
+		Detect: func(rule parser.Rule) bool {
+			return rule.KnownHosts != ""
+		},
+		Summary: func(rule parser.Rule) string {
+			return rule.KnownHosts
+		},
+		OrphanIndex: func(rule parser.Rule, index func(string)) {
+			index(rule.KnownHosts)
+		},
+	})
+}
+
 // KnownHostsHandler handles SSH known_hosts file management
 type KnownHostsHandler struct {
 	BaseHandler

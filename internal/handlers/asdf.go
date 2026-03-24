@@ -43,6 +43,26 @@ var asdfInstalledCheck = func() bool {
 	return err == nil
 }
 
+func init() {
+	RegisterAction(ActionDef{
+		Name:   "asdf",
+		Prefix: "asdf",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewAsdfHandler(rule, basePath)
+		},
+		RuleKey: func(rule parser.Rule) string {
+			return "asdf"
+		},
+		Detect: func(rule parser.Rule) bool {
+			return len(rule.AsdfPackages) > 0
+		},
+		Summary: func(rule parser.Rule) string {
+			return strings.Join(rule.AsdfPackages, ", ")
+		},
+		ExcludeFromOrphanDetection: true,
+	})
+}
+
 // AsdfHandler handles asdf version manager operations
 type AsdfHandler struct {
 	BaseHandler
