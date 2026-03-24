@@ -3,6 +3,7 @@ package handlers
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	gitpkg "github.com/elpic/blueprint/internal/git"
@@ -1506,5 +1507,49 @@ func TestRemovePackageStatusWithGitURLs(t *testing.T) {
 	}
 	if len(result) == 1 && result[0].Name != "curl" {
 		t.Errorf("remaining package should be curl, got %s", result[0].Name)
+	}
+}
+
+// TestAllEntriesCoversAllSlices verifies that AllEntries() covers every
+// StatusEntry-typed slice field on Status. If a new action is added with a new
+// slice field but AllEntries() and FilterEntries() are not updated, this test
+// fails — a test-time safety net equivalent to a compile-time check.
+func TestAllEntriesCoversAllSlices(t *testing.T) {
+	statusEntryType := reflect.TypeOf((*StatusEntry)(nil)).Elem()
+	st := reflect.TypeOf(Status{})
+
+	// Count []T fields on Status where *T implements StatusEntry.
+	sliceCount := 0
+	for i := 0; i < st.NumField(); i++ {
+		f := st.Field(i)
+		if f.Type.Kind() == reflect.Slice &&
+			reflect.PointerTo(f.Type.Elem()).Implements(statusEntryType) {
+			sliceCount++
+		}
+	}
+
+	// Build a Status with one zero-value element in each such slice.
+	sv := reflect.New(st).Elem()
+	for i := 0; i < st.NumField(); i++ {
+		f := st.Field(i)
+		if f.Type.Kind() == reflect.Slice &&
+			reflect.PointerTo(f.Type.Elem()).Implements(statusEntryType) {
+			sv.Field(i).Set(reflect.MakeSlice(f.Type, 1, 1))
+		}
+	}
+	status := sv.Addr().Interface().(*Status)
+
+	got := len(status.AllEntries())
+	if got != sliceCount {
+		t.Errorf("AllEntries() returned %d entries but Status has %d StatusEntry slices; "+
+			"update AllEntries() and FilterEntries() to include the new slice",
+			got, sliceCount)
+	}
+
+	// Verify FilterEntries(keep=false) clears everything it knows about.
+	status.FilterEntries(func(StatusEntry) bool { return false })
+	if remaining := len(status.AllEntries()); remaining != 0 {
+		t.Errorf("FilterEntries(false) left %d entries; update FilterEntries() to include the new slice",
+			remaining)
 	}
 }

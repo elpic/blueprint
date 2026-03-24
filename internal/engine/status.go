@@ -131,7 +131,7 @@ func loadCurrentStatus() handlerskg.Status {
 	return status
 }
 
-func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string, osName string) error {
+func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string, blueprintSHA string, osName string) error {
 	statusPath, err := getStatusPath()
 	if err != nil {
 		return err
@@ -145,6 +145,12 @@ func saveStatus(rules []parser.Rule, records []ExecutionRecord, blueprint string
 	var status handlerskg.Status
 	if data, err := readBlueprintFile(statusPath); err == nil {
 		_ = json.Unmarshal(data, &status)
+	}
+
+	// Record the SHA of the blueprint repo at apply time so doctor can check
+	// orphans against the exact version that was applied.
+	if blueprintSHA != "" {
+		status.BlueprintSHA = blueprintSHA
 	}
 
 	// Convert engine ExecutionRecords to handler ExecutionRecords
@@ -234,7 +240,7 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 // PrintDiff compares the desired state in the blueprint file against the installed state
 // in status.json and prints what would be added or removed on the next apply.
 func PrintDiff(blueprintFile string) {
-	setupPath, cleanup, err := resolveBlueprintFile(blueprintFile, false)
+	setupPath, _, cleanup, err := resolveBlueprintFile(blueprintFile, false)
 	if err != nil {
 		fmt.Printf("%s\n", ui.FormatError(err.Error()))
 		return

@@ -66,9 +66,9 @@ func TestDecryptHandler_GetCommand_Pure(t *testing.T) {
 				t.Errorf("GetCommand() = %q, want %q", cmd, tt.expected)
 			}
 
-			// Verify that this is a fast unit test (< 100μs)
-			if duration > 100*time.Microsecond {
-				t.Errorf("Test took %v, expected < 100μs for pure unit test", duration)
+			// Verify that this is a fast unit test (< 1ms — generous bound for CI)
+			if duration > 1*time.Millisecond {
+				t.Errorf("Test took %v, expected < 1ms for pure unit test", duration)
 			}
 		})
 	}

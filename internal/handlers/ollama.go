@@ -281,15 +281,6 @@ func (h *OllamaHandler) IsInstalled(status *Status, blueprintFile, osName string
 	return true
 }
 
-// removeOllamaStatus removes an ollama model from the status ollamas list
-func removeOllamaStatus(ollamas []OllamaStatus, model string, blueprint string, osName string) []OllamaStatus {
-	var result []OllamaStatus
-	normalizedBlueprint := normalizeBlueprint(blueprint)
-	for _, o := range ollamas {
-		normalizedStoredBlueprint := normalizeBlueprint(o.Blueprint)
-		if o.Model != model || normalizedStoredBlueprint != normalizedBlueprint || o.OS != osName {
-			result = append(result, o)
-		}
-	}
-	return result
+func removeOllamaStatus(sl []OllamaStatus, model, blueprint, osName string) []OllamaStatus {
+	return removeStatusEntry[OllamaStatus, *OllamaStatus](sl, model, blueprint, osName)
 }

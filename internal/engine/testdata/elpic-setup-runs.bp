@@ -1,0 +1,6 @@
+# Mirrors the run commands present in https://github.com/elpic/setup (via dotfiles.bp)
+# Used by TestCheckOrphans_ElpicSetupRealStatus to verify that the old
+# "asdf which nvim" command is detected as orphaned.
+
+run rm -rf ~/.local/bin/vim && ln -s $(which nvim) ~/.local/bin/vim on: [linux, mac]
+run-sh https://download.calibre-ebook.com/linux-installer.sh unless: calibre --version sudo: true on: [linux]

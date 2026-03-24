@@ -144,3 +144,14 @@ if [ -n "$DEPLOY_HOST" ] && [ -n "$DEPLOY_USER" ] && [ -n "$DEPLOY_TARGET" ]; th
   scp blueprint-$DEPLOY_TARGET "$DEPLOY_USER@$DEPLOY_HOST:blueprint"
 fi
 '''
+
+[tasks."deploy:test"]
+description = "Deploy to remote and run a blueprint command. Usage: mise run deploy:test -- doctor"
+depends = ["deploy"]
+run = '''
+if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_USER" ]; then
+  echo "DEPLOY_HOST and DEPLOY_USER must be set" >&2
+  exit 1
+fi
+ssh "$DEPLOY_USER@$DEPLOY_HOST" -- '~/blueprint' "$@"
+'''

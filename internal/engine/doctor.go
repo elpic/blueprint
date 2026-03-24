@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
+	gitpkg "github.com/elpic/blueprint/internal/git"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
+	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
 )
 
@@ -14,6 +17,7 @@ type doctorIssue struct {
 	description string
 	count       int
 	examples    []string // up to a small number of representative entries
+	fix         func()   // optional: called in --fix mode to repair the issue in-place
 }
 
 // checkBlueprintURLs scans all Blueprint fields in the status for entries
@@ -34,56 +38,8 @@ func checkBlueprintURLs(status *handlerskg.Status) []doctorIssue {
 		}
 	}
 
-	for _, v := range status.Packages {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Clones {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Decrypts {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Mkdirs {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.KnownHosts {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.GPGKeys {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Asdfs {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Mises {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Sudoers {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Brews {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Ollamas {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Downloads {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Runs {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Dotfiles {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Schedules {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.Shells {
-		collect(v.Blueprint)
-	}
-	for _, v := range status.AuthorizedKeys {
-		collect(v.Blueprint)
+	for _, e := range status.AllEntries() {
+		collect(e.GetBlueprint())
 	}
 
 	if len(stale) == 0 {
@@ -137,56 +93,8 @@ func checkDuplicates(status *handlerskg.Status) []doctorIssue {
 		seen[k] = true
 	}
 
-	for _, v := range status.Packages {
-		track(v.Name, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Clones {
-		track(v.Path, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Decrypts {
-		track(v.DestPath, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Mkdirs {
-		track(v.Path, v.OS, v.Blueprint)
-	}
-	for _, v := range status.KnownHosts {
-		track(v.Host, v.OS, v.Blueprint)
-	}
-	for _, v := range status.GPGKeys {
-		track(v.Keyring, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Asdfs {
-		track(v.Plugin+"\x00"+v.Version, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Mises {
-		track(v.Tool+"\x00"+v.Version, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Sudoers {
-		track(v.User, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Brews {
-		track(v.Formula, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Ollamas {
-		track(v.Model, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Downloads {
-		track(v.Path, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Runs {
-		track(v.Command, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Dotfiles {
-		track(v.URL, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Schedules {
-		track(v.Source, v.OS, v.Blueprint)
-	}
-	for _, v := range status.Shells {
-		track(v.Shell, v.OS, v.Blueprint)
-	}
-	for _, v := range status.AuthorizedKeys {
-		track(v.Source, v.OS, v.Blueprint)
+	for _, e := range status.AllEntries() {
+		track(e.GetResourceKey(), e.GetOS(), e.GetBlueprint())
 	}
 
 	if count == 0 {
@@ -199,6 +107,225 @@ func checkDuplicates(status *handlerskg.Status) []doctorIssue {
 			count:       count,
 		},
 	}
+}
+
+// findBlueprintSetupFile returns the path to setup.bp inside localPath, or an
+// error if the file does not exist.
+func findBlueprintSetupFile(localPath string) (string, error) {
+	p := filepath.Join(localPath, "setup.bp")
+	if _, err := os.Stat(p); err != nil {
+		return "", err
+	}
+	return p, nil
+}
+
+// rulesForBlueprint loads the parsed rules for a blueprint URL at a specific
+// git SHA. It clones/updates the repo on demand, then checks out the given SHA
+// so the orphan check uses the exact version that was applied. If sha is empty
+// it uses HEAD (safe fallback for local blueprints or old status files).
+func rulesForBlueprint(blueprintURL, sha string) ([]parser.Rule, error) {
+	if !gitpkg.IsGitURL(blueprintURL) {
+		// Local file — parse directly.
+		return parser.ParseFile(blueprintURL)
+	}
+
+	localPath := blueprintRepoPath(blueprintURL)
+
+	// Clone or update so we have the repo locally.
+	params := gitpkg.ParseGitURL(blueprintURL)
+	if _, _, _, err := gitpkg.CloneOrUpdateRepository(params.URL, localPath, params.Branch); err != nil {
+		return nil, fmt.Errorf("failed to fetch blueprint %s: %w", blueprintURL, err)
+	}
+
+	// Checkout the specific SHA that was applied so we compare against the
+	// exact version of the blueprint the user ran, not the current HEAD.
+	if sha != "" {
+		if err := gitpkg.CheckoutSHA(localPath, sha); err != nil {
+			// Non-fatal: fall through and use whatever is checked out.
+			fmt.Printf("  Warning: could not checkout SHA %s for %s: %v\n", sha, blueprintURL, err)
+		}
+	}
+
+	setupPath, err := findBlueprintSetupFile(localPath)
+	if err != nil {
+		return nil, fmt.Errorf("setup.bp not found in %s: %w", blueprintURL, err)
+	}
+	return parser.ParseFile(setupPath)
+}
+
+// filterOrphans removes all entries from status whose (normalized resource key,
+// normalized blueprint, OS) triple appears in the orphaned set. The orphaned map
+// key is "<normalizedBlueprint>\x00<os>\x00<normalizedResourceKey>".
+func filterOrphans(status *handlerskg.Status, orphaned map[string]bool) {
+	norm := handlerskg.NormalizeBlueprint
+	status.FilterEntries(func(e handlerskg.StatusEntry) bool {
+		resource := e.GetResourceKey()
+		bp := norm(e.GetBlueprint())
+		os := e.GetOS()
+		k := bp + "\x00" + os + "\x00" + resource
+		kn := bp + "\x00" + os + "\x00" + norm(resource)
+		return !orphaned[k] && !orphaned[kn]
+	})
+}
+
+// checkOrphansWithLoader is the testable core of checkOrphans.
+// loader is called with a normalized blueprint URL and returns the parsed rules
+// for that blueprint, or nil if the blueprint is not available locally.
+func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []parser.Rule) []doctorIssue {
+	// Build a map of blueprint URL → set of rule keys present in that blueprint.
+	type ruleSet map[string]bool
+	cache := map[string]ruleSet{} // normalized blueprint URL → rule keys
+
+	rulesFor := func(bp string) ruleSet {
+		norm := handlerskg.NormalizeBlueprint(bp)
+		if rs, ok := cache[norm]; ok {
+			return rs
+		}
+		rules := loader(norm)
+		if rules == nil {
+			cache[norm] = nil
+			return nil
+		}
+		rs := ruleSet{}
+		for _, r := range rules {
+			rs[handlerskg.RuleKey(r)] = true
+			// Also index the natural resource identity for each action type so
+			// that status entries (which store the resource path/name, not the
+			// rule id) are matched correctly even when the rule has an id:.
+			switch r.Action {
+			case "clone":
+				rs[r.ClonePath] = true
+			case "decrypt":
+				rs[r.DecryptPath] = true
+			case "download":
+				rs[r.DownloadPath] = true
+			case "mkdir":
+				rs[r.Mkdir] = true
+			case "known_hosts":
+				rs[r.KnownHosts] = true
+			case "gpg_key", "gpg-key":
+				rs[r.GPGKeyring] = true
+			case "dotfiles":
+				rs[r.DotfilesURL] = true
+			case "schedule":
+				rs[r.ScheduleSource] = true
+				rs[handlerskg.NormalizeBlueprint(r.ScheduleSource)] = true
+			case "shell":
+				rs[r.ShellName] = true
+			case "authorized_keys":
+				rs[r.AuthorizedKeysFile] = true
+				rs[r.AuthorizedKeysEncrypted] = true
+			}
+			// Index every package / homebrew formula / ollama model individually.
+			for _, pkg := range r.Packages {
+				rs[pkg.Name] = true
+			}
+			for _, formula := range r.HomebrewPackages {
+				rs[formula] = true
+			}
+			for _, model := range r.OllamaModels {
+				rs[model] = true
+			}
+		}
+		cache[norm] = rs
+		return rs
+	}
+
+	type orphanEntry struct {
+		display string
+		// orphanKey is the lookup key used to build the orphaned set passed to
+		// filterOrphans: "<normalizedBlueprint>\x00<os>\x00<resource>".
+		orphanKey string
+	}
+	var orphans []orphanEntry
+
+	// Asdf and Mise use compound keys (plugin+version, tool+version) that cannot
+	// be matched against individual blueprint rule resource keys, so they are
+	// intentionally excluded from orphan detection.
+	isExcluded := func(e handlerskg.StatusEntry) bool {
+		switch e.(type) {
+		case *handlerskg.AsdfStatus, *handlerskg.MiseStatus, *handlerskg.SudoersStatus:
+			return true
+		}
+		return false
+	}
+
+	for _, e := range status.AllEntries() {
+		if isExcluded(e) {
+			continue
+		}
+		resource := e.GetResourceKey()
+		bp := e.GetBlueprint()
+		os := e.GetOS()
+
+		rs := rulesFor(bp)
+		if rs == nil {
+			continue // blueprint not cached — skip
+		}
+		// Check both the raw resource value and its normalized form (handles
+		// git URLs stored with/without .git suffix, e.g. schedule sources).
+		if !rs[resource] && !rs[handlerskg.NormalizeBlueprint(resource)] {
+			normBP := handlerskg.NormalizeBlueprint(bp)
+			orphans = append(orphans, orphanEntry{
+				display:   fmt.Sprintf("%s (blueprint: %s)", resource, normBP),
+				orphanKey: normBP + "\x00" + os + "\x00" + resource,
+			})
+		}
+	}
+
+	if len(orphans) == 0 {
+		return nil
+	}
+
+	examples := make([]string, 0, 3)
+	for i, o := range orphans {
+		if i >= 3 {
+			break
+		}
+		examples = append(examples, o.display)
+	}
+
+	// Build the orphaned set and attach the removal function.
+	orphanedSet := make(map[string]bool, len(orphans))
+	for _, o := range orphans {
+		orphanedSet[o.orphanKey] = true
+	}
+	removeOrphans := func() {
+		filterOrphans(status, orphanedSet)
+	}
+
+	return []doctorIssue{
+		{
+			description: fmt.Sprintf("%d orphaned entries (resource no longer exists in blueprint)", len(orphans)),
+			count:       len(orphans),
+			examples:    examples,
+			fix:         removeOrphans,
+		},
+	}
+}
+
+// checkOrphans detects status entries whose resource no longer exists in the
+// blueprint file they were installed from. Uses status.BlueprintSHA to check
+// against the exact version that was applied.
+func checkOrphans(status *handlerskg.Status) []doctorIssue {
+	fetched := map[string]bool{}
+	sha := status.BlueprintSHA
+	return checkOrphansWithLoader(status, func(norm string) []parser.Rule {
+		if !fetched[norm] {
+			fetched[norm] = true
+			if sha != "" {
+				fmt.Printf("  Fetching blueprint %s @ %s...\n", norm, sha[:8])
+			} else {
+				fmt.Printf("  Fetching blueprint %s...\n", norm)
+			}
+		}
+		rules, err := rulesForBlueprint(norm, sha)
+		if err != nil {
+			fmt.Printf("  %s\n", ui.FormatError(fmt.Sprintf("could not fetch %s: %v", norm, err)))
+			return nil
+		}
+		return rules
+	})
 }
 
 // DoctorCheck reads ~/.blueprint/status.json, reports all issues found, and
@@ -235,18 +362,26 @@ func DoctorCheck(fix bool) {
 
 	issues := checkBlueprintURLs(&status)
 	issues = append(issues, checkDuplicates(&status)...)
+	fmt.Printf("\nChecking for orphaned entries...\n")
+	issues = append(issues, checkOrphans(&status)...)
 
 	if len(issues) == 0 {
 		fmt.Printf("  %s\n", ui.FormatSuccess("blueprint URLs are normalized"))
 		fmt.Printf("  %s\n", ui.FormatSuccess("no duplicate entries"))
+		fmt.Printf("  %s\n", ui.FormatSuccess("no orphaned entries"))
 		fmt.Printf("\n%s\n\n", ui.FormatSuccess("No issues found."))
 		return
 	}
 
 	if fix {
-		// First normalize URLs, then deduplicate (order matters).
+		// Normalize URLs and deduplicate first, then run any issue-specific fixes.
 		handlerskg.MigrateStatus(&status)
 		handlerskg.DeduplicateStatus(&status)
+		for _, issue := range issues {
+			if issue.fix != nil {
+				issue.fix()
+			}
+		}
 
 		fixed, err := json.MarshalIndent(status, "", "  ")
 		if err != nil {

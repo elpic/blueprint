@@ -1,0 +1,2 @@
+run rm -rf ~/.local/bin/vim && ln -s $(which nvim) ~/.local/bin/vim on: [linux]
+run https://download.calibre-ebook.com/linux-installer.sh on: [linux]

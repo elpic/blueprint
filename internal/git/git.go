@@ -577,6 +577,29 @@ func NormalizeGitURL(url string) string {
 
 // getRepositoryStoragePath returns the path where a repository should be stored
 func getRepositoryStoragePath(url, branch string) (string, error) {
+	return RepositoryStoragePath(url, branch)
+}
+
+// CheckoutSHA checks out a specific commit SHA in the repository at localPath.
+// This is used by `blueprint doctor` to inspect the exact version that was applied.
+func CheckoutSHA(localPath, sha string) error {
+	repo, err := git.PlainOpen(localPath)
+	if err != nil {
+		return fmt.Errorf("open repo: %w", err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		return fmt.Errorf("worktree: %w", err)
+	}
+	return wt.Checkout(&git.CheckoutOptions{
+		Hash:  plumbing.NewHash(sha),
+		Force: true,
+	})
+}
+
+// RepositoryStoragePath returns the local cache path for a blueprint repository.
+// This is where `blueprint apply <git-url>` stores the cloned repo.
+func RepositoryStoragePath(url, branch string) (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to get home directory: %w", err)

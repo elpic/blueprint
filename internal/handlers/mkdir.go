@@ -198,19 +198,8 @@ func mkdirIsValidOctalPermissions(perms string) bool {
 	return octal >= 0 && octal <= 0777
 }
 
-// removeMkdirStatus removes a mkdir from the status mkdirs list
-func removeMkdirStatus(mkdirs []MkdirStatus, path string, blueprint string, osName string) []MkdirStatus {
-	var result []MkdirStatus
-	// Normalize blueprint for comparison to handle path variations like /tmp vs /private/tmp
-	normalizedBlueprint := normalizeBlueprint(blueprint)
-	for _, mkdir := range mkdirs {
-		// Also normalize the stored blueprint for comparison
-		normalizedStoredBlueprint := normalizeBlueprint(mkdir.Blueprint)
-		if mkdir.Path != path || normalizedStoredBlueprint != normalizedBlueprint || mkdir.OS != osName {
-			result = append(result, mkdir)
-		}
-	}
-	return result
+func removeMkdirStatus(sl []MkdirStatus, path, blueprint, osName string) []MkdirStatus {
+	return removeStatusEntry[MkdirStatus, *MkdirStatus](sl, path, blueprint, osName)
 }
 
 // DisplayStatus displays created directory status information

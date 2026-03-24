@@ -207,27 +207,43 @@ func normalizeBlueprint(input string) string {
 }
 
 // resolveBlueprintFile resolves a blueprint file path or git URL to a local path.
-// If input is a git URL the repo is cloned to a temp directory and the setup file is located.
-// The caller must call cleanup() when done (safe to call even on error — it is a no-op then).
-func resolveBlueprintFile(input string, verbose bool) (setupPath string, cleanup func(), err error) {
+// If input is a git URL the repo is cloned/updated to a stable cache directory so
+// that subsequent commands (e.g. `blueprint doctor`) can inspect its contents.
+// Returns the git SHA of the resolved repo (empty string for local files).
+// The caller must call cleanup() when done (no-op for git URLs since the cache is kept).
+func resolveBlueprintFile(input string, verbose bool) (setupPath string, sha string, cleanup func(), err error) {
 	cleanup = func() {}
 
 	if gitpkg.IsGitURL(input) {
-		tempDir, setupFile, cloneErr := gitpkg.CloneRepository(input, verbose)
-		if cloneErr != nil {
-			return "", cleanup, fmt.Errorf("error cloning repository: %w", cloneErr)
-		}
-		cleanup = func() { _ = gitpkg.CleanupRepository(tempDir) }
+		params := gitpkg.ParseGitURL(input)
+		localPath := blueprintRepoPath(input)
 
-		setupPath, err = gitpkg.FindSetupFile(tempDir, setupFile)
-		if err != nil {
-			cleanup()
-			return "", func() {}, fmt.Errorf("error finding setup file: %w", err)
+		_, newSHA, _, cloneErr := gitpkg.CloneOrUpdateRepository(params.URL, localPath, params.Branch)
+		if cloneErr != nil {
+			return "", "", cleanup, fmt.Errorf("error cloning repository: %w", cloneErr)
 		}
-		return setupPath, cleanup, nil
+
+		setupPath, err = gitpkg.FindSetupFile(localPath, params.Path)
+		if err != nil {
+			return "", "", cleanup, fmt.Errorf("error finding setup file: %w", err)
+		}
+		return setupPath, newSHA, cleanup, nil
 	}
 
-	return input, cleanup, nil
+	return input, "", cleanup, nil
+}
+
+// blueprintRepoPath returns the stable local cache path for a blueprint git URL.
+// Uses the same human-readable scheme as parser.localPathForGitInclude so that
+// `blueprint doctor` can locate the repo without re-cloning it.
+func blueprintRepoPath(rawURL string) string {
+	homeDir, _ := os.UserHomeDir()
+	params := gitpkg.ParseGitURL(rawURL)
+	normalized := strings.TrimPrefix(params.URL, "https://")
+	normalized = strings.TrimPrefix(normalized, "http://")
+	normalized = strings.TrimPrefix(normalized, "git://")
+	normalized = strings.TrimSuffix(normalized, ".git")
+	return filepath.Join(homeDir, ".blueprint", "repos", normalized)
 }
 
 func getBlueprintDir() (string, error) {

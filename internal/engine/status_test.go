@@ -205,7 +205,7 @@ func TestSaveStatus(t *testing.T) {
 	}
 
 	// Test saving status - may fail but should not panic
-	_ = saveStatus(nil, records, "/tmp/test.bp", "linux")
+	_ = saveStatus(nil, records, "/tmp/test.bp", "", "linux")
 }
 
 // TestSaveRuleOutput tests the saveRuleOutput function
