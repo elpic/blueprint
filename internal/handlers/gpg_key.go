@@ -251,7 +251,7 @@ func (h *GPGKeyHandler) GetCommand() string {
 func (h *GPGKeyHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
 	blueprint = normalizeBlueprint(blueprint)
 
-	if h.Rule.Action == "gpg_key" || h.Rule.Action == "gpg-key" {
+	if h.Rule.Action == "gpg_key" {
 		// Record if the keyring file is present on disk (handles both fresh install and skip)
 		if isKeyringInstalled(h.keyringPath()) {
 			status.GPGKeys = removeGPGKeyStatus(status.GPGKeys, h.Rule.GPGKeyring, blueprint, osName)
@@ -264,7 +264,7 @@ func (h *GPGKeyHandler) UpdateStatus(status *Status, records []ExecutionRecord, 
 				OS:        osName,
 			})
 		}
-	} else if h.Rule.Action == "uninstall" && (DetectRuleType(h.Rule) == "gpg_key" || DetectRuleType(h.Rule) == "gpg-key") {
+	} else if h.Rule.Action == "uninstall" && DetectRuleType(h.Rule) == "gpg_key" {
 		status.GPGKeys = removeGPGKeyStatus(status.GPGKeys, h.Rule.GPGKeyring, blueprint, osName)
 	}
 
@@ -346,7 +346,7 @@ func (h *GPGKeyHandler) FindUninstallRules(status *Status, currentRules []parser
 
 	currentGPGKeys := make(map[string]bool)
 	for _, rule := range currentRules {
-		if (rule.Action == "gpg_key" || rule.Action == "gpg-key") && rule.GPGKeyring != "" {
+		if rule.Action == "gpg_key" && rule.GPGKeyring != "" {
 			currentGPGKeys[rule.GPGKeyring] = true
 		}
 	}
