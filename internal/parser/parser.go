@@ -123,7 +123,7 @@ func (r Rule) DisplaySummary() string {
 		return strings.Join(r.OllamaModels, ", ")
 	case "known_hosts":
 		return r.KnownHosts
-	case "gpg_key", "gpg-key":
+	case "gpg_key":
 		return r.GPGKeyring
 	case "download":
 		return r.DownloadURL + " → " + r.DownloadPath
@@ -252,7 +252,7 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 			rule, err = parseKnownHostsRule(line)
 		case strings.HasPrefix(line, "mkdir "):
 			rule, err = parseMkdirRule(line)
-		case strings.HasPrefix(line, "gpg-key "), strings.HasPrefix(line, "gpg_key "):
+		case strings.HasPrefix(line, "gpg_key "):
 			rule, err = parseGPGKeyRule(line)
 		case strings.HasPrefix(line, "download "):
 			rule, err = parseDownloadRule(line)
@@ -532,11 +532,7 @@ func parseMkdirRule(line string) (*Rule, error) {
 }
 
 func parseGPGKeyRule(line string) (*Rule, error) {
-	// Accept both "gpg_key " (canonical) and "gpg-key " (legacy alias).
 	stripped := strings.TrimPrefix(line, "gpg_key ")
-	if stripped == line {
-		stripped = strings.TrimPrefix(line, "gpg-key ")
-	}
 	f := parseFields(stripped)
 	tokens := f.tokens
 	if len(tokens) == 0 {

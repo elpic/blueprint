@@ -11,15 +11,15 @@ import (
 func TestParseGPGKeyBasic(t *testing.T) {
 	tests := []struct {
 		name    string
-		input   string // input WITH the "gpg-key " prefix
+		input   string // input WITH the "gpg_key " prefix
 		want    *Rule
 		wantErr bool
 	}{
 		{
 			name:  "basic gpg-key rule",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]",
 			want: &Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGKeyring: "wezterm-fury",
 				GPGDebURL:  "https://apt.fury.io/wez/",
@@ -28,10 +28,10 @@ func TestParseGPGKeyBasic(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:  "gpg-key with multiple OS platforms",
-			input: "gpg-key https://example.com/gpg.key keyring: example-repo deb-url: https://example.com/apt on: [linux, ubuntu, debian]",
+			name:  "gpg_key with multiple OS platforms",
+			input: "gpg_key https://example.com/gpg.key keyring: example-repo deb-url: https://example.com/apt on: [linux, ubuntu, debian]",
 			want: &Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyURL:  "https://example.com/gpg.key",
 				GPGKeyring: "example-repo",
 				GPGDebURL:  "https://example.com/apt",
@@ -40,10 +40,10 @@ func TestParseGPGKeyBasic(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:  "gpg-key without on clause (applies to all OS)",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/",
+			name:  "gpg_key without on clause (applies to all OS)",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/",
 			want: &Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGKeyring: "wezterm-fury",
 				GPGDebURL:  "https://apt.fury.io/wez/",
@@ -52,11 +52,11 @@ func TestParseGPGKeyBasic(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:  "gpg-key with id parameter",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: wezterm-setup on: [linux]",
+			name:  "gpg_key with id parameter",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: wezterm-setup on: [linux]",
 			want: &Rule{
 				ID:         "wezterm-setup",
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGKeyring: "wezterm-fury",
 				GPGDebURL:  "https://apt.fury.io/wez/",
@@ -65,10 +65,10 @@ func TestParseGPGKeyBasic(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:  "gpg-key with after dependency",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ after: curl-setup on: [linux]",
+			name:  "gpg_key with after dependency",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ after: curl-setup on: [linux]",
 			want: &Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGKeyring: "wezterm-fury",
 				GPGDebURL:  "https://apt.fury.io/wez/",
@@ -78,10 +78,10 @@ func TestParseGPGKeyBasic(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:  "gpg-key with multiple dependencies",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ after: curl-setup, base-tools on: [linux]",
+			name:  "gpg_key with multiple dependencies",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ after: curl-setup, base-tools on: [linux]",
 			want: &Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGKeyring: "wezterm-fury",
 				GPGDebURL:  "https://apt.fury.io/wez/",
@@ -91,11 +91,11 @@ func TestParseGPGKeyBasic(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:  "gpg-key with id and after",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: wezterm-setup after: curl-setup on: [linux]",
+			name:  "gpg_key with id and after",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: wezterm-setup after: curl-setup on: [linux]",
 			want: &Rule{
 				ID:         "wezterm-setup",
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGKeyring: "wezterm-fury",
 				GPGDebURL:  "https://apt.fury.io/wez/",
@@ -105,28 +105,28 @@ func TestParseGPGKeyBasic(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "gpg-key missing URL",
-			input:   "gpg-key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]",
+			name:    "gpg_key missing URL",
+			input:   "gpg_key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]",
 			want:    nil,
 			wantErr: true,
 		},
 		{
-			name:    "gpg-key missing keyring",
-			input:   "gpg-key https://apt.fury.io/wez/gpg.key deb-url: https://apt.fury.io/wez/ on: [linux]",
+			name:    "gpg_key missing keyring",
+			input:   "gpg_key https://apt.fury.io/wez/gpg.key deb-url: https://apt.fury.io/wez/ on: [linux]",
 			want:    nil,
 			wantErr: true,
 		},
 		{
-			name:    "gpg-key missing deb-url",
-			input:   "gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury on: [linux]",
+			name:    "gpg_key missing deb-url",
+			input:   "gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury on: [linux]",
 			want:    nil,
 			wantErr: true,
 		},
 		{
-			name:  "gpg-key with complex URL",
-			input: "gpg-key https://example.com/path/to/gpg.key keyring: my-repo deb-url: https://example.com/repository/apt/ on: [linux]",
+			name:  "gpg_key with complex URL",
+			input: "gpg_key https://example.com/path/to/gpg.key keyring: my-repo deb-url: https://example.com/repository/apt/ on: [linux]",
 			want: &Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyURL:  "https://example.com/path/to/gpg.key",
 				GPGKeyring: "my-repo",
 				GPGDebURL:  "https://example.com/repository/apt/",
@@ -207,22 +207,22 @@ func TestParseGPGKeyRuleWithParse(t *testing.T) {
 		{
 			name: "single gpg-key rule",
 			input: `# Test blueprint
-gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]
+gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]
 `,
 			wantCount: 1,
 		},
 		{
 			name: "multiple rules including gpg-key",
 			input: `mkdir /tmp/test on: [linux]
-gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]
+gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]
 install wget curl on: [linux]
 `,
 			wantCount: 3,
 		},
 		{
-			name: "gpg-key with comments and blank lines",
+			name: "gpg_key with comments and blank lines",
 			input: `# Add GPG key for wezterm
-gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]
+gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]
 
 # Another comment
 install vim on: [linux, mac]
@@ -244,7 +244,7 @@ install vim on: [linux, mac]
 
 			// Verify GPG key rules have correct structure
 			for _, rule := range rules {
-				if rule.Action == "gpg-key" {
+				if rule.Action == "gpg_key" {
 					if rule.GPGKeyring == "" {
 						t.Error("GPG key rule has empty keyring")
 					}
@@ -268,15 +268,15 @@ func TestParseGPGKeyFieldOrder(t *testing.T) {
 	}{
 		{
 			name:  "standard order: url, keyring, deb-url, on",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]",
 		},
 		{
 			name:  "different order: url, deb-url, keyring, on",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key deb-url: https://apt.fury.io/wez/ keyring: wezterm-fury on: [linux]",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key deb-url: https://apt.fury.io/wez/ keyring: wezterm-fury on: [linux]",
 		},
 		{
 			name:  "with id and after mixed in",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key id: setup-wez keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ after: prep on: [linux]",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key id: setup-wez keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ after: prep on: [linux]",
 		},
 	}
 
@@ -312,27 +312,27 @@ func TestParseGPGKeyEdgeCases(t *testing.T) {
 	}{
 		{
 			name:      "minimal valid rule",
-			input:     "gpg-key https://example.com/key keyring: test deb-url: https://example.com/apt",
+			input:     "gpg_key https://example.com/key keyring: test deb-url: https://example.com/apt",
 			wantValid: true,
 		},
 		{
 			name:      "empty OS list is valid",
-			input:     "gpg-key https://example.com/key keyring: test deb-url: https://example.com/apt on: []",
+			input:     "gpg_key https://example.com/key keyring: test deb-url: https://example.com/apt on: []",
 			wantValid: true,
 		},
 		{
 			name:      "extra whitespace",
-			input:     "gpg-key   https://example.com/key   keyring:   test   deb-url:   https://example.com/apt   on:   [linux]",
+			input:     "gpg_key   https://example.com/key   keyring:   test   deb-url:   https://example.com/apt   on:   [linux]",
 			wantValid: true,
 		},
 		{
 			name:      "keyring with special characters",
-			input:     "gpg-key https://example.com/key keyring: my-repo-2024 deb-url: https://example.com/apt",
+			input:     "gpg_key https://example.com/key keyring: my-repo-2024 deb-url: https://example.com/apt",
 			wantValid: true,
 		},
 		{
 			name:      "URL with port number",
-			input:     "gpg-key https://example.com:8443/gpg.key keyring: secure-repo deb-url: https://example.com:8443/apt",
+			input:     "gpg_key https://example.com:8443/gpg.key keyring: secure-repo deb-url: https://example.com:8443/apt",
 			wantValid: true,
 		},
 	}
@@ -361,10 +361,10 @@ func TestParseGPGKeyIntegration(t *testing.T) {
 mkdir ~/.cache on: [linux, mac]
 
 # Add wezterm repository
-gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: wezterm-setup on: [linux]
+gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: wezterm-setup on: [linux]
 
 # Add Docker repository with dependency
-gpg-key https://download.docker.com/linux/ubuntu/gpg keyring: docker deb-url: https://download.docker.com/linux/ubuntu after: wezterm-setup id: docker-setup on: [linux]
+gpg_key https://download.docker.com/linux/ubuntu/gpg keyring: docker deb-url: https://download.docker.com/linux/ubuntu after: wezterm-setup id: docker-setup on: [linux]
 
 # Install packages
 install vim gcc on: [linux, mac]
@@ -378,7 +378,7 @@ install vim gcc on: [linux, mac]
 	// Find GPG key rules
 	gpgRules := make([]*Rule, 0)
 	for i := range rules {
-		if rules[i].Action == "gpg-key" {
+		if rules[i].Action == "gpg_key" {
 			gpgRules = append(gpgRules, &rules[i])
 		}
 	}
@@ -863,7 +863,7 @@ mkdir ~/.config id: config-dir on: [linux, mac]
 mkdir ~/.ssh perms: 0700 id: ssh-dir after: config-dir on: [linux, mac]
 
 # Add repository keys and install base packages
-gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: wezterm-key on: [linux]
+gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: wezterm-key on: [linux]
 
 # Install system packages
 install curl wget git vim build-essential id: base-tools on: [linux]
@@ -905,7 +905,7 @@ known_hosts gitlab.example.com key: rsa id: gitlab-hosts on: [linux, mac]
 
 	expectedActions := map[string]int{
 		"mkdir":       2,
-		"gpg-key":     1,
+		"gpg_key":     1,
 		"install":     2,
 		"decrypt":     2,
 		"clone":       2,
@@ -1156,16 +1156,16 @@ func TestParseFromFile(t *testing.T) {
 			name:           "parse gpg-key blueprint file",
 			filepath:       "test/data/gpg_key/basic.bp",
 			expectedCount:  1,
-			expectedAction: "gpg-key",
+			expectedAction: "gpg_key",
 			validate: func(t *testing.T, rule Rule) {
 				if rule.GPGKeyURL == "" {
-					t.Error("gpg-key URL is empty")
+					t.Error("gpg_key URL is empty")
 				}
 				if rule.GPGKeyring == "" {
-					t.Error("gpg-key keyring is empty")
+					t.Error("gpg_key keyring is empty")
 				}
 				if rule.GPGDebURL == "" {
-					t.Error("gpg-key deb-url is empty")
+					t.Error("gpg_key deb-url is empty")
 				}
 			},
 		},
@@ -1246,7 +1246,7 @@ func TestParseComprehensiveFromFile(t *testing.T) {
 	// Verify action counts
 	expectedActions := map[string]int{
 		"mkdir":       2,
-		"gpg-key":     1,
+		"gpg_key":     1,
 		"install":     5,
 		"decrypt":     2,
 		"clone":       2,
