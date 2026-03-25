@@ -41,16 +41,6 @@ func TestRegistryAllActionsRegistered(t *testing.T) {
 	}
 }
 
-// TestRegistryGpgKeyAlias verifies that the gpg-key alias is registered and
-// returns the same RuleKey as the canonical gpg_key entry.
-func TestRegistryGpgKeyAlias(t *testing.T) {
-	rule := parser.Rule{Action: "gpg_key", GPGKeyring: "ubuntu-keyring"}
-	got := RuleKey(rule)
-	if got != "ubuntu-keyring" {
-		t.Errorf("RuleKey({Action:gpg_key, GPGKeyring:ubuntu-keyring}) = %q, want %q", got, "ubuntu-keyring")
-	}
-}
-
 // TestRegistryNewHandlerViaRegistry verifies that NewHandler delegates to the
 // registry and returns a non-nil handler for each canonical action.
 func TestRegistryNewHandlerViaRegistry(t *testing.T) {
@@ -63,7 +53,6 @@ func TestRegistryNewHandlerViaRegistry(t *testing.T) {
 		{"decrypt", parser.Rule{Action: "decrypt"}},
 		{"mkdir", parser.Rule{Action: "mkdir"}},
 		{"known_hosts", parser.Rule{Action: "known_hosts"}},
-		{"gpg-key", parser.Rule{Action: "gpg-key"}},
 		{"gpg_key", parser.Rule{Action: "gpg_key"}},
 		{"asdf", parser.Rule{Action: "asdf"}},
 		{"mise", parser.Rule{Action: "mise"}},
@@ -143,8 +132,8 @@ func TestRegistryGetStatusProviderHandlers(t *testing.T) {
 
 	// Count should match the number of canonical (non-alias) action defs that
 	// have a NewHandler and implement StatusProvider. Currently 19 actions are
-	// registered (18 canonical + uninstall stub + gpg_key alias); all canonical
-	// handler types implement StatusProvider except none are excluded.
+	// registered (18 canonical + uninstall stub); all canonical handler types
+	// implement StatusProvider except none are excluded.
 	// We simply verify the count is at least 15 (sanity floor) and that
 	// no handler appears twice by identity.
 	if len(handlers) < 15 {

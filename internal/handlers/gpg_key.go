@@ -36,31 +36,6 @@ func init() {
 			index(rule.GPGKeyring)
 		},
 	})
-	// "gpg-key" (hyphen) is the legacy alias — IsAlias: true excludes it from
-	// GetStatusProviderHandlers to avoid duplicate status checks. Detect is nil
-	// to avoid double-matching on uninstall. Parser always normalizes to "gpg_key".
-	RegisterAction(ActionDef{
-		Name:    "gpg-key",
-		Prefix:  "gpg-key ",
-		IsAlias: true,
-		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
-			sudoPassword := ""
-			if passwordCache != nil {
-				sudoPassword = passwordCache["sudo"]
-			}
-			return NewGPGKeyHandlerWithPassword(rule, basePath, sudoPassword)
-		},
-		RuleKey: func(rule parser.Rule) string {
-			return rule.GPGKeyring
-		},
-		Detect: nil, // detection handled by "gpg_key" canonical entry
-		Summary: func(rule parser.Rule) string {
-			return rule.GPGKeyring
-		},
-		OrphanIndex: func(rule parser.Rule, index func(string)) {
-			index(rule.GPGKeyring)
-		},
-	})
 }
 
 // GPGKeyHandler handles GPG key addition and repository management
