@@ -13,7 +13,7 @@ import (
 // TestGPGKeyHandlerUpOutput tests that the Up() method returns expected output
 func TestGPGKeyHandlerUpOutput(t *testing.T) {
 	rule := parser.Rule{
-		Action:     "gpg-key",
+		Action:     "gpg_key",
 		GPGKeyring: "test-repo",
 		GPGKeyURL:  "https://example.com/gpg.key",
 		GPGDebURL:  "https://example.com/apt",
@@ -61,7 +61,7 @@ func TestGPGKeyHandlerUpdateStatus(t *testing.T) {
 		{
 			name: "successful gpg-key installation",
 			rule: parser.Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: "wezterm-fury",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGDebURL:  "https://apt.fury.io/wez/",
@@ -80,7 +80,7 @@ func TestGPGKeyHandlerUpdateStatus(t *testing.T) {
 		{
 			name: "failed gpg-key installation should not update status",
 			rule: parser.Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: "test-repo",
 				GPGKeyURL:  "https://example.com/gpg.key",
 				GPGDebURL:  "https://example.com/apt",
@@ -136,7 +136,7 @@ func TestGPGKeyHandlerUpdateStatus(t *testing.T) {
 			}
 
 			// Verify status was updated correctly based on record status
-			if tt.rule.Action == "gpg-key" && tt.expectStatusOK {
+			if tt.rule.Action == "gpg_key" && tt.expectStatusOK {
 				// After successful install, GPG key should be in status
 				found := false
 				for _, gpg := range status.GPGKeys {
@@ -171,7 +171,7 @@ func TestGPGKeyHandlerNewGPGKeyHandler(t *testing.T) {
 			name: "handler with all fields",
 			rule: parser.Rule{
 				ID:         "test-setup",
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: "test-repo",
 				GPGKeyURL:  "https://example.com/gpg.key",
 				GPGDebURL:  "https://example.com/apt",
@@ -182,7 +182,7 @@ func TestGPGKeyHandlerNewGPGKeyHandler(t *testing.T) {
 		{
 			name: "handler with minimal fields",
 			rule: parser.Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: "test",
 				GPGKeyURL:  "https://example.com/key",
 				GPGDebURL:  "https://example.com/apt",
@@ -200,8 +200,8 @@ func TestGPGKeyHandlerNewGPGKeyHandler(t *testing.T) {
 				return
 			}
 
-			if handler.Rule.Action != "gpg-key" {
-				t.Errorf("Action: got %q, want 'gpg-key'", handler.Rule.Action)
+			if handler.Rule.Action != "gpg_key" {
+				t.Errorf("Action: got %q, want 'gpg_key'", handler.Rule.Action)
 			}
 
 			if handler.Rule.GPGKeyring != tt.rule.GPGKeyring {
@@ -218,7 +218,7 @@ func TestGPGKeyHandlerNewGPGKeyHandler(t *testing.T) {
 // TestGPGKeyHandlerCommandConstruction tests that the handler constructs correct commands
 func TestGPGKeyHandlerCommandConstruction(t *testing.T) {
 	rule := parser.Rule{
-		Action:     "gpg-key",
+		Action:     "gpg_key",
 		GPGKeyring: "wezterm-fury",
 		GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 		GPGDebURL:  "https://apt.fury.io/wez/",
@@ -319,7 +319,7 @@ func TestGPGKeyHandlerRemoveGPGKeyStatus(t *testing.T) {
 // TestGPGKeyHandlerImplementsInterface tests that GPGKeyHandler implements Handler interface
 func TestGPGKeyHandlerImplementsInterface(t *testing.T) {
 	rule := parser.Rule{
-		Action:     "gpg-key",
+		Action:     "gpg_key",
 		GPGKeyring: "test",
 		GPGKeyURL:  "https://example.com/key",
 		GPGDebURL:  "https://example.com/apt",
@@ -348,7 +348,7 @@ func TestGPGKeyHandlerImplementsInterface(t *testing.T) {
 // TestGPGKeyHandlerPathConstruction tests that paths are constructed correctly
 func TestGPGKeyHandlerPathConstruction(t *testing.T) {
 	rule := parser.Rule{
-		Action:     "gpg-key",
+		Action:     "gpg_key",
 		GPGKeyring: "my-repo",
 		GPGKeyURL:  "https://example.com/gpg.key",
 		GPGDebURL:  "https://example.com/apt",
@@ -400,7 +400,7 @@ func TestGPGKeyHandlerURLValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rule := parser.Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: "test",
 				GPGKeyURL:  tt.gpgKeyURL,
 				GPGDebURL:  tt.debURL,
@@ -453,7 +453,7 @@ func TestGPGKeyHandlerIntegration(t *testing.T) {
 	// Simulate managing multiple GPG keys
 	wezRule := parser.Rule{
 		ID:         "wez-setup",
-		Action:     "gpg-key",
+		Action:     "gpg_key",
 		GPGKeyring: "wezterm-fury",
 		GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 		GPGDebURL:  "https://apt.fury.io/wez/",
@@ -461,7 +461,7 @@ func TestGPGKeyHandlerIntegration(t *testing.T) {
 
 	dockerRule := parser.Rule{
 		ID:         "docker-setup",
-		Action:     "gpg-key",
+		Action:     "gpg_key",
 		GPGKeyring: "docker",
 		GPGKeyURL:  "https://download.docker.com/linux/ubuntu/gpg",
 		GPGDebURL:  "https://download.docker.com/linux/ubuntu",
@@ -537,7 +537,7 @@ func TestGPGKeyCommandExecution(t *testing.T) {
 	// We can't actually run the commands in unit tests without mocking exec.Command
 
 	rule := parser.Rule{
-		Action:     "gpg-key",
+		Action:     "gpg_key",
 		GPGKeyring: "test",
 		GPGKeyURL:  "https://example.com/key",
 		GPGDebURL:  "https://example.com/apt",
@@ -586,7 +586,7 @@ func TestGPGKeyStatusPath(t *testing.T) {
 			// We test this indirectly by ensuring the status records the path correctly
 			status := &Status{}
 			rule := parser.Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: "test",
 				GPGKeyURL:  "https://example.com/key",
 				GPGDebURL:  "https://example.com/apt",
@@ -625,7 +625,7 @@ func TestGPGKeyHandlerDisplayInfo(t *testing.T) {
 		{
 			name: "gpg-key action with all fields",
 			rule: parser.Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: "wezterm-fury",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGDebURL:  "https://apt.fury.io/wez/",
@@ -635,7 +635,7 @@ func TestGPGKeyHandlerDisplayInfo(t *testing.T) {
 		{
 			name: "gpg-key action with docker repository",
 			rule: parser.Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: "docker",
 				GPGKeyURL:  "https://download.docker.com/linux/ubuntu/gpg",
 				GPGDebURL:  "https://download.docker.com/linux/ubuntu",
@@ -686,7 +686,7 @@ func TestGPGKeyHandlerDisplayInfo(t *testing.T) {
 // TestGPGKeyHandlerSudoAwareInterface tests that GPGKeyHandler implements SudoAwareHandler
 func TestGPGKeyHandlerSudoAwareInterface(t *testing.T) {
 	rule := parser.Rule{
-		Action:     "gpg-key",
+		Action:     "gpg_key",
 		GPGKeyring: "test-repo",
 		GPGKeyURL:  "https://example.com/gpg.key",
 		GPGDebURL:  "https://example.com/apt",
@@ -717,7 +717,7 @@ func TestGPGKeyHandlerNeedsSudo(t *testing.T) {
 		{
 			name: "gpg-key action needs sudo",
 			rule: parser.Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: "test",
 				GPGKeyURL:  "https://example.com/key",
 				GPGDebURL:  "https://example.com/apt",

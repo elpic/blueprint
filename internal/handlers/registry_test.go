@@ -15,7 +15,7 @@ func TestRegistryAllActionsRegistered(t *testing.T) {
 		"decrypt",
 		"mkdir",
 		"known_hosts",
-		"gpg-key",
+		"gpg_key",
 		"asdf",
 		"mise",
 		"sudoers",
@@ -41,8 +41,8 @@ func TestRegistryAllActionsRegistered(t *testing.T) {
 	}
 }
 
-// TestRegistryGpgKeyAlias verifies that the gpg_key alias is registered and
-// returns the same RuleKey as the canonical gpg-key entry.
+// TestRegistryGpgKeyAlias verifies that the gpg-key alias is registered and
+// returns the same RuleKey as the canonical gpg_key entry.
 func TestRegistryGpgKeyAlias(t *testing.T) {
 	rule := parser.Rule{Action: "gpg_key", GPGKeyring: "ubuntu-keyring"}
 	got := RuleKey(rule)
@@ -100,7 +100,7 @@ func TestRegistryDetectRuleTypeViaRegistry(t *testing.T) {
 		{"decrypt", parser.Rule{DecryptFile: "secret.enc"}, "decrypt"},
 		{"mkdir", parser.Rule{Mkdir: "~/projects"}, "mkdir"},
 		{"known_hosts", parser.Rule{KnownHosts: "github.com"}, "known_hosts"},
-		{"gpg_key", parser.Rule{GPGKeyring: "ubuntu-keyring"}, "gpg-key"},
+		{"gpg_key", parser.Rule{GPGKeyring: "ubuntu-keyring"}, "gpg_key"},
 		{"asdf", parser.Rule{AsdfPackages: []string{"nodejs 18.0.0"}}, "asdf"},
 		{"mise", parser.Rule{MisePackages: []string{"node@18"}}, "mise"},
 		{"homebrew", parser.Rule{HomebrewPackages: []string{"wget"}}, "homebrew"},

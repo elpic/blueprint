@@ -50,7 +50,7 @@ func TestGPGKeyHandler_GetCommand_Pure(t *testing.T) {
 
 			// Create rule manually
 			rule := parser.Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyURL:  tt.keyURL,
 				GPGKeyring: tt.keyring,
 				GPGDebURL:  tt.debURL,
@@ -114,7 +114,7 @@ func TestGPGKeyHandler_PathGeneration_Pure(t *testing.T) {
 			start := time.Now()
 
 			rule := parser.Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: tt.keyring,
 			}
 
@@ -177,7 +177,7 @@ func TestGPGKeyHandler_GetDependencyKey_Pure(t *testing.T) {
 			// Build rule manually
 			rule := parser.Rule{
 				ID:         tt.ruleID,
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: tt.keyring,
 			}
 
@@ -228,7 +228,7 @@ func TestGPGKeyHandler_GetDisplayDetails_Pure(t *testing.T) {
 			start := time.Now()
 
 			rule := parser.Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: tt.keyring,
 			}
 
@@ -269,7 +269,7 @@ func TestGPGKeyHandler_GetState_Pure(t *testing.T) {
 			start := time.Now()
 
 			rule := parser.Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: tt.keyring,
 			}
 

@@ -20,7 +20,7 @@ func TestExecutionRecordForGPGKeyHistory(t *testing.T) {
 		{
 			name: "successful gpg-key installation history",
 			rule: parser.Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: "wezterm-fury",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGDebURL:  "https://apt.fury.io/wez/",
@@ -33,7 +33,7 @@ func TestExecutionRecordForGPGKeyHistory(t *testing.T) {
 		{
 			name: "failed gpg-key installation history",
 			rule: parser.Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: "test-repo",
 				GPGKeyURL:  "https://example.com/gpg.key",
 				GPGDebURL:  "https://example.com/apt",
@@ -137,23 +137,23 @@ func TestGPGKeyCommandDisplay(t *testing.T) {
 		{
 			name: "basic gpg-key rule display",
 			rule: parser.Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: "wezterm-fury",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGDebURL:  "https://apt.fury.io/wez/",
 			},
-			expected: "gpg-key",
+			expected: "gpg_key",
 		},
 		{
 			name: "gpg-key with ID display",
 			rule: parser.Rule{
 				ID:         "wezterm-setup",
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: "wezterm-fury",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGDebURL:  "https://apt.fury.io/wez/",
 			},
-			expected: "gpg-key",
+			expected: "gpg_key",
 		},
 	}
 
@@ -183,7 +183,7 @@ func TestGPGKeyCommandDisplay(t *testing.T) {
 // TestGPGKeyPlanDisplay tests that plan display shows GPG key information
 func TestGPGKeyPlanDisplay(t *testing.T) {
 	rule := parser.Rule{
-		Action:     "gpg-key",
+		Action:     "gpg_key",
 		GPGKeyring: "wezterm-fury",
 		GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 		GPGDebURL:  "https://apt.fury.io/wez/",
@@ -236,7 +236,7 @@ func TestRuleIDForDisplay(t *testing.T) {
 			name: "gpg-key with ID",
 			rule: parser.Rule{
 				ID:         "wezterm-setup",
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: "wezterm-fury",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGDebURL:  "https://apt.fury.io/wez/",
@@ -246,7 +246,7 @@ func TestRuleIDForDisplay(t *testing.T) {
 		{
 			name: "gpg-key without ID",
 			rule: parser.Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: "wezterm-fury",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGDebURL:  "https://apt.fury.io/wez/",
@@ -273,7 +273,7 @@ func TestRuleIDForDisplay(t *testing.T) {
 // TestRuleAfterDependencies tests that rule dependencies are available for display
 func TestRuleAfterDependencies(t *testing.T) {
 	rule := parser.Rule{
-		Action:     "gpg-key",
+		Action:     "gpg_key",
 		GPGKeyring: "docker",
 		GPGKeyURL:  "https://download.docker.com/linux/ubuntu/gpg",
 		GPGDebURL:  "https://download.docker.com/linux/ubuntu",
@@ -312,7 +312,7 @@ func TestRuleOSListForDisplay(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rule := parser.Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyring: "test",
 				GPGKeyURL:  "https://example.com/key",
 				GPGDebURL:  "https://example.com/apt",

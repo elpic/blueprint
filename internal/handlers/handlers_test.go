@@ -712,7 +712,7 @@ func TestDetectRuleType(t *testing.T) {
 			rule: parser.Rule{
 				GPGKeyring: "ubuntu-keyring",
 			},
-			expected: "gpg-key",
+			expected: "gpg_key",
 		},
 		{
 			name: "detects download from download URL",

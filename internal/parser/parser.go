@@ -17,7 +17,7 @@ type Package struct {
 
 type Rule struct {
 	ID       string // Unique identifier for this rule
-	Action   string // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "mise", "homebrew", "ollama", "known_hosts", "gpg-key", "sudoers", "schedule", "shell", or "authorized_keys"
+	Action   string // "install", "uninstall", "clone", "mkdir", "decrypt", "asdf", "mise", "homebrew", "ollama", "known_hosts", "gpg_key", "sudoers", "schedule", "shell", or "authorized_keys"
 	Packages []Package
 	OSList   []string
 	After    []string // List of IDs or package names this rule depends on
@@ -123,7 +123,7 @@ func (r Rule) DisplaySummary() string {
 		return strings.Join(r.OllamaModels, ", ")
 	case "known_hosts":
 		return r.KnownHosts
-	case "gpg-key":
+	case "gpg_key", "gpg-key":
 		return r.GPGKeyring
 	case "download":
 		return r.DownloadURL + " → " + r.DownloadPath
@@ -252,7 +252,7 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 			rule, err = parseKnownHostsRule(line)
 		case strings.HasPrefix(line, "mkdir "):
 			rule, err = parseMkdirRule(line)
-		case strings.HasPrefix(line, "gpg-key "):
+		case strings.HasPrefix(line, "gpg-key "), strings.HasPrefix(line, "gpg_key "):
 			rule, err = parseGPGKeyRule(line)
 		case strings.HasPrefix(line, "download "):
 			rule, err = parseDownloadRule(line)
@@ -532,23 +532,28 @@ func parseMkdirRule(line string) (*Rule, error) {
 }
 
 func parseGPGKeyRule(line string) (*Rule, error) {
-	f := parseFields(strings.TrimPrefix(line, "gpg-key "))
+	// Accept both "gpg_key " (canonical) and "gpg-key " (legacy alias).
+	stripped := strings.TrimPrefix(line, "gpg_key ")
+	if stripped == line {
+		stripped = strings.TrimPrefix(line, "gpg-key ")
+	}
+	f := parseFields(stripped)
 	tokens := f.tokens
 	if len(tokens) == 0 {
-		return nil, lineError(line, "gpg-key requires a URL")
+		return nil, lineError(line, "gpg_key requires a URL")
 	}
 	gpgKeyURL := tokens[0]
 	keyring := f.word("keyring:")
 	if keyring == "" {
-		return nil, lineError(line, "gpg-key requires keyring:")
+		return nil, lineError(line, "gpg_key requires keyring:")
 	}
 	debURL := f.word("deb-url:")
 	if debURL == "" {
-		return nil, lineError(line, "gpg-key requires deb-url:")
+		return nil, lineError(line, "gpg_key requires deb-url:")
 	}
 	return &Rule{
 		ID:         f.word("id:"),
-		Action:     "gpg-key",
+		Action:     "gpg_key",
 		GPGKeyURL:  gpgKeyURL,
 		GPGKeyring: keyring,
 		GPGDebURL:  debURL,
