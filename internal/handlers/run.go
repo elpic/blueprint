@@ -29,6 +29,10 @@ func init() {
 		Summary: func(rule parser.Rule) string {
 			return rule.RunCommand
 		},
+		// run commands don't have a stable orphan key (the command string itself
+		// is the resource, tracked via RunStatus). Orphan detection is handled
+		// by FindUninstallRules on the handler instead.
+		ExcludeFromOrphanDetection: true,
 	})
 	RegisterAction(ActionDef{
 		Name:   "run-sh",
@@ -45,6 +49,7 @@ func init() {
 		Summary: func(rule parser.Rule) string {
 			return rule.RunShURL
 		},
+		ExcludeFromOrphanDetection: true,
 	})
 }
 

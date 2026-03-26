@@ -33,6 +33,10 @@ type ActionDef struct {
 	Summary                    SummaryFunc
 	OrphanIndex                OrphanIndexFunc
 	ExcludeFromOrphanDetection bool
+	// AlwaysRunUp skips the IsInstalled() idempotency check and always calls
+	// Up(). Use for actions whose installed state cannot be determined locally
+	// (e.g. dotfiles, which need a network fetch to detect remote changes).
+	AlwaysRunUp bool
 	// IsAlias marks this entry as an alias for another action. Aliases are
 	// excluded from GetStatusProviderHandlers to avoid duplicate status checks.
 	IsAlias bool
@@ -51,6 +55,14 @@ func RegisterAction(def ActionDef) {
 	defer registryMu.Unlock()
 	if _, exists := registryByName[def.Name]; exists {
 		panic("registry: duplicate action: " + def.Name)
+	}
+	if !def.IsAlias && def.Name != "uninstall" {
+		if def.NewHandler == nil {
+			panic("registry: " + def.Name + " must have NewHandler")
+		}
+		if def.Summary == nil {
+			panic("registry: " + def.Name + " must have Summary")
+		}
 	}
 	d := def
 	registryByName[def.Name] = &d

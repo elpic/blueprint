@@ -31,6 +31,7 @@ func init() {
 		OrphanIndex: func(rule parser.Rule, index func(string)) {
 			index(rule.DotfilesURL)
 		},
+		AlwaysRunUp: true,
 	})
 }
 
