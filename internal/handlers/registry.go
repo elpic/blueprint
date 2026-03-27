@@ -85,6 +85,21 @@ func AllActions() []*ActionDef {
 	return out
 }
 
+// RuleSummary returns a short human-readable description of the rule for diff/plan output.
+// It delegates to the registered Summary func for the rule's action. For "uninstall" rules
+// (which share the Packages field with "install") it delegates to the "install" Summary.
+// Falls back to rule.Action if no Summary is registered.
+func RuleSummary(rule parser.Rule) string {
+	action := rule.Action
+	if action == "uninstall" {
+		action = "install"
+	}
+	if def := GetAction(action); def != nil && def.Summary != nil {
+		return def.Summary(rule)
+	}
+	return rule.Action
+}
+
 // FindActionByPrefix returns the ActionDef whose Prefix matches line (longest match wins).
 // Used by the parser dispatch (Site 1 of the action registry migration).
 func FindActionByPrefix(line string) *ActionDef {

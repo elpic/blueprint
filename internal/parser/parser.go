@@ -98,58 +98,6 @@ type Rule struct {
 	AuthorizedKeysPasswordID string // Password ID for decryption
 }
 
-// DisplaySummary returns a short human-readable description of the rule for diff/plan output.
-func (r Rule) DisplaySummary() string {
-	switch r.Action {
-	case "install", "uninstall":
-		names := make([]string, len(r.Packages))
-		for i, p := range r.Packages {
-			names[i] = p.Name
-		}
-		return strings.Join(names, ", ")
-	case "clone":
-		return r.CloneURL + " → " + r.ClonePath
-	case "decrypt":
-		return r.DecryptFile + " → " + r.DecryptPath
-	case "mkdir":
-		return r.Mkdir
-	case "asdf":
-		return strings.Join(r.AsdfPackages, ", ")
-	case "mise":
-		return strings.Join(r.MisePackages, ", ")
-	case "homebrew":
-		return strings.Join(append(r.HomebrewPackages, r.HomebrewCasks...), ", ")
-	case "ollama":
-		return strings.Join(r.OllamaModels, ", ")
-	case "known_hosts":
-		return r.KnownHosts
-	case "gpg_key":
-		return r.GPGKeyring
-	case "download":
-		return r.DownloadURL + " → " + r.DownloadPath
-	case "run":
-		return r.RunCommand
-	case "run-sh":
-		return r.RunShURL
-	case "dotfiles":
-		return r.DotfilesURL
-	case "sudoers":
-		return r.SudoersUser
-	case "schedule":
-		return r.ScheduleSource
-	case "shell":
-		return r.ShellName
-	case "authorized_keys":
-		if r.AuthorizedKeysEncrypted != "" {
-			return r.AuthorizedKeysEncrypted
-		}
-		return r.AuthorizedKeysFile
-	default:
-		return r.Action
-	}
-}
-
-// parseEntry maps a line prefix to the function that parses it.
 type parseEntry struct {
 	prefix string
 	fn     func(string) (*Rule, error)
