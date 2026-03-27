@@ -156,6 +156,16 @@ type AuthorizedKeysStatus struct {
 	OS        string `json:"os"`
 }
 
+// ShellStatus tracks a shell change
+type ShellStatus struct {
+	Shell         string `json:"shell"`          // Current shell (what we set)
+	PreviousShell string `json:"previous_shell"` // Shell before our change
+	User          string `json:"user"`
+	ChangedAt     string `json:"changed_at"`
+	Blueprint     string `json:"blueprint"`
+	OS            string `json:"os"`
+}
+
 // DotfilesStatus tracks a managed dotfiles repository
 type DotfilesStatus struct {
 	URL       string   `json:"url"`
@@ -279,8 +289,6 @@ func (v *AuthorizedKeysStatus) GetResourceKey() string { return v.Source }
 func (v *AuthorizedKeysStatus) GetOS() string          { return v.OS }
 func (v *AuthorizedKeysStatus) GetAction() string      { return "authorized_keys" }
 
-// ShellStatus StatusEntry methods are defined here alongside the other 16 types.
-// GetResourceKey returns the user field since shell entries are keyed by user.
 func (v *ShellStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *ShellStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *ShellStatus) GetResourceKey() string { return v.User }
@@ -729,6 +737,9 @@ func removeDownloadStatus(sl []DownloadStatus, key, bp, os string) []DownloadSta
 }
 func removeAuthorizedKeysStatus(sl []AuthorizedKeysStatus, key, bp, os string) []AuthorizedKeysStatus {
 	return removeStatusEntry[AuthorizedKeysStatus, *AuthorizedKeysStatus](sl, key, bp, os)
+}
+func removeShellStatus(sl []ShellStatus, key, bp, os string) []ShellStatus {
+	return removeStatusEntry[ShellStatus, *ShellStatus](sl, key, bp, os)
 }
 
 // abbreviateBlueprintPath shortens blueprint paths for display
