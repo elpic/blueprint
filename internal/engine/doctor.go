@@ -215,6 +215,10 @@ func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []par
 			case "authorized_keys":
 				rs[r.AuthorizedKeysFile] = true
 				rs[r.AuthorizedKeysEncrypted] = true
+			case "run":
+				rs[r.RunCommand] = true
+			case "run-sh":
+				rs[r.RunShURL] = true
 			}
 			// Index every package / homebrew formula / ollama model individually.
 			for _, pkg := range r.Packages {
