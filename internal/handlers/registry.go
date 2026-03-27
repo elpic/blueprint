@@ -87,12 +87,12 @@ func AllActions() []*ActionDef {
 
 // RuleSummary returns a short human-readable description of the rule for diff/plan output.
 // It delegates to the registered Summary func for the rule's action. For "uninstall" rules
-// (which share the Packages field with "install") it delegates to the "install" Summary.
+// it resolves the underlying action type via DetectRuleType so the correct Summary is used.
 // Falls back to rule.Action if no Summary is registered.
 func RuleSummary(rule parser.Rule) string {
 	action := rule.Action
 	if action == "uninstall" {
-		action = "install"
+		action = DetectRuleType(rule)
 	}
 	if def := GetAction(action); def != nil && def.Summary != nil {
 		return def.Summary(rule)
