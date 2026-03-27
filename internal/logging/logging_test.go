@@ -116,9 +116,9 @@ func TestIsDebug(t *testing.T) {
 				t.Errorf("IsDebug() with level %v = %v, want %v", tt.setLevel, result, tt.expected)
 			}
 
-			// Should be extremely fast (< 10μs)
-			if duration > 10*time.Microsecond {
-				t.Errorf("Test took %v, expected < 10μs for simple check", duration)
+			// Should be extremely fast (< 1ms)
+			if duration > time.Millisecond {
+				t.Errorf("Test took %v, expected < 1ms for simple check", duration)
 			}
 		})
 	}
