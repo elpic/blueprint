@@ -203,7 +203,7 @@ func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []par
 				rs[r.Mkdir] = true
 			case "known_hosts":
 				rs[r.KnownHosts] = true
-			case "gpg_key", "gpg-key":
+			case "gpg_key":
 				rs[r.GPGKeyring] = true
 			case "dotfiles":
 				rs[r.DotfilesURL] = true

@@ -232,16 +232,16 @@ func (h *RunHandler) FindUninstallRules(status *Status, currentRules []parser.Ru
 			}
 			normalizedStatusBlueprint := normalizeBlueprint(r.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && r.OS == osName && !currentRunCmds[r.Command] {
-				// Only emit uninstall if there's an undo command
-				if r.UndoCmd != "" {
-					rules = append(rules, parser.Rule{
-						Action:     "uninstall",
-						RunCommand: r.Command,
-						RunUndo:    r.UndoCmd,
-						RunSudo:    r.Sudo,
-						OSList:     []string{osName},
-					})
-				}
+				// Always emit an uninstall rule so the status entry is cleaned up.
+				// If there's no undo command, Down() is a no-op but UpdateStatus
+				// still removes the status entry.
+				rules = append(rules, parser.Rule{
+					Action:     "uninstall",
+					RunCommand: r.Command,
+					RunUndo:    r.UndoCmd,
+					RunSudo:    r.Sudo,
+					OSList:     []string{osName},
+				})
 			}
 		}
 	}
@@ -490,16 +490,16 @@ func (h *RunShHandler) FindUninstallRules(status *Status, currentRules []parser.
 			}
 			normalizedStatusBlueprint := normalizeBlueprint(r.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && r.OS == osName && !currentRunShURLs[r.Command] {
-				// Only emit uninstall if there's an undo command
-				if r.UndoCmd != "" {
-					rules = append(rules, parser.Rule{
-						Action:   "uninstall",
-						RunShURL: r.Command,
-						RunUndo:  r.UndoCmd,
-						RunSudo:  r.Sudo,
-						OSList:   []string{osName},
-					})
-				}
+				// Always emit an uninstall rule so the status entry is cleaned up.
+				// If there's no undo command, Down() is a no-op but UpdateStatus
+				// still removes the status entry.
+				rules = append(rules, parser.Rule{
+					Action:   "uninstall",
+					RunShURL: r.Command,
+					RunUndo:  r.UndoCmd,
+					RunSudo:  r.Sudo,
+					OSList:   []string{osName},
+				})
 			}
 		}
 	}
