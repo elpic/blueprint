@@ -343,7 +343,9 @@ func (h *AuthorizedKeysHandler) IsInstalled(status *Status, blueprintFile, osNam
 
 	content, err := h.readKeyContent()
 	if err != nil {
-		return false
+		// Can't read/decrypt the key source (e.g. no password cache in diff mode).
+		// Status already confirmed it was applied, so treat as installed.
+		return true
 	}
 
 	authKeysPath, err := authorizedKeysFile(false)
