@@ -28,7 +28,9 @@ func init() {
 		Summary: func(rule parser.Rule) string {
 			return rule.SudoersUser
 		},
-		ExcludeFromOrphanDetection: true,
+		OrphanIndex: func(rule parser.Rule, index func(string)) {
+			index(rule.SudoersUser)
+		},
 	})
 }
 
