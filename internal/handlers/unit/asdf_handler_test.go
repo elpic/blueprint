@@ -443,26 +443,26 @@ func TestAsdfHandler_FindUninstallRules_Pure(t *testing.T) {
 			currentRules:  []parser.Rule{},
 			blueprintFile: "/test/blueprint.yml",
 			osName:        "linux",
-			expected:      []string{"node@18.0.0", "python@3.11.0"},
+			expected:      []string{"node 18.0.0", "python 3.11.0"},
 		},
 		{
 			name: "some packages still in current rules",
 			currentRules: []parser.Rule{
 				{
 					Action:       "asdf",
-					AsdfPackages: []string{"node@18.0.0"},
+					AsdfPackages: []string{"node 18"}, // rule uses "plugin version" format
 				},
 			},
 			blueprintFile: "/test/blueprint.yml",
 			osName:        "linux",
-			expected:      []string{"python@3.11.0"}, // node is kept, python should be uninstalled
+			expected:      []string{"python 3.11.0"}, // node is kept (by tool name), python should be uninstalled
 		},
 		{
 			name: "all packages still in current rules",
 			currentRules: []parser.Rule{
 				{
 					Action:       "asdf",
-					AsdfPackages: []string{"node@18.0.0", "python@3.11.0"},
+					AsdfPackages: []string{"node 18", "python 3.11"},
 				},
 			},
 			blueprintFile: "/test/blueprint.yml",
@@ -473,31 +473,31 @@ func TestAsdfHandler_FindUninstallRules_Pure(t *testing.T) {
 			name:          "different OS - no packages to uninstall",
 			currentRules:  []parser.Rule{},
 			blueprintFile: "/test/blueprint.yml",
-			osName:        "darwin", // Only golang@1.21.3 for darwin, but we're testing for packages to uninstall
-			expected:      []string{"golang@1.21.3"},
+			osName:        "darwin",
+			expected:      []string{"golang 1.21.3"},
 		},
 		{
 			name:          "different blueprint - no packages to uninstall",
 			currentRules:  []parser.Rule{},
 			blueprintFile: "/other/blueprint.yml",
 			osName:        "linux",
-			expected:      []string{"ruby@3.2.1"}, // Only ruby belongs to this blueprint
+			expected:      []string{"ruby 3.2.1"}, // Only ruby belongs to this blueprint
 		},
 		{
 			name: "mixed scenarios",
 			currentRules: []parser.Rule{
 				{
 					Action:       "asdf",
-					AsdfPackages: []string{"node@18.0.0"},
+					AsdfPackages: []string{"node 18"},
 				},
 				{
 					Action:       "asdf",
-					AsdfPackages: []string{"terraform@1.5.0"}, // New package not in status
+					AsdfPackages: []string{"terraform 1.5"}, // New package not in status
 				},
 			},
 			blueprintFile: "/test/blueprint.yml",
 			osName:        "linux",
-			expected:      []string{"python@3.11.0"}, // python should be uninstalled, node is kept
+			expected:      []string{"python 3.11.0"}, // python should be uninstalled, node is kept
 		},
 	}
 

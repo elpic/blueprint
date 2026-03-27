@@ -59,7 +59,16 @@ func init() {
 		Summary: func(rule parser.Rule) string {
 			return strings.Join(rule.AsdfPackages, ", ")
 		},
-		ExcludeFromOrphanDetection: true,
+		OrphanIndex: func(rule parser.Rule, index func(string)) {
+			for _, pkg := range rule.AsdfPackages {
+				// asdf packages are "plugin version" (space-separated) or "plugin@version"
+				plugin := strings.Fields(pkg)[0]
+				if idx := strings.Index(plugin, "@"); idx >= 0 {
+					plugin = plugin[:idx]
+				}
+				index(strings.TrimSpace(plugin))
+			}
+		},
 	})
 }
 
@@ -617,26 +626,32 @@ func (h *AsdfHandler) GetState(isUninstall bool) map[string]string {
 func (h *AsdfHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
-	// Build set of current asdf packages from rules (plugin@version format)
-	currentPackages := make(map[string]bool)
+	// Build set of current asdf plugin names from rules. We compare by plugin
+	// name only (not version) because the installed version may differ from the
+	// requested version (e.g. "nodejs 18" installs "18.0.0"). A plugin is only
+	// an orphan when its name is entirely absent from the current rules.
+	currentPlugins := make(map[string]bool)
 	for _, rule := range currentRules {
 		if rule.Action == "asdf" {
 			for _, pkg := range rule.AsdfPackages {
-				currentPackages[pkg] = true
+				// asdf packages are "plugin version" (space-separated) or "plugin@version"
+				plugin := strings.Fields(pkg)[0]
+				if idx := strings.Index(plugin, "@"); idx >= 0 {
+					plugin = plugin[:idx]
+				}
+				currentPlugins[strings.TrimSpace(plugin)] = true
 			}
 		}
 	}
 
-	// Find packages to uninstall (in status but not in current rules)
+	// Find plugins to uninstall (plugin name absent from current rules)
 	var asdfPackagesToRemove []string
 	if status.Asdfs != nil {
 		for _, asdf := range status.Asdfs {
 			normalizedStatusBlueprint := normalizeBlueprint(asdf.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && asdf.OS == osName {
-				pkgKey := fmt.Sprintf("%s@%s", asdf.Plugin, asdf.Version)
-				if !currentPackages[pkgKey] {
-					// This package is in status but not in current rules, so it should be uninstalled
-					asdfPackagesToRemove = append(asdfPackagesToRemove, pkgKey)
+				if !currentPlugins[asdf.Plugin] {
+					asdfPackagesToRemove = append(asdfPackagesToRemove, fmt.Sprintf("%s %s", asdf.Plugin, asdf.Version))
 				}
 			}
 		}

@@ -50,7 +50,15 @@ func init() {
 		Summary: func(rule parser.Rule) string {
 			return strings.Join(rule.MisePackages, ", ")
 		},
-		ExcludeFromOrphanDetection: true,
+		OrphanIndex: func(rule parser.Rule, index func(string)) {
+			for _, pkg := range rule.MisePackages {
+				tool := pkg
+				if idx := strings.Index(pkg, "@"); idx >= 0 {
+					tool = pkg[:idx]
+				}
+				index(strings.TrimSpace(tool))
+			}
+		},
 	})
 }
 
@@ -496,25 +504,31 @@ func (h *MiseHandler) GetState(isUninstall bool) map[string]string {
 func (h *MiseHandler) FindUninstallRules(status *Status, currentRules []parser.Rule, blueprintFile, osName string) []parser.Rule {
 	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
-	// Build set of current mise packages from rules (tool@version format)
-	currentPackages := make(map[string]bool)
+	// Build set of current mise tool names from rules. We compare by tool name
+	// only (not version) because the installed version may differ from the
+	// requested version (e.g. "node@18" installs "18.0.0"). A tool is only an
+	// orphan when its name is entirely absent from the current rules.
+	currentTools := make(map[string]bool)
 	for _, rule := range currentRules {
 		if rule.Action == "mise" {
 			for _, pkg := range rule.MisePackages {
-				currentPackages[pkg] = true
+				tool := pkg
+				if idx := strings.Index(pkg, "@"); idx >= 0 {
+					tool = pkg[:idx]
+				}
+				currentTools[strings.TrimSpace(tool)] = true
 			}
 		}
 	}
 
-	// Find packages to uninstall (in status but not in current rules)
+	// Find tools to uninstall (tool name absent from current rules)
 	var misePackagesToRemove []string
 	if status.Mises != nil {
 		for _, mise := range status.Mises {
 			normalizedStatusBlueprint := normalizeBlueprint(mise.Blueprint)
 			if normalizedStatusBlueprint == normalizedBlueprint && mise.OS == osName {
-				pkgKey := fmt.Sprintf("%s@%s", mise.Tool, mise.Version)
-				if !currentPackages[pkgKey] {
-					misePackagesToRemove = append(misePackagesToRemove, pkgKey)
+				if !currentTools[mise.Tool] {
+					misePackagesToRemove = append(misePackagesToRemove, fmt.Sprintf("%s@%s", mise.Tool, mise.Version))
 				}
 			}
 		}
