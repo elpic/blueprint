@@ -212,15 +212,14 @@ func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []par
 	}
 	var orphans []orphanEntry
 
-	// Asdf and Mise use compound keys (plugin+version, tool+version) that cannot
-	// be matched against individual blueprint rule resource keys, so they are
-	// intentionally excluded from orphan detection.
+	// Some actions are excluded from key-based orphan detection:
+	// - asdf/mise: status entries use compound "tool\x00version" keys that do
+	//   not match the rule-set keys (which index tool name only); their orphan
+	//   cleanup is handled by FindUninstallRules on apply.
+	// - sudoers: similarly handled via FindUninstallRules, not key matching.
+	excludedActions := map[string]bool{"asdf": true, "mise": true, "sudoers": true}
 	isExcluded := func(e handlerskg.StatusEntry) bool {
-		switch e.(type) {
-		case *handlerskg.AsdfStatus, *handlerskg.MiseStatus, *handlerskg.SudoersStatus:
-			return true
-		}
-		return false
+		return excludedActions[e.GetAction()]
 	}
 
 	for _, e := range status.AllEntries() {

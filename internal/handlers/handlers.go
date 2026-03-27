@@ -176,6 +176,7 @@ type StatusEntry interface {
 	SetBlueprint(string)
 	GetResourceKey() string // the identity used for dedup/orphan checks (name, path, command, etc.)
 	GetOS() string
+	GetAction() string // the action name this entry belongs to (e.g. "install", "run", "asdf")
 }
 
 // StatusEntry implementations for all status structs.
@@ -186,81 +187,97 @@ func (v *PackageStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *PackageStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *PackageStatus) GetResourceKey() string { return v.Name }
 func (v *PackageStatus) GetOS() string          { return v.OS }
+func (v *PackageStatus) GetAction() string      { return "install" }
 
 func (v *CloneStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *CloneStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *CloneStatus) GetResourceKey() string { return v.Path }
 func (v *CloneStatus) GetOS() string          { return v.OS }
+func (v *CloneStatus) GetAction() string      { return "clone" }
 
 func (v *DecryptStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *DecryptStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *DecryptStatus) GetResourceKey() string { return v.DestPath }
 func (v *DecryptStatus) GetOS() string          { return v.OS }
+func (v *DecryptStatus) GetAction() string      { return "decrypt" }
 
 func (v *MkdirStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *MkdirStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *MkdirStatus) GetResourceKey() string { return v.Path }
 func (v *MkdirStatus) GetOS() string          { return v.OS }
+func (v *MkdirStatus) GetAction() string      { return "mkdir" }
 
 func (v *KnownHostsStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *KnownHostsStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *KnownHostsStatus) GetResourceKey() string { return v.Host }
 func (v *KnownHostsStatus) GetOS() string          { return v.OS }
+func (v *KnownHostsStatus) GetAction() string      { return "known_hosts" }
 
 func (v *GPGKeyStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *GPGKeyStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *GPGKeyStatus) GetResourceKey() string { return v.Keyring }
 func (v *GPGKeyStatus) GetOS() string          { return v.OS }
+func (v *GPGKeyStatus) GetAction() string      { return "gpg_key" }
 
 func (v *AsdfStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *AsdfStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *AsdfStatus) GetResourceKey() string { return v.Plugin + "\x00" + v.Version }
 func (v *AsdfStatus) GetOS() string          { return v.OS }
+func (v *AsdfStatus) GetAction() string      { return "asdf" }
 
 func (v *MiseStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *MiseStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *MiseStatus) GetResourceKey() string { return v.Tool + "\x00" + v.Version }
 func (v *MiseStatus) GetOS() string          { return v.OS }
+func (v *MiseStatus) GetAction() string      { return "mise" }
 
 func (v *SudoersStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *SudoersStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *SudoersStatus) GetResourceKey() string { return v.User }
 func (v *SudoersStatus) GetOS() string          { return v.OS }
+func (v *SudoersStatus) GetAction() string      { return "sudoers" }
 
 func (v *HomebrewStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *HomebrewStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *HomebrewStatus) GetResourceKey() string { return v.Formula }
 func (v *HomebrewStatus) GetOS() string          { return v.OS }
+func (v *HomebrewStatus) GetAction() string      { return "homebrew" }
 
 func (v *OllamaStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *OllamaStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *OllamaStatus) GetResourceKey() string { return v.Model }
 func (v *OllamaStatus) GetOS() string          { return v.OS }
+func (v *OllamaStatus) GetAction() string      { return "ollama" }
 
 func (v *DownloadStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *DownloadStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *DownloadStatus) GetResourceKey() string { return v.Path }
 func (v *DownloadStatus) GetOS() string          { return v.OS }
+func (v *DownloadStatus) GetAction() string      { return "download" }
 
 func (v *RunStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *RunStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *RunStatus) GetResourceKey() string { return v.Command }
 func (v *RunStatus) GetOS() string          { return v.OS }
+func (v *RunStatus) GetAction() string      { return v.Action }
 
 func (v *DotfilesStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *DotfilesStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *DotfilesStatus) GetResourceKey() string { return v.URL }
 func (v *DotfilesStatus) GetOS() string          { return v.OS }
+func (v *DotfilesStatus) GetAction() string      { return "dotfiles" }
 
 func (v *ScheduleStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *ScheduleStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *ScheduleStatus) GetResourceKey() string { return v.Source }
 func (v *ScheduleStatus) GetOS() string          { return v.OS }
+func (v *ScheduleStatus) GetAction() string      { return "schedule" }
 
 func (v *AuthorizedKeysStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *AuthorizedKeysStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *AuthorizedKeysStatus) GetResourceKey() string { return v.Source }
 func (v *AuthorizedKeysStatus) GetOS() string          { return v.OS }
+func (v *AuthorizedKeysStatus) GetAction() string      { return "authorized_keys" }
 
 // ShellStatus StatusEntry methods are defined here alongside the other 16 types.
 // GetResourceKey returns the user field since shell entries are keyed by user.
@@ -268,6 +285,7 @@ func (v *ShellStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *ShellStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *ShellStatus) GetResourceKey() string { return v.User }
 func (v *ShellStatus) GetOS() string          { return v.OS }
+func (v *ShellStatus) GetAction() string      { return "shell" }
 
 // Status represents the current blueprint state
 type Status struct {
