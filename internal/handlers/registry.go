@@ -25,14 +25,13 @@ type OrphanIndexFunc func(rule parser.Rule, index func(key string))
 
 // ActionDef captures everything the system needs to know about one action type.
 type ActionDef struct {
-	Name                       string
-	Prefix                     string // e.g. "install ", "clone ", "sudoers"
-	NewHandler                 HandlerFactory
-	RuleKey                    RuleKeyFunc
-	Detect                     DetectFunc
-	Summary                    SummaryFunc
-	OrphanIndex                OrphanIndexFunc
-	ExcludeFromOrphanDetection bool
+	Name        string
+	Prefix      string // e.g. "install ", "clone ", "sudoers"
+	NewHandler  HandlerFactory
+	RuleKey     RuleKeyFunc
+	Detect      DetectFunc
+	Summary     SummaryFunc
+	OrphanIndex OrphanIndexFunc
 	// AlwaysRunUp skips the IsInstalled() idempotency check and always calls
 	// Up(). Use for actions whose installed state cannot be determined locally
 	// (e.g. dotfiles, which need a network fetch to detect remote changes).
