@@ -149,6 +149,35 @@ func (r Rule) DisplaySummary() string {
 	}
 }
 
+// parseEntry maps a line prefix to the function that parses it.
+type parseEntry struct {
+	prefix string
+	fn     func(string) (*Rule, error)
+}
+
+// parsers is the ordered list of parse entries. Order matters: more specific
+// prefixes (e.g. "run-sh ") must appear before broader ones (e.g. "run ").
+var parsers = []parseEntry{
+	{"install ", ParseInstallRule},
+	{"clone ", ParseCloneRule},
+	{"mise", ParseMiseRule},
+	{"asdf", ParseAsdfRule},
+	{"homebrew", ParseHomebrewRule},
+	{"ollama", ParseOllamaRule},
+	{"decrypt ", ParseDecryptRule},
+	{"known_hosts ", ParseKnownHostsRule},
+	{"mkdir ", ParseMkdirRule},
+	{"gpg_key ", ParseGPGKeyRule},
+	{"download ", ParseDownloadRule},
+	{"run-sh ", ParseRunShRule},
+	{"run ", ParseRunRule},
+	{"dotfiles ", ParseDotfilesRule},
+	{"sudoers", ParseSudoersRule},
+	{"schedule", ParseScheduleRule},
+	{"shell ", ParseShellRule},
+	{"authorized_keys ", ParseAuthorizedKeysRule},
+}
+
 // Parse parses content without include support
 func Parse(content string) ([]Rule, error) {
 	return parseContent(content, "", make(map[string]bool))
@@ -233,44 +262,15 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 			rule *Rule
 			err  error
 		)
-		switch {
-		case strings.HasPrefix(line, "install "):
-			rule, err = parseInstallRule(line)
-		case strings.HasPrefix(line, "clone "):
-			rule, err = parseCloneRule(line)
-		case strings.HasPrefix(line, "mise"):
-			rule, err = parseMiseRule(line)
-		case strings.HasPrefix(line, "asdf"):
-			rule, err = parseAsdfRule(line)
-		case strings.HasPrefix(line, "homebrew"):
-			rule, err = parseHomebrewRule(line)
-		case strings.HasPrefix(line, "ollama"):
-			rule, err = parseOllamaRule(line)
-		case strings.HasPrefix(line, "decrypt "):
-			rule, err = parseDecryptRule(line)
-		case strings.HasPrefix(line, "known_hosts "):
-			rule, err = parseKnownHostsRule(line)
-		case strings.HasPrefix(line, "mkdir "):
-			rule, err = parseMkdirRule(line)
-		case strings.HasPrefix(line, "gpg_key "):
-			rule, err = parseGPGKeyRule(line)
-		case strings.HasPrefix(line, "download "):
-			rule, err = parseDownloadRule(line)
-		case strings.HasPrefix(line, "run-sh "):
-			rule, err = parseRunShRule(line)
-		case strings.HasPrefix(line, "run "):
-			rule, err = parseRunRule(line)
-		case strings.HasPrefix(line, "dotfiles "):
-			rule, err = parseDotfilesRule(line)
-		case strings.HasPrefix(line, "sudoers"):
-			rule, err = parseSudoersRule(line)
-		case strings.HasPrefix(line, "schedule"):
-			rule, err = parseScheduleRule(line)
-		case strings.HasPrefix(line, "shell "):
-			rule, err = parseShellRule(line)
-		case strings.HasPrefix(line, "authorized_keys "):
-			rule, err = parseAuthorizedKeysRule(line)
-		default:
+		matched := false
+		for _, p := range parsers {
+			if strings.HasPrefix(line, p.prefix) {
+				rule, err = p.fn(line)
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			return nil, fmt.Errorf("line %d: unknown directive %q", lineNum+1, line)
 		}
 
@@ -359,7 +359,7 @@ func loadGitInclude(rawURL string, loadedFiles map[string]bool) ([]Rule, error) 
 	return parseContent(string(content), baseDir, loadedFiles)
 }
 
-func parseInstallRule(line string) (*Rule, error) {
+func ParseInstallRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(line, "install "))
 	packageManager := f.word("package-manager:")
 	packageNames := f.tokens
@@ -376,7 +376,7 @@ func parseInstallRule(line string) (*Rule, error) {
 	}, nil
 }
 
-func parseCloneRule(line string) (*Rule, error) {
+func ParseCloneRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(line, "clone "))
 	tokens := f.tokens
 	if len(tokens) == 0 {
@@ -402,7 +402,7 @@ func parseCloneRule(line string) (*Rule, error) {
 	}, nil
 }
 
-func parseAsdfRule(line string) (*Rule, error) {
+func ParseAsdfRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(strings.TrimPrefix(line, "asdf"), " "))
 	asdfPackages := f.tokens
 	id := f.word("id:")
@@ -422,7 +422,7 @@ func parseAsdfRule(line string) (*Rule, error) {
 	}, nil
 }
 
-func parseHomebrewRule(line string) (*Rule, error) {
+func ParseHomebrewRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(strings.TrimPrefix(line, "homebrew"), " "))
 	var homebrewPackages []string
 	var homebrewCasks []string
@@ -451,7 +451,7 @@ func parseHomebrewRule(line string) (*Rule, error) {
 	}, nil
 }
 
-func parseOllamaRule(line string) (*Rule, error) {
+func ParseOllamaRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(strings.TrimPrefix(line, "ollama"), " "))
 	ollamaModels := f.tokens
 	id := f.word("id:")
@@ -471,7 +471,7 @@ func parseOllamaRule(line string) (*Rule, error) {
 	}, nil
 }
 
-func parseDecryptRule(line string) (*Rule, error) {
+func ParseDecryptRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(line, "decrypt "))
 	tokens := f.tokens
 	if len(tokens) == 0 {
@@ -494,7 +494,7 @@ func parseDecryptRule(line string) (*Rule, error) {
 	}, nil
 }
 
-func parseKnownHostsRule(line string) (*Rule, error) {
+func ParseKnownHostsRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(line, "known_hosts "))
 	tokens := f.tokens
 	if len(tokens) == 0 {
@@ -510,7 +510,7 @@ func parseKnownHostsRule(line string) (*Rule, error) {
 	}, nil
 }
 
-func parseMkdirRule(line string) (*Rule, error) {
+func ParseMkdirRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(line, "mkdir "))
 	tokens := f.tokens
 	if len(tokens) == 0 {
@@ -531,7 +531,7 @@ func parseMkdirRule(line string) (*Rule, error) {
 	}, nil
 }
 
-func parseGPGKeyRule(line string) (*Rule, error) {
+func ParseGPGKeyRule(line string) (*Rule, error) {
 	stripped := strings.TrimPrefix(line, "gpg_key ")
 	f := parseFields(stripped)
 	tokens := f.tokens
@@ -558,7 +558,7 @@ func parseGPGKeyRule(line string) (*Rule, error) {
 	}, nil
 }
 
-func parseDownloadRule(line string) (*Rule, error) {
+func ParseDownloadRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(line, "download "))
 	tokens := f.tokens
 	if len(tokens) == 0 {
@@ -581,7 +581,7 @@ func parseDownloadRule(line string) (*Rule, error) {
 	}, nil
 }
 
-func parseRunRule(line string) (*Rule, error) {
+func ParseRunRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(line, "run "))
 	runCommand := f.rest()
 	if runCommand == "" {
@@ -599,7 +599,7 @@ func parseRunRule(line string) (*Rule, error) {
 	}, nil
 }
 
-func parseRunShRule(line string) (*Rule, error) {
+func ParseRunShRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(line, "run-sh "))
 	tokens := f.tokens
 	if len(tokens) == 0 {
@@ -617,7 +617,7 @@ func parseRunShRule(line string) (*Rule, error) {
 	}, nil
 }
 
-func parseDotfilesRule(line string) (*Rule, error) {
+func ParseDotfilesRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(line, "dotfiles "))
 	tokens := f.tokens
 	if len(tokens) == 0 {
@@ -647,7 +647,7 @@ func parseDotfilesRule(line string) (*Rule, error) {
 	}, nil
 }
 
-func parseMiseRule(line string) (*Rule, error) {
+func ParseMiseRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(strings.TrimPrefix(line, "mise"), " "))
 	misePackages := f.tokens
 	id := f.word("id:")
@@ -668,7 +668,7 @@ func parseMiseRule(line string) (*Rule, error) {
 	}, nil
 }
 
-func parseSudoersRule(line string) (*Rule, error) {
+func ParseSudoersRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(strings.TrimPrefix(line, "sudoers"), " "))
 	id := f.word("id:")
 	if id == "" {
@@ -683,7 +683,7 @@ func parseSudoersRule(line string) (*Rule, error) {
 	}, nil
 }
 
-func parseScheduleRule(line string) (*Rule, error) {
+func ParseScheduleRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(strings.TrimPrefix(line, "schedule"), " "))
 
 	scheduleCron := f.multiword("cron:")
@@ -716,7 +716,7 @@ func parseScheduleRule(line string) (*Rule, error) {
 	}, nil
 }
 
-func parseShellRule(line string) (*Rule, error) {
+func ParseShellRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(line, "shell "))
 	tokens := f.tokens
 	if len(tokens) == 0 {
@@ -736,7 +736,7 @@ func parseShellRule(line string) (*Rule, error) {
 	}, nil
 }
 
-func parseAuthorizedKeysRule(line string) (*Rule, error) {
+func ParseAuthorizedKeysRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(line, "authorized_keys "))
 	fileVal := f.word("file:")
 	encryptedVal := f.word("encrypted:")

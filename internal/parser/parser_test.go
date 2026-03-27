@@ -138,20 +138,20 @@ func TestParseGPGKeyBasic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseGPGKeyRule(tt.input)
+			got, err := ParseGPGKeyRule(tt.input)
 
 			if tt.wantErr {
 				if err == nil && got != nil {
-					t.Errorf("parseGPGKeyRule() = %v, want error", got)
+					t.Errorf("ParseGPGKeyRule() = %v, want error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("parseGPGKeyRule() unexpected error: %v", err)
+				t.Errorf("ParseGPGKeyRule() unexpected error: %v", err)
 				return
 			}
 			if got == nil {
-				t.Errorf("parseGPGKeyRule() got nil, want %v", tt.want)
+				t.Errorf("ParseGPGKeyRule() got nil, want %v", tt.want)
 				return
 			}
 
@@ -282,10 +282,10 @@ func TestParseGPGKeyFieldOrder(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseGPGKeyRule(tt.input)
+			got, err := ParseGPGKeyRule(tt.input)
 
 			if err != nil || got == nil {
-				t.Errorf("parseGPGKeyRule() got nil/error: %v", err)
+				t.Errorf("ParseGPGKeyRule() got nil/error: %v", err)
 				return
 			}
 
@@ -339,14 +339,14 @@ func TestParseGPGKeyEdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseGPGKeyRule(tt.input)
+			got, err := ParseGPGKeyRule(tt.input)
 
 			gotValid := err == nil && got != nil
 			if gotValid != tt.wantValid {
 				if tt.wantValid {
-					t.Errorf("parseGPGKeyRule() got nil/error: %v", err)
+					t.Errorf("ParseGPGKeyRule() got nil/error: %v", err)
 				} else {
-					t.Error("parseGPGKeyRule() got valid rule, want error")
+					t.Error("ParseGPGKeyRule() got valid rule, want error")
 				}
 			}
 		})
@@ -484,20 +484,20 @@ func TestParseInstallRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseInstallRule(tt.input)
+			got, err := ParseInstallRule(tt.input)
 
 			if tt.wantErr {
 				if err == nil && got != nil {
-					t.Errorf("parseInstallRule() = %v, want error", got)
+					t.Errorf("ParseInstallRule() = %v, want error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("parseInstallRule() unexpected error: %v", err)
+				t.Errorf("ParseInstallRule() unexpected error: %v", err)
 				return
 			}
 			if got == nil {
-				t.Errorf("parseInstallRule() got nil, want %v", tt.want)
+				t.Errorf("ParseInstallRule() got nil, want %v", tt.want)
 				return
 			}
 
@@ -570,20 +570,20 @@ func TestParseMkdirRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseMkdirRule(tt.input)
+			got, err := ParseMkdirRule(tt.input)
 
 			if tt.wantErr {
 				if err == nil && got != nil {
-					t.Errorf("parseMkdirRule() = %v, want error", got)
+					t.Errorf("ParseMkdirRule() = %v, want error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("parseMkdirRule() unexpected error: %v", err)
+				t.Errorf("ParseMkdirRule() unexpected error: %v", err)
 				return
 			}
 			if got == nil {
-				t.Errorf("parseMkdirRule() got nil, want %v", tt.want)
+				t.Errorf("ParseMkdirRule() got nil, want %v", tt.want)
 				return
 			}
 
@@ -633,20 +633,20 @@ func TestParseCloneRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseCloneRule(tt.input)
+			got, err := ParseCloneRule(tt.input)
 
 			if tt.wantErr {
 				if err == nil && got != nil {
-					t.Errorf("parseCloneRule() = %v, want error", got)
+					t.Errorf("ParseCloneRule() = %v, want error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("parseCloneRule() unexpected error: %v", err)
+				t.Errorf("ParseCloneRule() unexpected error: %v", err)
 				return
 			}
 			if got == nil {
-				t.Error("parseCloneRule() got nil, want valid rule")
+				t.Error("ParseCloneRule() got nil, want valid rule")
 				return
 			}
 
@@ -699,20 +699,20 @@ func TestParseDecryptRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseDecryptRule(tt.input)
+			got, err := ParseDecryptRule(tt.input)
 
 			if tt.wantErr {
 				if err == nil && got != nil {
-					t.Errorf("parseDecryptRule() = %v, want error", got)
+					t.Errorf("ParseDecryptRule() = %v, want error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("parseDecryptRule() unexpected error: %v", err)
+				t.Errorf("ParseDecryptRule() unexpected error: %v", err)
 				return
 			}
 			if got == nil {
-				t.Error("parseDecryptRule() got nil, want valid rule")
+				t.Error("ParseDecryptRule() got nil, want valid rule")
 				return
 			}
 
@@ -760,20 +760,20 @@ func TestParseAsdfRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseAsdfRule(tt.input)
+			got, err := ParseAsdfRule(tt.input)
 
 			if tt.wantErr {
 				if err == nil && got != nil {
-					t.Errorf("parseAsdfRule() = %v, want error", got)
+					t.Errorf("ParseAsdfRule() = %v, want error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("parseAsdfRule() unexpected error: %v", err)
+				t.Errorf("ParseAsdfRule() unexpected error: %v", err)
 				return
 			}
 			if got == nil {
-				t.Error("parseAsdfRule() got nil, want valid rule")
+				t.Error("ParseAsdfRule() got nil, want valid rule")
 				return
 			}
 
@@ -825,20 +825,20 @@ func TestParseKnownHostsRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseKnownHostsRule(tt.input)
+			got, err := ParseKnownHostsRule(tt.input)
 
 			if tt.wantErr {
 				if err == nil && got != nil {
-					t.Errorf("parseKnownHostsRule() = %v, want error", got)
+					t.Errorf("ParseKnownHostsRule() = %v, want error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("parseKnownHostsRule() unexpected error: %v", err)
+				t.Errorf("ParseKnownHostsRule() unexpected error: %v", err)
 				return
 			}
 			if got == nil {
-				t.Error("parseKnownHostsRule() got nil, want valid rule")
+				t.Error("ParseKnownHostsRule() got nil, want valid rule")
 				return
 			}
 
@@ -1021,19 +1021,19 @@ func TestParseScheduleRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseScheduleRule(tt.input)
+			got, err := ParseScheduleRule(tt.input)
 
 			if tt.wantNil {
 				if err == nil && got != nil {
-					t.Errorf("parseScheduleRule() = %v, want nil/error", got)
+					t.Errorf("ParseScheduleRule() = %v, want nil/error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("parseScheduleRule() unexpected error: %v", err)
+				t.Fatalf("ParseScheduleRule() unexpected error: %v", err)
 			}
 			if got == nil {
-				t.Fatal("parseScheduleRule() returned nil, want valid rule")
+				t.Fatal("ParseScheduleRule() returned nil, want valid rule")
 			}
 
 			if got.Action != "schedule" {
@@ -1494,13 +1494,13 @@ func TestParseHomebrewRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseHomebrewRule(tt.input)
+			got, err := ParseHomebrewRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseHomebrewRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseHomebrewRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got == nil {
-				t.Error("parseHomebrewRule() got nil, want valid rule")
+				t.Error("ParseHomebrewRule() got nil, want valid rule")
 			}
 		})
 	}
@@ -1521,13 +1521,13 @@ func TestParseOllamaRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseOllamaRule(tt.input)
+			got, err := ParseOllamaRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseOllamaRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseOllamaRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got == nil {
-				t.Error("parseOllamaRule() got nil, want valid rule")
+				t.Error("ParseOllamaRule() got nil, want valid rule")
 			}
 		})
 	}
@@ -1550,13 +1550,13 @@ func TestParseDownloadRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseDownloadRule(tt.input)
+			got, err := ParseDownloadRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseDownloadRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseDownloadRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got == nil {
-				t.Error("parseDownloadRule() got nil, want valid rule")
+				t.Error("ParseDownloadRule() got nil, want valid rule")
 			}
 		})
 	}
@@ -1577,13 +1577,13 @@ func TestParseRunRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseRunRule(tt.input)
+			got, err := ParseRunRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseRunRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseRunRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got == nil {
-				t.Error("parseRunRule() got nil, want valid rule")
+				t.Error("ParseRunRule() got nil, want valid rule")
 			}
 		})
 	}
@@ -1604,13 +1604,13 @@ func TestParseRunShRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseRunShRule(tt.input)
+			got, err := ParseRunShRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseRunShRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseRunShRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got == nil {
-				t.Error("parseRunShRule() got nil, want valid rule")
+				t.Error("ParseRunShRule() got nil, want valid rule")
 			}
 		})
 	}
@@ -1632,13 +1632,13 @@ func TestParseDotfilesRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseDotfilesRule(tt.input)
+			got, err := ParseDotfilesRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseDotfilesRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseDotfilesRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got == nil {
-				t.Error("parseDotfilesRule() got nil, want valid rule")
+				t.Error("ParseDotfilesRule() got nil, want valid rule")
 			}
 		})
 	}
@@ -1660,13 +1660,13 @@ func TestParseMiseRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseMiseRule(tt.input)
+			got, err := ParseMiseRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseMiseRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseMiseRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got == nil {
-				t.Error("parseMiseRule() got nil, want valid rule")
+				t.Error("ParseMiseRule() got nil, want valid rule")
 			}
 		})
 	}
@@ -1687,9 +1687,9 @@ func TestParseSudoersRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseSudoersRule(tt.input)
+			got, err := ParseSudoersRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseSudoersRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseSudoersRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got != nil {
@@ -1715,13 +1715,13 @@ func TestParseShellRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseShellRule(tt.input)
+			got, err := ParseShellRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseShellRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseShellRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got == nil {
-				t.Error("parseShellRule() got nil, want valid rule")
+				t.Error("ParseShellRule() got nil, want valid rule")
 			}
 		})
 	}
