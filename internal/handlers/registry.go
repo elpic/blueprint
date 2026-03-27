@@ -32,6 +32,13 @@ type ActionDef struct {
 	Detect      DetectFunc
 	Summary     SummaryFunc
 	OrphanIndex OrphanIndexFunc
+	// OrphanCheckExcluded skips key-based orphan detection for this action.
+	// Set this when the status entry's resource key format cannot be matched
+	// against the keys produced by OrphanIndex (e.g. asdf/mise store
+	// "tool\x00version" in status but index only the tool name in the rule
+	// set). Orphan cleanup for excluded actions is handled by FindUninstallRules
+	// on apply instead.
+	OrphanCheckExcluded bool
 	// AlwaysRunUp skips the IsInstalled() idempotency check and always calls
 	// Up(). Use for actions whose installed state cannot be determined locally
 	// (e.g. dotfiles, which need a network fetch to detect remote changes).

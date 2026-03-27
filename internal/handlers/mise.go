@@ -59,6 +59,7 @@ func init() {
 				index(strings.TrimSpace(tool))
 			}
 		},
+		OrphanCheckExcluded: true, // status stores "tool\x00version"; FindUninstallRules handles orphan cleanup
 	})
 }
 

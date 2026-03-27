@@ -31,6 +31,7 @@ func init() {
 		OrphanIndex: func(rule parser.Rule, index func(string)) {
 			index(rule.SudoersUser)
 		},
+		OrphanCheckExcluded: true, // orphan cleanup handled by FindUninstallRules; key-based check would match user not entry
 	})
 }
 

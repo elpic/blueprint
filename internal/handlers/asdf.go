@@ -69,6 +69,7 @@ func init() {
 				index(strings.TrimSpace(plugin))
 			}
 		},
+		OrphanCheckExcluded: true, // status stores "plugin\x00version"; FindUninstallRules handles orphan cleanup
 	})
 }
 

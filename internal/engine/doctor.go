@@ -212,14 +212,11 @@ func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []par
 	}
 	var orphans []orphanEntry
 
-	// Some actions are excluded from key-based orphan detection:
-	// - asdf/mise: status entries use compound "tool\x00version" keys that do
-	//   not match the rule-set keys (which index tool name only); their orphan
-	//   cleanup is handled by FindUninstallRules on apply.
-	// - sudoers: similarly handled via FindUninstallRules, not key matching.
-	excludedActions := map[string]bool{"asdf": true, "mise": true, "sudoers": true}
+	// Some actions are excluded from key-based orphan detection — see
+	// OrphanCheckExcluded on their ActionDef for the reason.
 	isExcluded := func(e handlerskg.StatusEntry) bool {
-		return excludedActions[e.GetAction()]
+		def := handlerskg.GetAction(e.GetAction())
+		return def != nil && def.OrphanCheckExcluded
 	}
 
 	for _, e := range status.AllEntries() {
