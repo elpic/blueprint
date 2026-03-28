@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
 )
@@ -152,36 +153,7 @@ func ruleLabel(r parser.Rule) string {
 }
 
 // primaryKey returns the most meaningful single resource identifier for a rule.
-// Used for after: resolution and display labels.
+// Used for after: resolution and display labels. Delegates to the action registry.
 func primaryKey(r parser.Rule) string {
-	switch r.Action {
-	case "install":
-		if len(r.Packages) > 0 {
-			return r.Packages[0].Name
-		}
-	case "clone":
-		return r.CloneURL
-	case "dotfiles":
-		return r.DotfilesURL
-	case "decrypt":
-		return r.DecryptFile
-	case "download":
-		return r.DownloadURL
-	case "run":
-		return r.RunCommand
-	case "run-sh":
-		return r.RunShURL
-	case "known_hosts", "known-hosts":
-		return r.KnownHosts
-	case "mkdir":
-		return r.Mkdir
-	case "gpg_key", "gpg-key":
-		return r.GPGKeyURL
-	case "authorized_keys", "authorized-keys":
-		if r.AuthorizedKeysFile != "" {
-			return r.AuthorizedKeysFile
-		}
-		return r.AuthorizedKeysEncrypted
-	}
-	return ""
+	return handlerskg.RuleKey(r)
 }
