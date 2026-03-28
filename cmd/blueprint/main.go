@@ -41,7 +41,7 @@ func parseFlags(args []string) (skipGroup, skipID, onlyID string, skipDecrypt bo
 var knownCommands = map[string]bool{
 	"plan": true, "apply": true, "encrypt": true,
 	"status": true, "history": true, "ps": true, "slow": true, "diff": true,
-	"version": true, "doctor": true,
+	"version": true, "doctor": true, "validate": true,
 }
 
 func isKnownCommand(cmd string) bool {
@@ -49,12 +49,12 @@ func isKnownCommand(cmd string) bool {
 }
 
 func unknownCommandMessage(cmd string) string {
-	return fmt.Sprintf("unknown command: %q\nUsage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff|doctor|version> [<file>]", cmd)
+	return fmt.Sprintf("unknown command: %q\nUsage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff|doctor|validate|version> [<file>]", cmd)
 }
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff|version> [<file|run_number>]")
+		fmt.Println("Usage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff|doctor|validate|version> [<file|run_number>]")
 		os.Exit(1)
 	}
 
@@ -138,6 +138,12 @@ func main() {
 			}
 		}
 		engine.DoctorCheck(fix)
+	case "validate":
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: blueprint validate <file.bp>")
+			os.Exit(1)
+		}
+		engine.Validate(os.Args[2])
 	default:
 		// Short mode: treat as file path only if it looks like a path (not a known command typo).
 		if !isKnownCommand(mode) {
