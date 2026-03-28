@@ -35,6 +35,9 @@ func init() {
 			for _, formula := range rule.HomebrewPackages {
 				index(formula)
 			}
+			for _, cask := range rule.HomebrewCasks {
+				index(caskKey(cask))
+			}
 		},
 	})
 }
