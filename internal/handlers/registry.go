@@ -107,7 +107,7 @@ func RuleSummary(rule parser.Rule) string {
 }
 
 // FindActionByPrefix returns the ActionDef whose Prefix matches line (longest match wins).
-// Used by the parser dispatch (Site 1 of the action registry migration).
+// Used by the parser to dispatch lines to the correct parse function.
 func FindActionByPrefix(line string) *ActionDef {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
