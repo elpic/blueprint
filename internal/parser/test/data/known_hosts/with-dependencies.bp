@@ -1,4 +1,5 @@
 #!/usr/bin/env blueprint
 
 # Test known_hosts entry with dependencies
+mkdir ~/.ssh id: create-ssh-dir on: [linux, mac]
 known_hosts github.com after: create-ssh-dir id: add-github-host on: [linux, mac]

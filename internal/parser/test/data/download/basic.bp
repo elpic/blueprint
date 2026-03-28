@@ -1,3 +1,3 @@
-download https://example.com/file.sh to: ~/bin/file.sh
+download https://example.com/file.sh to: ~/bin/file.sh id: some-dep
 download https://example.com/config to: ~/.config/app overwrite: true
 download https://example.com/script.sh to: ~/bin/run.sh permissions: 0755 id: dl-script after: some-dep on: [linux, mac]
