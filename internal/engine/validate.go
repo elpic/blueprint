@@ -30,13 +30,21 @@ func (v validateIssue) String() string {
 	return v.message
 }
 
-// Validate parses a blueprint file and runs semantic checks.
+// Validate parses a blueprint file (or git URL) and runs semantic checks.
 // It prints all issues found and exits with code 1 if any are found.
 func Validate(file string) {
 	fmt.Printf("\n%s\n", ui.FormatHighlight("=== Blueprint Validate ==="))
 	fmt.Printf("\nParsing %s...\n", file)
 
-	rules, err := parser.ParseFile(file)
+	setupPath, _, cleanup, err := resolveBlueprintFile(file, true)
+	if err != nil {
+		fmt.Printf("  %s\n", ui.FormatError(fmt.Sprintf("Error resolving blueprint: %v", err)))
+		fmt.Printf("\n%s\n\n", ui.FormatError("Validation failed."))
+		os.Exit(1)
+	}
+	defer cleanup()
+
+	rules, err := parser.ParseFile(setupPath)
 	if err != nil {
 		fmt.Printf("  %s\n", ui.FormatError(fmt.Sprintf("Parse error: %v", err)))
 		fmt.Printf("\n%s\n\n", ui.FormatError("Validation failed."))
