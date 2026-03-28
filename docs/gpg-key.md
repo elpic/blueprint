@@ -3,7 +3,7 @@
 Add GPG keys and configure Debian repositories with signature verification:
 
 ```
-gpg-key <url> keyring: <name> deb-url: <url> [id: <rule-id>] [after: <dependency>] on: [platform1, platform2, ...]
+gpg_key <url> keyring: <name> deb-url: <url> [id: <rule-id>] [after: <dependency>] on: [platform1, platform2, ...]
 ```
 
 **What is this used for?**
@@ -29,18 +29,18 @@ Add GPG keys for Debian package repositories to enable secure package verificati
 
 ```blueprint
 # Simple GPG key and repository
-gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]
+gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]
 
 # With ID for dependencies
-gpg-key https://example.com/repo.key keyring: example-repo deb-url: https://example.com/apt id: example-setup on: [linux]
+gpg_key https://example.com/repo.key keyring: example-repo deb-url: https://example.com/apt id: example-setup on: [linux]
 
 # Multiple repositories
-gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]
-gpg-key https://keyserver.ubuntu.com/export/key.asc keyring: ubuntu-ppa deb-url: https://ppa.launchpad.net/example/ppa/ubuntu on: [linux]
+gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]
+gpg_key https://keyserver.ubuntu.com/export/key.asc keyring: ubuntu-ppa deb-url: https://ppa.launchpad.net/example/ppa/ubuntu on: [linux]
 
 # With dependencies
 install curl id: curl-setup on: [linux]
-gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ after: curl-setup on: [linux]
+gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ after: curl-setup on: [linux]
 install wezterm after: wezterm-fury on: [linux]
 ```
 

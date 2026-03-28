@@ -1,4 +1,5 @@
 #!/usr/bin/env blueprint
 
 # Test directory creation with dependencies
+install curl id: base-tools on: [linux]
 mkdir /opt/app after: base-tools on: [linux]

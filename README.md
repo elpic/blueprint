@@ -62,7 +62,7 @@ Each line in a `.bp` file maps to an action. Full documentation for each action 
 | [`run`](docs/run.md) | Execute an arbitrary shell command | mac, linux |
 | [`run-sh`](docs/run-sh.md) | Download and execute a shell script from a URL | mac, linux |
 | [`dotfiles`](docs/dotfiles.md) | Clone a dotfiles repo and symlink entries into `~` | mac, linux |
-| [`gpg-key`](docs/gpg-key.md) | Add a GPG key and configure a Debian repository | linux |
+| [`gpg_key`](docs/gpg-key.md) | Add a GPG key and configure a Debian repository | linux |
 | [`decrypt`](docs/decrypt.md) | Decrypt AES-256-GCM encrypted files | mac, linux |
 | [`sudoers`](docs/sudoers.md) | Grant a user passwordless sudo via `/etc/sudoers.d/` | mac, linux |
 | [`ollama`](docs/ollama.md) | Pull and manage local LLM models via Ollama | mac, linux |

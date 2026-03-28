@@ -1,3 +1,4 @@
+install curl id: base-setup on: [mac, linux]
 mise node@20 on: [mac, linux]
 mise python@3.11 on: [mac, linux]
 mise node@20 id: my-node after: base-setup on: [mac]

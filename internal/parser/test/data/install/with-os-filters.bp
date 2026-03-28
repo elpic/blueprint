@@ -1,4 +1,5 @@
 #!/usr/bin/env blueprint
 
 # Test install with OS filters and dependencies
+install git id: base-tools on: [linux]
 install build-essential after: base-tools id: dev-tools on: [linux]
