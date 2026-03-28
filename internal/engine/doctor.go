@@ -189,42 +189,15 @@ func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []par
 		rs := ruleSet{}
 		for _, r := range rules {
 			rs[handlerskg.RuleKey(r)] = true
-			// Also index the natural resource identity for each action type so
-			// that status entries (which store the resource path/name, not the
-			// rule id) are matched correctly even when the rule has an id:.
-			switch r.Action {
-			case "clone":
-				rs[r.ClonePath] = true
-			case "decrypt":
-				rs[r.DecryptPath] = true
-			case "download":
-				rs[r.DownloadPath] = true
-			case "mkdir":
-				rs[r.Mkdir] = true
-			case "known_hosts":
-				rs[r.KnownHosts] = true
-			case "gpg_key", "gpg-key":
-				rs[r.GPGKeyring] = true
-			case "dotfiles":
-				rs[r.DotfilesURL] = true
-			case "schedule":
-				rs[r.ScheduleSource] = true
-				rs[handlerskg.NormalizeBlueprint(r.ScheduleSource)] = true
-			case "shell":
-				rs[r.ShellName] = true
-			case "authorized_keys":
-				rs[r.AuthorizedKeysFile] = true
-				rs[r.AuthorizedKeysEncrypted] = true
-			}
-			// Index every package / homebrew formula / ollama model individually.
-			for _, pkg := range r.Packages {
-				rs[pkg.Name] = true
-			}
-			for _, formula := range r.HomebrewPackages {
-				rs[formula] = true
-			}
-			for _, model := range r.OllamaModels {
-				rs[model] = true
+			// Use each action's registered OrphanIndex to index all resource
+			// keys that may appear in status entries, so that key-based orphan
+			// detection works correctly even when the rule has an id:.
+			if def := handlerskg.GetAction(r.Action); def != nil && def.OrphanIndex != nil {
+				def.OrphanIndex(r, func(key string) {
+					if key != "" {
+						rs[key] = true
+					}
+				})
 			}
 		}
 		cache[norm] = rs
@@ -239,15 +212,11 @@ func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []par
 	}
 	var orphans []orphanEntry
 
-	// Asdf and Mise use compound keys (plugin+version, tool+version) that cannot
-	// be matched against individual blueprint rule resource keys, so they are
-	// intentionally excluded from orphan detection.
+	// Some actions are excluded from key-based orphan detection — see
+	// OrphanCheckExcluded on their ActionDef for the reason.
 	isExcluded := func(e handlerskg.StatusEntry) bool {
-		switch e.(type) {
-		case *handlerskg.AsdfStatus, *handlerskg.MiseStatus, *handlerskg.SudoersStatus:
-			return true
-		}
-		return false
+		def := handlerskg.GetAction(e.GetAction())
+		return def != nil && def.OrphanCheckExcluded
 	}
 
 	for _, e := range status.AllEntries() {

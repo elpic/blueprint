@@ -39,7 +39,7 @@ func TestGPGKeyDownloadKeyURLPassedAsArgument(t *testing.T) {
 	}
 
 	rule := parser.Rule{
-		Action:     "gpg-key",
+		Action:     "gpg_key",
 		GPGKeyring: "safe-keyring",
 		GPGKeyURL:  maliciousURL,
 		GPGDebURL:  "https://example.com/apt",
@@ -61,7 +61,7 @@ func TestGPGKeyGetCommandDoesNotExecShellInjection(t *testing.T) {
 	maliciousURL := "https://example.com/gpg.key'; touch /tmp/gpg-injection-marker; echo '"
 
 	rule := parser.Rule{
-		Action:     "gpg-key",
+		Action:     "gpg_key",
 		GPGKeyring: "safe-keyring",
 		GPGKeyURL:  maliciousURL,
 		GPGDebURL:  "https://example.com/apt",

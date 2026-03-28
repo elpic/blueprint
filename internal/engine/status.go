@@ -287,7 +287,7 @@ func PrintDiff(blueprintFile string) {
 		hasChanges = true
 		fmt.Printf("\n%s\n", ui.FormatSuccess("+ will install:"))
 		for _, r := range addRules {
-			fmt.Printf("  %s %s\n", ui.FormatSuccess("+"), ui.FormatInfo(r.DisplaySummary()))
+			fmt.Printf("  %s %s\n", ui.FormatSuccess("+"), ui.FormatInfo(handlerskg.RuleSummary(r)))
 			// For dotfiles rules, show what will change
 			if r.Action == "dotfiles" && r.DotfilesURL != "" {
 				handler := handlerskg.NewHandler(r, "", nil)
@@ -310,7 +310,7 @@ func PrintDiff(blueprintFile string) {
 		hasChanges = true
 		fmt.Printf("\n%s\n", ui.FormatError("- will remove:"))
 		for _, r := range removeRules {
-			fmt.Printf("  %s %s\n", ui.FormatError("-"), ui.FormatInfo(r.DisplaySummary()))
+			fmt.Printf("  %s %s\n", ui.FormatError("-"), ui.FormatInfo(handlerskg.RuleSummary(r)))
 		}
 	}
 

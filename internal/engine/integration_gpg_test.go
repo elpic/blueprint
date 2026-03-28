@@ -101,7 +101,7 @@ func TestGPGKeyAutoUninstallDetection(t *testing.T) {
 	// Current rules only have wezterm-fury (docker is removed)
 	currentRules := []parser.Rule{
 		{
-			Action:     "gpg-key",
+			Action:     "gpg_key",
 			GPGKeyring: "wezterm-fury",
 			GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 			GPGDebURL:  "https://apt.fury.io/wez/",
@@ -112,7 +112,7 @@ func TestGPGKeyAutoUninstallDetection(t *testing.T) {
 	// Build currentGPGKeys map for auto-uninstall detection
 	currentGPGKeys := make(map[string]bool)
 	for _, rule := range currentRules {
-		if rule.Action == "gpg-key" {
+		if rule.Action == "gpg_key" {
 			currentGPGKeys[rule.GPGKeyring] = true
 		}
 	}

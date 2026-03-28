@@ -13,6 +13,32 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
+func init() {
+	RegisterAction(ActionDef{
+		Name:   "schedule",
+		Prefix: "schedule ",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewScheduleHandler(rule, basePath)
+		},
+		RuleKey: func(rule parser.Rule) string {
+			if rule.ScheduleSource != "" {
+				return "schedule-" + rule.ScheduleSource
+			}
+			return "schedule"
+		},
+		Detect: func(rule parser.Rule) bool {
+			return rule.ScheduleSource != ""
+		},
+		Summary: func(rule parser.Rule) string {
+			return rule.ScheduleSource
+		},
+		OrphanIndex: func(rule parser.Rule, index func(string)) {
+			index(rule.ScheduleSource)
+			index(NormalizeBlueprint(rule.ScheduleSource))
+		},
+	})
+}
+
 // ScheduleHandler installs/removes a crontab entry that runs blueprint apply on a schedule.
 type ScheduleHandler struct {
 	BaseHandler

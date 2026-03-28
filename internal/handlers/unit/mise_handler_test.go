@@ -558,12 +558,12 @@ func TestMiseHandler_FindUninstallRules_Pure(t *testing.T) {
 			currentRules: []parser.Rule{
 				{
 					Action:       "mise",
-					MisePackages: []string{"node"}, // Different from node@18.0.0 in status
+					MisePackages: []string{"node"}, // matches node@18.0.0 in status by tool name
 				},
 			},
 			blueprintFile: "/test/blueprint.yml",
 			osName:        "linux",
-			expected:      []string{"node@18.0.0", "python@3.11.0"}, // node@18.0.0 != node, so both should be uninstalled
+			expected:      []string{"python@3.11.0"}, // node is kept (tool name matches), python is orphan
 		},
 	}
 

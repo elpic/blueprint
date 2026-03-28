@@ -18,14 +18,26 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
-// ShellStatus tracks a shell change
-type ShellStatus struct {
-	Shell         string `json:"shell"`          // Current shell (what we set)
-	PreviousShell string `json:"previous_shell"` // Shell before our change
-	User          string `json:"user"`
-	ChangedAt     string `json:"changed_at"`
-	Blueprint     string `json:"blueprint"`
-	OS            string `json:"os"`
+func init() {
+	RegisterAction(ActionDef{
+		Name:   "shell",
+		Prefix: "shell ",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewShellHandler(rule, basePath)
+		},
+		RuleKey: func(rule parser.Rule) string {
+			return rule.ShellName
+		},
+		Detect: func(rule parser.Rule) bool {
+			return rule.ShellName != ""
+		},
+		Summary: func(rule parser.Rule) string {
+			return rule.ShellName
+		},
+		OrphanIndex: func(rule parser.Rule, index func(string)) {
+			index(rule.ShellName)
+		},
+	})
 }
 
 // ShellHandler handles setting the default login shell
@@ -634,10 +646,6 @@ func (h *ShellHandler) getStatusPath() (string, error) {
 	}
 
 	return filepath.Join(blueprintDir, "status.json"), nil
-}
-
-func removeShellStatus(sl []ShellStatus, user, blueprint, osName string) []ShellStatus {
-	return removeStatusEntry[ShellStatus, *ShellStatus](sl, user, blueprint, osName)
 }
 
 // findShellStatus finds a shell entry in the status shells list and returns it

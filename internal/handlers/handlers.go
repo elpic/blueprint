@@ -156,6 +156,16 @@ type AuthorizedKeysStatus struct {
 	OS        string `json:"os"`
 }
 
+// ShellStatus tracks a shell change
+type ShellStatus struct {
+	Shell         string `json:"shell"`          // Current shell (what we set)
+	PreviousShell string `json:"previous_shell"` // Shell before our change
+	User          string `json:"user"`
+	ChangedAt     string `json:"changed_at"`
+	Blueprint     string `json:"blueprint"`
+	OS            string `json:"os"`
+}
+
 // DotfilesStatus tracks a managed dotfiles repository
 type DotfilesStatus struct {
 	URL       string   `json:"url"`
@@ -176,6 +186,7 @@ type StatusEntry interface {
 	SetBlueprint(string)
 	GetResourceKey() string // the identity used for dedup/orphan checks (name, path, command, etc.)
 	GetOS() string
+	GetAction() string // the action name this entry belongs to (e.g. "install", "run", "asdf")
 }
 
 // StatusEntry implementations for all status structs.
@@ -186,88 +197,103 @@ func (v *PackageStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *PackageStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *PackageStatus) GetResourceKey() string { return v.Name }
 func (v *PackageStatus) GetOS() string          { return v.OS }
+func (v *PackageStatus) GetAction() string      { return "install" }
 
 func (v *CloneStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *CloneStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *CloneStatus) GetResourceKey() string { return v.Path }
 func (v *CloneStatus) GetOS() string          { return v.OS }
+func (v *CloneStatus) GetAction() string      { return "clone" }
 
 func (v *DecryptStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *DecryptStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *DecryptStatus) GetResourceKey() string { return v.DestPath }
 func (v *DecryptStatus) GetOS() string          { return v.OS }
+func (v *DecryptStatus) GetAction() string      { return "decrypt" }
 
 func (v *MkdirStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *MkdirStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *MkdirStatus) GetResourceKey() string { return v.Path }
 func (v *MkdirStatus) GetOS() string          { return v.OS }
+func (v *MkdirStatus) GetAction() string      { return "mkdir" }
 
 func (v *KnownHostsStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *KnownHostsStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *KnownHostsStatus) GetResourceKey() string { return v.Host }
 func (v *KnownHostsStatus) GetOS() string          { return v.OS }
+func (v *KnownHostsStatus) GetAction() string      { return "known_hosts" }
 
 func (v *GPGKeyStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *GPGKeyStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *GPGKeyStatus) GetResourceKey() string { return v.Keyring }
 func (v *GPGKeyStatus) GetOS() string          { return v.OS }
+func (v *GPGKeyStatus) GetAction() string      { return "gpg_key" }
 
 func (v *AsdfStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *AsdfStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *AsdfStatus) GetResourceKey() string { return v.Plugin + "\x00" + v.Version }
 func (v *AsdfStatus) GetOS() string          { return v.OS }
+func (v *AsdfStatus) GetAction() string      { return "asdf" }
 
 func (v *MiseStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *MiseStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *MiseStatus) GetResourceKey() string { return v.Tool + "\x00" + v.Version }
 func (v *MiseStatus) GetOS() string          { return v.OS }
+func (v *MiseStatus) GetAction() string      { return "mise" }
 
 func (v *SudoersStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *SudoersStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *SudoersStatus) GetResourceKey() string { return v.User }
 func (v *SudoersStatus) GetOS() string          { return v.OS }
+func (v *SudoersStatus) GetAction() string      { return "sudoers" }
 
 func (v *HomebrewStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *HomebrewStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *HomebrewStatus) GetResourceKey() string { return v.Formula }
 func (v *HomebrewStatus) GetOS() string          { return v.OS }
+func (v *HomebrewStatus) GetAction() string      { return "homebrew" }
 
 func (v *OllamaStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *OllamaStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *OllamaStatus) GetResourceKey() string { return v.Model }
 func (v *OllamaStatus) GetOS() string          { return v.OS }
+func (v *OllamaStatus) GetAction() string      { return "ollama" }
 
 func (v *DownloadStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *DownloadStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *DownloadStatus) GetResourceKey() string { return v.Path }
 func (v *DownloadStatus) GetOS() string          { return v.OS }
+func (v *DownloadStatus) GetAction() string      { return "download" }
 
 func (v *RunStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *RunStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *RunStatus) GetResourceKey() string { return v.Command }
 func (v *RunStatus) GetOS() string          { return v.OS }
+func (v *RunStatus) GetAction() string      { return v.Action }
 
 func (v *DotfilesStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *DotfilesStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *DotfilesStatus) GetResourceKey() string { return v.URL }
 func (v *DotfilesStatus) GetOS() string          { return v.OS }
+func (v *DotfilesStatus) GetAction() string      { return "dotfiles" }
 
 func (v *ScheduleStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *ScheduleStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *ScheduleStatus) GetResourceKey() string { return v.Source }
 func (v *ScheduleStatus) GetOS() string          { return v.OS }
+func (v *ScheduleStatus) GetAction() string      { return "schedule" }
 
 func (v *AuthorizedKeysStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *AuthorizedKeysStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *AuthorizedKeysStatus) GetResourceKey() string { return v.Source }
 func (v *AuthorizedKeysStatus) GetOS() string          { return v.OS }
+func (v *AuthorizedKeysStatus) GetAction() string      { return "authorized_keys" }
 
-// ShellStatus StatusEntry methods are defined here alongside the other 16 types.
-// GetResourceKey returns the user field since shell entries are keyed by user.
 func (v *ShellStatus) GetBlueprint() string   { return v.Blueprint }
 func (v *ShellStatus) SetBlueprint(s string)  { v.Blueprint = s }
 func (v *ShellStatus) GetResourceKey() string { return v.User }
 func (v *ShellStatus) GetOS() string          { return v.OS }
+func (v *ShellStatus) GetAction() string      { return "shell" }
 
 // Status represents the current blueprint state
 type Status struct {
@@ -469,57 +495,11 @@ func RuleKey(rule parser.Rule) string {
 	if rule.ID != "" {
 		return rule.ID
 	}
-	switch rule.Action {
-	case "install", "uninstall":
-		if len(rule.Packages) > 0 {
-			return rule.Packages[0].Name
-		}
-		return "install"
-	case "clone":
-		return rule.ClonePath
-	case "decrypt":
-		return rule.DecryptPath
-	case "download":
-		return rule.DownloadPath
-	case "known_hosts":
-		return rule.KnownHosts
-	case "mkdir":
-		return rule.Mkdir
-	case "run":
-		return rule.RunCommand
-	case "run-sh":
-		return rule.RunShURL
-	case "gpg_key":
-		return rule.GPGKeyring
-	case "homebrew":
-		if len(rule.HomebrewPackages) > 0 {
-			return rule.HomebrewPackages[0]
-		}
-		return "homebrew"
-	case "asdf":
-		return "asdf"
-	case "mise":
-		return "mise"
-	case "ollama":
-		if len(rule.OllamaModels) > 0 {
-			return rule.OllamaModels[0]
-		}
-		return "ollama"
-	case "schedule":
-		if rule.ScheduleSource != "" {
-			return "schedule-" + rule.ScheduleSource
-		}
-		return "schedule"
-	case "shell":
-		return rule.ShellName
-	case "authorized_keys":
-		if rule.AuthorizedKeysFile != "" {
-			return rule.AuthorizedKeysFile
-		}
-		return rule.AuthorizedKeysEncrypted
-	default:
-		return rule.Action
+	def := GetAction(rule.Action)
+	if def != nil && def.RuleKey != nil {
+		return def.RuleKey(rule)
 	}
+	return rule.Action
 }
 
 // GetFallbackDependencyKey returns the handler-specific fallback key when rule.ID is not present.
@@ -529,75 +509,23 @@ func (h *BaseHandler) GetFallbackDependencyKey() string {
 	return h.Rule.Action
 }
 
-// DetectRuleType determines the actual rule type based on the rule's content
-// This is used for "uninstall" actions where the original action is lost
+// DetectRuleType determines the actual rule type based on the rule's content.
+// This is used for "uninstall" actions where the original action is lost.
 func DetectRuleType(rule parser.Rule) string {
-	if len(rule.Packages) > 0 {
-		return "install"
-	}
-	if rule.CloneURL != "" {
-		return "clone"
-	}
-	if rule.DecryptFile != "" {
-		return "decrypt"
-	}
-	if rule.Mkdir != "" {
-		return "mkdir"
-	}
-	if len(rule.AsdfPackages) > 0 {
-		return "asdf"
-	}
-	if len(rule.MisePackages) > 0 {
-		return "mise"
-	}
-	if len(rule.HomebrewPackages) > 0 {
-		return "homebrew"
-	}
-	if len(rule.OllamaModels) > 0 {
-		return "ollama"
-	}
-	if rule.KnownHosts != "" {
-		return "known_hosts"
-	}
-	if rule.GPGKeyring != "" {
-		return "gpg-key"
-	}
-	if rule.DownloadURL != "" {
-		return "download"
-	}
-	if rule.RunCommand != "" {
-		return "run"
-	}
-	if rule.RunShURL != "" {
-		return "run-sh"
-	}
-	if rule.DotfilesURL != "" {
-		return "dotfiles"
-	}
-	if rule.SudoersUser != "" {
-		return "sudoers"
-	}
-	if rule.ScheduleSource != "" {
-		return "schedule"
-	}
-	if rule.ShellName != "" {
-		return "shell"
-	}
-	if rule.AuthorizedKeysFile != "" || rule.AuthorizedKeysEncrypted != "" {
-		return "authorized_keys"
+	for _, def := range AllActions() {
+		if def.Detect != nil && def.Detect(rule) {
+			return def.Name
+		}
 	}
 	return ""
 }
 
-// NewHandler creates a handler for the given rule
-// Returns nil if the action is not recognized
+// NewHandler creates a handler for the given rule.
+// Returns nil if the action is not recognized.
 func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
-	// Create production container
-	container := platform.NewContainer()
-
 	action := rule.Action
 
-	// For uninstall actions, detect the actual rule type from the rule's content
+	// For uninstall actions, detect the actual rule type from the rule's content.
 	if action == "uninstall" {
 		action = DetectRuleType(rule)
 		if action == "" {
@@ -605,72 +533,27 @@ func NewHandler(rule parser.Rule, basePath string, passwordCache map[string]stri
 		}
 	}
 
-	switch action {
-	case "install":
-		return NewInstallHandler(rule, basePath, container)
-	case "clone":
-		return NewCloneHandler(rule, basePath, container)
-	case "decrypt":
-		return NewDecryptHandler(rule, basePath, passwordCache)
-	case "mkdir":
-		return NewMkdirHandler(rule, basePath, container)
-	case "asdf":
-		return NewAsdfHandler(rule, basePath)
-	case "mise":
-		return NewMiseHandler(rule, basePath)
-	case "homebrew":
-		return NewHomebrewHandler(rule, basePath)
-	case "ollama":
-		return NewOllamaHandler(rule, basePath)
-	case "known_hosts":
-		return NewKnownHostsHandler(rule, basePath)
-	case "gpg-key":
-		return NewGPGKeyHandlerWithPassword(rule, basePath, passwordCache["sudo"])
-	case "download":
-		return NewDownloadHandler(rule, basePath)
-	case "run":
-		return NewRunHandler(rule, basePath)
-	case "run-sh":
-		return NewRunShHandler(rule, basePath)
-	case "dotfiles":
-		return NewDotfilesHandler(rule, basePath)
-	case "sudoers":
-		return NewSudoersHandler(rule, basePath)
-	case "schedule":
-		return NewScheduleHandler(rule, basePath)
-	case "shell":
-		return NewShellHandler(rule, basePath)
-	case "authorized_keys":
-		return NewAuthorizedKeysHandler(rule, basePath, passwordCache)
-	default:
+	def := GetAction(action)
+	if def == nil || def.NewHandler == nil {
 		return nil
 	}
+	return def.NewHandler(rule, basePath, passwordCache)
 }
 
-// GetStatusProviderHandlers returns all handler instances that implement StatusProvider
-// This is the single place where all handler instantiation happens for status comparisons
-// Used by engine for getAutoUninstallRules and other status-related operations
+// GetStatusProviderHandlers returns all handler instances that implement StatusProvider.
+// This is used by the engine for getAutoUninstallRules and other status-related operations.
 func GetStatusProviderHandlers() []Handler {
-	return []Handler{
-		NewInstallHandlerLegacy(parser.Rule{}, ""),
-		NewCloneHandlerLegacy(parser.Rule{}, ""),
-		NewDecryptHandler(parser.Rule{}, "", nil),
-		NewAsdfHandler(parser.Rule{}, ""),
-		NewMiseHandler(parser.Rule{}, ""),
-		NewHomebrewHandler(parser.Rule{}, ""),
-		NewOllamaHandler(parser.Rule{}, ""),
-		NewMkdirHandlerLegacy(parser.Rule{}, ""),
-		NewKnownHostsHandler(parser.Rule{}, ""),
-		NewGPGKeyHandler(parser.Rule{}, ""),
-		NewDownloadHandler(parser.Rule{}, ""),
-		NewRunHandler(parser.Rule{}, ""),
-		NewRunShHandler(parser.Rule{}, ""),
-		NewDotfilesHandler(parser.Rule{}, ""),
-		NewSudoersHandler(parser.Rule{}, ""),
-		NewScheduleHandler(parser.Rule{}, ""),
-		NewShellHandler(parser.Rule{}, ""),
-		NewAuthorizedKeysHandler(parser.Rule{}, "", nil),
+	var result []Handler
+	for _, def := range AllActions() {
+		if def.NewHandler == nil || def.IsAlias {
+			continue
+		}
+		h := def.NewHandler(parser.Rule{Action: def.Name}, "", nil)
+		if _, ok := h.(StatusProvider); ok {
+			result = append(result, h)
+		}
 	}
+	return result
 }
 
 // Shared utility functions for status management
@@ -854,6 +737,9 @@ func removeDownloadStatus(sl []DownloadStatus, key, bp, os string) []DownloadSta
 }
 func removeAuthorizedKeysStatus(sl []AuthorizedKeysStatus, key, bp, os string) []AuthorizedKeysStatus {
 	return removeStatusEntry[AuthorizedKeysStatus, *AuthorizedKeysStatus](sl, key, bp, os)
+}
+func removeShellStatus(sl []ShellStatus, key, bp, os string) []ShellStatus {
+	return removeStatusEntry[ShellStatus, *ShellStatus](sl, key, bp, os)
 }
 
 // abbreviateBlueprintPath shortens blueprint paths for display

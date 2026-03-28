@@ -23,4 +23,4 @@ decrypt ./config.enc to: ~/.config/app.conf id: app-config after: config-dir on:
 known_hosts github.com id: github-hosts after: ssh-dir on: [linux, mac]
 known_hosts gitlab.example.com id: gitlab-hosts on: [linux, mac]
 
-gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: import-gpg-key after: ssh-key on: [linux]
+gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: import-gpg-key after: ssh-key on: [linux]

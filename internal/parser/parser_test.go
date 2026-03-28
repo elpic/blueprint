@@ -11,15 +11,15 @@ import (
 func TestParseGPGKeyBasic(t *testing.T) {
 	tests := []struct {
 		name    string
-		input   string // input WITH the "gpg-key " prefix
+		input   string // input WITH the "gpg_key " prefix
 		want    *Rule
 		wantErr bool
 	}{
 		{
 			name:  "basic gpg-key rule",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]",
 			want: &Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGKeyring: "wezterm-fury",
 				GPGDebURL:  "https://apt.fury.io/wez/",
@@ -28,10 +28,10 @@ func TestParseGPGKeyBasic(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:  "gpg-key with multiple OS platforms",
-			input: "gpg-key https://example.com/gpg.key keyring: example-repo deb-url: https://example.com/apt on: [linux, ubuntu, debian]",
+			name:  "gpg_key with multiple OS platforms",
+			input: "gpg_key https://example.com/gpg.key keyring: example-repo deb-url: https://example.com/apt on: [linux, ubuntu, debian]",
 			want: &Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyURL:  "https://example.com/gpg.key",
 				GPGKeyring: "example-repo",
 				GPGDebURL:  "https://example.com/apt",
@@ -40,10 +40,10 @@ func TestParseGPGKeyBasic(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:  "gpg-key without on clause (applies to all OS)",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/",
+			name:  "gpg_key without on clause (applies to all OS)",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/",
 			want: &Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGKeyring: "wezterm-fury",
 				GPGDebURL:  "https://apt.fury.io/wez/",
@@ -52,11 +52,11 @@ func TestParseGPGKeyBasic(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:  "gpg-key with id parameter",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: wezterm-setup on: [linux]",
+			name:  "gpg_key with id parameter",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: wezterm-setup on: [linux]",
 			want: &Rule{
 				ID:         "wezterm-setup",
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGKeyring: "wezterm-fury",
 				GPGDebURL:  "https://apt.fury.io/wez/",
@@ -65,10 +65,10 @@ func TestParseGPGKeyBasic(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:  "gpg-key with after dependency",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ after: curl-setup on: [linux]",
+			name:  "gpg_key with after dependency",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ after: curl-setup on: [linux]",
 			want: &Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGKeyring: "wezterm-fury",
 				GPGDebURL:  "https://apt.fury.io/wez/",
@@ -78,10 +78,10 @@ func TestParseGPGKeyBasic(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:  "gpg-key with multiple dependencies",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ after: curl-setup, base-tools on: [linux]",
+			name:  "gpg_key with multiple dependencies",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ after: curl-setup, base-tools on: [linux]",
 			want: &Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGKeyring: "wezterm-fury",
 				GPGDebURL:  "https://apt.fury.io/wez/",
@@ -91,11 +91,11 @@ func TestParseGPGKeyBasic(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:  "gpg-key with id and after",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: wezterm-setup after: curl-setup on: [linux]",
+			name:  "gpg_key with id and after",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: wezterm-setup after: curl-setup on: [linux]",
 			want: &Rule{
 				ID:         "wezterm-setup",
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyURL:  "https://apt.fury.io/wez/gpg.key",
 				GPGKeyring: "wezterm-fury",
 				GPGDebURL:  "https://apt.fury.io/wez/",
@@ -105,28 +105,28 @@ func TestParseGPGKeyBasic(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "gpg-key missing URL",
-			input:   "gpg-key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]",
+			name:    "gpg_key missing URL",
+			input:   "gpg_key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]",
 			want:    nil,
 			wantErr: true,
 		},
 		{
-			name:    "gpg-key missing keyring",
-			input:   "gpg-key https://apt.fury.io/wez/gpg.key deb-url: https://apt.fury.io/wez/ on: [linux]",
+			name:    "gpg_key missing keyring",
+			input:   "gpg_key https://apt.fury.io/wez/gpg.key deb-url: https://apt.fury.io/wez/ on: [linux]",
 			want:    nil,
 			wantErr: true,
 		},
 		{
-			name:    "gpg-key missing deb-url",
-			input:   "gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury on: [linux]",
+			name:    "gpg_key missing deb-url",
+			input:   "gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury on: [linux]",
 			want:    nil,
 			wantErr: true,
 		},
 		{
-			name:  "gpg-key with complex URL",
-			input: "gpg-key https://example.com/path/to/gpg.key keyring: my-repo deb-url: https://example.com/repository/apt/ on: [linux]",
+			name:  "gpg_key with complex URL",
+			input: "gpg_key https://example.com/path/to/gpg.key keyring: my-repo deb-url: https://example.com/repository/apt/ on: [linux]",
 			want: &Rule{
-				Action:     "gpg-key",
+				Action:     "gpg_key",
 				GPGKeyURL:  "https://example.com/path/to/gpg.key",
 				GPGKeyring: "my-repo",
 				GPGDebURL:  "https://example.com/repository/apt/",
@@ -138,20 +138,20 @@ func TestParseGPGKeyBasic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseGPGKeyRule(tt.input)
+			got, err := ParseGPGKeyRule(tt.input)
 
 			if tt.wantErr {
 				if err == nil && got != nil {
-					t.Errorf("parseGPGKeyRule() = %v, want error", got)
+					t.Errorf("ParseGPGKeyRule() = %v, want error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("parseGPGKeyRule() unexpected error: %v", err)
+				t.Errorf("ParseGPGKeyRule() unexpected error: %v", err)
 				return
 			}
 			if got == nil {
-				t.Errorf("parseGPGKeyRule() got nil, want %v", tt.want)
+				t.Errorf("ParseGPGKeyRule() got nil, want %v", tt.want)
 				return
 			}
 
@@ -207,22 +207,22 @@ func TestParseGPGKeyRuleWithParse(t *testing.T) {
 		{
 			name: "single gpg-key rule",
 			input: `# Test blueprint
-gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]
+gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]
 `,
 			wantCount: 1,
 		},
 		{
 			name: "multiple rules including gpg-key",
 			input: `mkdir /tmp/test on: [linux]
-gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]
+gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]
 install wget curl on: [linux]
 `,
 			wantCount: 3,
 		},
 		{
-			name: "gpg-key with comments and blank lines",
+			name: "gpg_key with comments and blank lines",
 			input: `# Add GPG key for wezterm
-gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]
+gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]
 
 # Another comment
 install vim on: [linux, mac]
@@ -244,7 +244,7 @@ install vim on: [linux, mac]
 
 			// Verify GPG key rules have correct structure
 			for _, rule := range rules {
-				if rule.Action == "gpg-key" {
+				if rule.Action == "gpg_key" {
 					if rule.GPGKeyring == "" {
 						t.Error("GPG key rule has empty keyring")
 					}
@@ -268,24 +268,24 @@ func TestParseGPGKeyFieldOrder(t *testing.T) {
 	}{
 		{
 			name:  "standard order: url, keyring, deb-url, on",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ on: [linux]",
 		},
 		{
 			name:  "different order: url, deb-url, keyring, on",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key deb-url: https://apt.fury.io/wez/ keyring: wezterm-fury on: [linux]",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key deb-url: https://apt.fury.io/wez/ keyring: wezterm-fury on: [linux]",
 		},
 		{
 			name:  "with id and after mixed in",
-			input: "gpg-key https://apt.fury.io/wez/gpg.key id: setup-wez keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ after: prep on: [linux]",
+			input: "gpg_key https://apt.fury.io/wez/gpg.key id: setup-wez keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ after: prep on: [linux]",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseGPGKeyRule(tt.input)
+			got, err := ParseGPGKeyRule(tt.input)
 
 			if err != nil || got == nil {
-				t.Errorf("parseGPGKeyRule() got nil/error: %v", err)
+				t.Errorf("ParseGPGKeyRule() got nil/error: %v", err)
 				return
 			}
 
@@ -312,41 +312,41 @@ func TestParseGPGKeyEdgeCases(t *testing.T) {
 	}{
 		{
 			name:      "minimal valid rule",
-			input:     "gpg-key https://example.com/key keyring: test deb-url: https://example.com/apt",
+			input:     "gpg_key https://example.com/key keyring: test deb-url: https://example.com/apt",
 			wantValid: true,
 		},
 		{
 			name:      "empty OS list is valid",
-			input:     "gpg-key https://example.com/key keyring: test deb-url: https://example.com/apt on: []",
+			input:     "gpg_key https://example.com/key keyring: test deb-url: https://example.com/apt on: []",
 			wantValid: true,
 		},
 		{
 			name:      "extra whitespace",
-			input:     "gpg-key   https://example.com/key   keyring:   test   deb-url:   https://example.com/apt   on:   [linux]",
+			input:     "gpg_key   https://example.com/key   keyring:   test   deb-url:   https://example.com/apt   on:   [linux]",
 			wantValid: true,
 		},
 		{
 			name:      "keyring with special characters",
-			input:     "gpg-key https://example.com/key keyring: my-repo-2024 deb-url: https://example.com/apt",
+			input:     "gpg_key https://example.com/key keyring: my-repo-2024 deb-url: https://example.com/apt",
 			wantValid: true,
 		},
 		{
 			name:      "URL with port number",
-			input:     "gpg-key https://example.com:8443/gpg.key keyring: secure-repo deb-url: https://example.com:8443/apt",
+			input:     "gpg_key https://example.com:8443/gpg.key keyring: secure-repo deb-url: https://example.com:8443/apt",
 			wantValid: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseGPGKeyRule(tt.input)
+			got, err := ParseGPGKeyRule(tt.input)
 
 			gotValid := err == nil && got != nil
 			if gotValid != tt.wantValid {
 				if tt.wantValid {
-					t.Errorf("parseGPGKeyRule() got nil/error: %v", err)
+					t.Errorf("ParseGPGKeyRule() got nil/error: %v", err)
 				} else {
-					t.Error("parseGPGKeyRule() got valid rule, want error")
+					t.Error("ParseGPGKeyRule() got valid rule, want error")
 				}
 			}
 		})
@@ -361,10 +361,10 @@ func TestParseGPGKeyIntegration(t *testing.T) {
 mkdir ~/.cache on: [linux, mac]
 
 # Add wezterm repository
-gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: wezterm-setup on: [linux]
+gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: wezterm-setup on: [linux]
 
 # Add Docker repository with dependency
-gpg-key https://download.docker.com/linux/ubuntu/gpg keyring: docker deb-url: https://download.docker.com/linux/ubuntu after: wezterm-setup id: docker-setup on: [linux]
+gpg_key https://download.docker.com/linux/ubuntu/gpg keyring: docker deb-url: https://download.docker.com/linux/ubuntu after: wezterm-setup id: docker-setup on: [linux]
 
 # Install packages
 install vim gcc on: [linux, mac]
@@ -378,7 +378,7 @@ install vim gcc on: [linux, mac]
 	// Find GPG key rules
 	gpgRules := make([]*Rule, 0)
 	for i := range rules {
-		if rules[i].Action == "gpg-key" {
+		if rules[i].Action == "gpg_key" {
 			gpgRules = append(gpgRules, &rules[i])
 		}
 	}
@@ -484,20 +484,20 @@ func TestParseInstallRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseInstallRule(tt.input)
+			got, err := ParseInstallRule(tt.input)
 
 			if tt.wantErr {
 				if err == nil && got != nil {
-					t.Errorf("parseInstallRule() = %v, want error", got)
+					t.Errorf("ParseInstallRule() = %v, want error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("parseInstallRule() unexpected error: %v", err)
+				t.Errorf("ParseInstallRule() unexpected error: %v", err)
 				return
 			}
 			if got == nil {
-				t.Errorf("parseInstallRule() got nil, want %v", tt.want)
+				t.Errorf("ParseInstallRule() got nil, want %v", tt.want)
 				return
 			}
 
@@ -570,20 +570,20 @@ func TestParseMkdirRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseMkdirRule(tt.input)
+			got, err := ParseMkdirRule(tt.input)
 
 			if tt.wantErr {
 				if err == nil && got != nil {
-					t.Errorf("parseMkdirRule() = %v, want error", got)
+					t.Errorf("ParseMkdirRule() = %v, want error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("parseMkdirRule() unexpected error: %v", err)
+				t.Errorf("ParseMkdirRule() unexpected error: %v", err)
 				return
 			}
 			if got == nil {
-				t.Errorf("parseMkdirRule() got nil, want %v", tt.want)
+				t.Errorf("ParseMkdirRule() got nil, want %v", tt.want)
 				return
 			}
 
@@ -633,20 +633,20 @@ func TestParseCloneRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseCloneRule(tt.input)
+			got, err := ParseCloneRule(tt.input)
 
 			if tt.wantErr {
 				if err == nil && got != nil {
-					t.Errorf("parseCloneRule() = %v, want error", got)
+					t.Errorf("ParseCloneRule() = %v, want error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("parseCloneRule() unexpected error: %v", err)
+				t.Errorf("ParseCloneRule() unexpected error: %v", err)
 				return
 			}
 			if got == nil {
-				t.Error("parseCloneRule() got nil, want valid rule")
+				t.Error("ParseCloneRule() got nil, want valid rule")
 				return
 			}
 
@@ -699,20 +699,20 @@ func TestParseDecryptRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseDecryptRule(tt.input)
+			got, err := ParseDecryptRule(tt.input)
 
 			if tt.wantErr {
 				if err == nil && got != nil {
-					t.Errorf("parseDecryptRule() = %v, want error", got)
+					t.Errorf("ParseDecryptRule() = %v, want error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("parseDecryptRule() unexpected error: %v", err)
+				t.Errorf("ParseDecryptRule() unexpected error: %v", err)
 				return
 			}
 			if got == nil {
-				t.Error("parseDecryptRule() got nil, want valid rule")
+				t.Error("ParseDecryptRule() got nil, want valid rule")
 				return
 			}
 
@@ -760,20 +760,20 @@ func TestParseAsdfRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseAsdfRule(tt.input)
+			got, err := ParseAsdfRule(tt.input)
 
 			if tt.wantErr {
 				if err == nil && got != nil {
-					t.Errorf("parseAsdfRule() = %v, want error", got)
+					t.Errorf("ParseAsdfRule() = %v, want error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("parseAsdfRule() unexpected error: %v", err)
+				t.Errorf("ParseAsdfRule() unexpected error: %v", err)
 				return
 			}
 			if got == nil {
-				t.Error("parseAsdfRule() got nil, want valid rule")
+				t.Error("ParseAsdfRule() got nil, want valid rule")
 				return
 			}
 
@@ -825,20 +825,20 @@ func TestParseKnownHostsRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseKnownHostsRule(tt.input)
+			got, err := ParseKnownHostsRule(tt.input)
 
 			if tt.wantErr {
 				if err == nil && got != nil {
-					t.Errorf("parseKnownHostsRule() = %v, want error", got)
+					t.Errorf("ParseKnownHostsRule() = %v, want error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("parseKnownHostsRule() unexpected error: %v", err)
+				t.Errorf("ParseKnownHostsRule() unexpected error: %v", err)
 				return
 			}
 			if got == nil {
-				t.Error("parseKnownHostsRule() got nil, want valid rule")
+				t.Error("ParseKnownHostsRule() got nil, want valid rule")
 				return
 			}
 
@@ -863,7 +863,7 @@ mkdir ~/.config id: config-dir on: [linux, mac]
 mkdir ~/.ssh perms: 0700 id: ssh-dir after: config-dir on: [linux, mac]
 
 # Add repository keys and install base packages
-gpg-key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: wezterm-key on: [linux]
+gpg_key https://apt.fury.io/wez/gpg.key keyring: wezterm-fury deb-url: https://apt.fury.io/wez/ id: wezterm-key on: [linux]
 
 # Install system packages
 install curl wget git vim build-essential id: base-tools on: [linux]
@@ -905,7 +905,7 @@ known_hosts gitlab.example.com key: rsa id: gitlab-hosts on: [linux, mac]
 
 	expectedActions := map[string]int{
 		"mkdir":       2,
-		"gpg-key":     1,
+		"gpg_key":     1,
 		"install":     2,
 		"decrypt":     2,
 		"clone":       2,
@@ -1021,19 +1021,19 @@ func TestParseScheduleRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseScheduleRule(tt.input)
+			got, err := ParseScheduleRule(tt.input)
 
 			if tt.wantNil {
 				if err == nil && got != nil {
-					t.Errorf("parseScheduleRule() = %v, want nil/error", got)
+					t.Errorf("ParseScheduleRule() = %v, want nil/error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("parseScheduleRule() unexpected error: %v", err)
+				t.Fatalf("ParseScheduleRule() unexpected error: %v", err)
 			}
 			if got == nil {
-				t.Fatal("parseScheduleRule() returned nil, want valid rule")
+				t.Fatal("ParseScheduleRule() returned nil, want valid rule")
 			}
 
 			if got.Action != "schedule" {
@@ -1156,16 +1156,16 @@ func TestParseFromFile(t *testing.T) {
 			name:           "parse gpg-key blueprint file",
 			filepath:       "test/data/gpg_key/basic.bp",
 			expectedCount:  1,
-			expectedAction: "gpg-key",
+			expectedAction: "gpg_key",
 			validate: func(t *testing.T, rule Rule) {
 				if rule.GPGKeyURL == "" {
-					t.Error("gpg-key URL is empty")
+					t.Error("gpg_key URL is empty")
 				}
 				if rule.GPGKeyring == "" {
-					t.Error("gpg-key keyring is empty")
+					t.Error("gpg_key keyring is empty")
 				}
 				if rule.GPGDebURL == "" {
-					t.Error("gpg-key deb-url is empty")
+					t.Error("gpg_key deb-url is empty")
 				}
 			},
 		},
@@ -1246,7 +1246,7 @@ func TestParseComprehensiveFromFile(t *testing.T) {
 	// Verify action counts
 	expectedActions := map[string]int{
 		"mkdir":       2,
-		"gpg-key":     1,
+		"gpg_key":     1,
 		"install":     5,
 		"decrypt":     2,
 		"clone":       2,
@@ -1494,13 +1494,13 @@ func TestParseHomebrewRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseHomebrewRule(tt.input)
+			got, err := ParseHomebrewRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseHomebrewRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseHomebrewRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got == nil {
-				t.Error("parseHomebrewRule() got nil, want valid rule")
+				t.Error("ParseHomebrewRule() got nil, want valid rule")
 			}
 		})
 	}
@@ -1521,13 +1521,13 @@ func TestParseOllamaRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseOllamaRule(tt.input)
+			got, err := ParseOllamaRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseOllamaRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseOllamaRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got == nil {
-				t.Error("parseOllamaRule() got nil, want valid rule")
+				t.Error("ParseOllamaRule() got nil, want valid rule")
 			}
 		})
 	}
@@ -1550,13 +1550,13 @@ func TestParseDownloadRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseDownloadRule(tt.input)
+			got, err := ParseDownloadRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseDownloadRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseDownloadRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got == nil {
-				t.Error("parseDownloadRule() got nil, want valid rule")
+				t.Error("ParseDownloadRule() got nil, want valid rule")
 			}
 		})
 	}
@@ -1577,13 +1577,13 @@ func TestParseRunRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseRunRule(tt.input)
+			got, err := ParseRunRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseRunRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseRunRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got == nil {
-				t.Error("parseRunRule() got nil, want valid rule")
+				t.Error("ParseRunRule() got nil, want valid rule")
 			}
 		})
 	}
@@ -1604,13 +1604,13 @@ func TestParseRunShRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseRunShRule(tt.input)
+			got, err := ParseRunShRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseRunShRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseRunShRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got == nil {
-				t.Error("parseRunShRule() got nil, want valid rule")
+				t.Error("ParseRunShRule() got nil, want valid rule")
 			}
 		})
 	}
@@ -1632,13 +1632,13 @@ func TestParseDotfilesRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseDotfilesRule(tt.input)
+			got, err := ParseDotfilesRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseDotfilesRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseDotfilesRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got == nil {
-				t.Error("parseDotfilesRule() got nil, want valid rule")
+				t.Error("ParseDotfilesRule() got nil, want valid rule")
 			}
 		})
 	}
@@ -1660,13 +1660,13 @@ func TestParseMiseRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseMiseRule(tt.input)
+			got, err := ParseMiseRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseMiseRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseMiseRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got == nil {
-				t.Error("parseMiseRule() got nil, want valid rule")
+				t.Error("ParseMiseRule() got nil, want valid rule")
 			}
 		})
 	}
@@ -1687,9 +1687,9 @@ func TestParseSudoersRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseSudoersRule(tt.input)
+			got, err := ParseSudoersRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseSudoersRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseSudoersRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got != nil {
@@ -1715,13 +1715,13 @@ func TestParseShellRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseShellRule(tt.input)
+			got, err := ParseShellRule(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseShellRule() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseShellRule() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got == nil {
-				t.Error("parseShellRule() got nil, want valid rule")
+				t.Error("ParseShellRule() got nil, want valid rule")
 			}
 		})
 	}

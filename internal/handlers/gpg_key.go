@@ -11,6 +11,33 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
+func init() {
+	// "gpg_key" (underscore) is the canonical form.
+	RegisterAction(ActionDef{
+		Name:   "gpg_key",
+		Prefix: "gpg_key ",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			sudoPassword := ""
+			if passwordCache != nil {
+				sudoPassword = passwordCache["sudo"]
+			}
+			return NewGPGKeyHandlerWithPassword(rule, basePath, sudoPassword)
+		},
+		RuleKey: func(rule parser.Rule) string {
+			return rule.GPGKeyring
+		},
+		Detect: func(rule parser.Rule) bool {
+			return rule.GPGKeyring != ""
+		},
+		Summary: func(rule parser.Rule) string {
+			return rule.GPGKeyring
+		},
+		OrphanIndex: func(rule parser.Rule, index func(string)) {
+			index(rule.GPGKeyring)
+		},
+	})
+}
+
 // GPGKeyHandler handles GPG key addition and repository management
 type GPGKeyHandler struct {
 	BaseHandler
@@ -224,7 +251,7 @@ func (h *GPGKeyHandler) GetCommand() string {
 func (h *GPGKeyHandler) UpdateStatus(status *Status, records []ExecutionRecord, blueprint string, osName string) error {
 	blueprint = normalizeBlueprint(blueprint)
 
-	if h.Rule.Action == "gpg-key" {
+	if h.Rule.Action == "gpg_key" {
 		// Record if the keyring file is present on disk (handles both fresh install and skip)
 		if isKeyringInstalled(h.keyringPath()) {
 			status.GPGKeys = removeGPGKeyStatus(status.GPGKeys, h.Rule.GPGKeyring, blueprint, osName)
@@ -237,7 +264,7 @@ func (h *GPGKeyHandler) UpdateStatus(status *Status, records []ExecutionRecord, 
 				OS:        osName,
 			})
 		}
-	} else if h.Rule.Action == "uninstall" && DetectRuleType(h.Rule) == "gpg-key" {
+	} else if h.Rule.Action == "uninstall" && DetectRuleType(h.Rule) == "gpg_key" {
 		status.GPGKeys = removeGPGKeyStatus(status.GPGKeys, h.Rule.GPGKeyring, blueprint, osName)
 	}
 
@@ -319,7 +346,7 @@ func (h *GPGKeyHandler) FindUninstallRules(status *Status, currentRules []parser
 
 	currentGPGKeys := make(map[string]bool)
 	for _, rule := range currentRules {
-		if rule.Action == "gpg-key" && rule.GPGKeyring != "" {
+		if rule.Action == "gpg_key" && rule.GPGKeyring != "" {
 			currentGPGKeys[rule.GPGKeyring] = true
 		}
 	}

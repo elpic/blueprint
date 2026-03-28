@@ -13,6 +13,35 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
+func init() {
+	RegisterAction(ActionDef{
+		Name:   "authorized_keys",
+		Prefix: "authorized_keys",
+		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
+			return NewAuthorizedKeysHandler(rule, basePath, passwordCache)
+		},
+		RuleKey: func(rule parser.Rule) string {
+			if rule.AuthorizedKeysFile != "" {
+				return rule.AuthorizedKeysFile
+			}
+			return rule.AuthorizedKeysEncrypted
+		},
+		Detect: func(rule parser.Rule) bool {
+			return rule.AuthorizedKeysFile != "" || rule.AuthorizedKeysEncrypted != ""
+		},
+		Summary: func(rule parser.Rule) string {
+			if rule.AuthorizedKeysEncrypted != "" {
+				return rule.AuthorizedKeysEncrypted
+			}
+			return rule.AuthorizedKeysFile
+		},
+		OrphanIndex: func(rule parser.Rule, index func(string)) {
+			index(rule.AuthorizedKeysFile)
+			index(rule.AuthorizedKeysEncrypted)
+		},
+	})
+}
+
 // AuthorizedKeysHandler manages ~/.ssh/authorized_keys entries
 type AuthorizedKeysHandler struct {
 	BaseHandler
@@ -314,7 +343,9 @@ func (h *AuthorizedKeysHandler) IsInstalled(status *Status, blueprintFile, osNam
 
 	content, err := h.readKeyContent()
 	if err != nil {
-		return false
+		// Can't read/decrypt the key source (e.g. no password cache in diff mode).
+		// Status already confirmed it was applied, so treat as installed.
+		return true
 	}
 
 	authKeysPath, err := authorizedKeysFile(false)
