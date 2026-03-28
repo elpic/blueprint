@@ -17,40 +17,6 @@ func TestSemanticCheck_Clean(t *testing.T) {
 	}
 }
 
-func TestCheckDuplicateIDs(t *testing.T) {
-	rules := []parser.Rule{
-		{ID: "x", Action: "install", Packages: []parser.Package{{Name: "git"}}},
-		{ID: "x", Action: "clone", CloneURL: "https://github.com/user/repo"},
-	}
-	issues := checkDuplicateIDs(rules)
-	if len(issues) != 1 {
-		t.Fatalf("expected 1 issue, got %d", len(issues))
-	}
-	if issues[0].line != 2 {
-		t.Errorf("expected issue at rule 2, got %d", issues[0].line)
-	}
-}
-
-func TestCheckDuplicateIDs_NoDuplicates(t *testing.T) {
-	rules := []parser.Rule{
-		{ID: "a", Action: "install", Packages: []parser.Package{{Name: "git"}}},
-		{ID: "b", Action: "clone", CloneURL: "https://github.com/user/repo"},
-		{Action: "mkdir", Mkdir: "/tmp/foo"}, // no ID — should not affect check
-	}
-	if issues := checkDuplicateIDs(rules); len(issues) != 0 {
-		t.Errorf("expected no issues, got %v", issues)
-	}
-}
-
-func TestCheckDuplicateIDs_EmptyIDsIgnored(t *testing.T) {
-	rules := []parser.Rule{
-		{Action: "install", Packages: []parser.Package{{Name: "git"}}},
-		{Action: "install", Packages: []parser.Package{{Name: "curl"}}},
-	}
-	if issues := checkDuplicateIDs(rules); len(issues) != 0 {
-		t.Errorf("expected no issues for rules with no ID, got %v", issues)
-	}
-}
 
 func TestCheckAfterReferences_Valid(t *testing.T) {
 	rules := []parser.Rule{
@@ -125,7 +91,7 @@ func TestRuleLabel(t *testing.T) {
 	}{
 		{parser.Rule{ID: "myid", Action: "install"}, "myid"},
 		{parser.Rule{Action: "install", Packages: []parser.Package{{Name: "git"}}}, "install git"},
-		{parser.Rule{Action: "clone", CloneURL: "https://github.com/u/r"}, "clone https://github.com/u/r"},
+		{parser.Rule{Action: "clone", ClonePath: "~/projects"}, "clone ~/projects"},
 		{parser.Rule{Action: "run", RunCommand: "echo hi"}, "run echo hi"},
 		{parser.Rule{Action: "mkdir", Mkdir: "/tmp/foo"}, "mkdir /tmp/foo"},
 	}

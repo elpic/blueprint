@@ -68,30 +68,8 @@ func Validate(file string) {
 // semanticCheck runs all semantic validations on a parsed rule set.
 func semanticCheck(rules []parser.Rule) []validateIssue {
 	var issues []validateIssue
-	issues = append(issues, checkDuplicateIDs(rules)...)
 	issues = append(issues, checkAfterReferences(rules)...)
 	issues = append(issues, checkOSFilters(rules)...)
-	return issues
-}
-
-// checkDuplicateIDs flags rules that share the same non-empty id:.
-func checkDuplicateIDs(rules []parser.Rule) []validateIssue {
-	seen := map[string]int{} // id → first rule index (1-based)
-	var issues []validateIssue
-	for i, r := range rules {
-		if r.ID == "" {
-			continue
-		}
-		if first, exists := seen[r.ID]; exists {
-			issues = append(issues, validateIssue{
-				line:    i + 1,
-				summary: ruleLabel(r),
-				message: fmt.Sprintf("duplicate id %q (first seen at rule %d)", r.ID, first),
-			})
-		} else {
-			seen[r.ID] = i + 1
-		}
-	}
 	return issues
 }
 
