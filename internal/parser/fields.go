@@ -204,6 +204,11 @@ func (f lineFields) list(key string) []string {
 	if !ok {
 		return nil
 	}
+	// Strip optional bracket notation: "after: [a, b]" → "a, b"
+	v = strings.TrimSpace(v)
+	if strings.HasPrefix(v, "[") && strings.HasSuffix(v, "]") {
+		v = v[1 : len(v)-1]
+	}
 	var result []string
 	for _, part := range strings.Split(v, ",") {
 		if s := strings.TrimSpace(part); s != "" {
