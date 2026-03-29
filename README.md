@@ -209,5 +209,7 @@ blueprint-windows-amd64.exe apply setup.bp
 ## Further Reading
 
 - [`docs/`](docs/) -- full documentation for every action
+- [`docs/doctor.md`](docs/doctor.md) -- inspect and repair `~/.blueprint/status.json`
+- [`docs/validate.md`](docs/validate.md) -- parse and semantic-check a blueprint without applying
 - [`docs/architecture.md`](docs/architecture.md) -- project structure, engine internals, handler interfaces
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) -- development setup, build commands, testing
