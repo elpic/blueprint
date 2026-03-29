@@ -34,6 +34,14 @@ var shorthandHosts = map[string]string{
 	"codeberg":  "https://codeberg.org/",
 }
 
+// shorthandSSHHosts maps @provider: prefixes to their SSH host (git@<host>:).
+var shorthandSSHHosts = map[string]string{
+	"github":    "git@github.com:",
+	"gitlab":    "git@gitlab.com:",
+	"bitbucket": "git@bitbucket.org:",
+	"codeberg":  "git@codeberg.org:",
+}
+
 // ExpandShorthand expands @provider:user/repo[@branch][:path] to a full HTTPS URL.
 // Returns the input unchanged if it is not a shorthand form.
 //
@@ -43,6 +51,21 @@ var shorthandHosts = map[string]string{
 //	@gitlab:user/repo@main         → https://gitlab.com/user/repo@main
 //	@bitbucket:user/repo@v1:ci.bp  → https://bitbucket.org/user/repo@v1:ci.bp
 func ExpandShorthand(input string) string {
+	return expandShorthand(input, false)
+}
+
+// ExpandShorthandSSH expands @provider:user/repo[@branch][:path] to an SSH URL.
+// Returns the input unchanged if it is not a shorthand form.
+//
+// Examples:
+//
+//	@github:user/repo      → git@github.com:user/repo
+//	@gitlab:user/repo@main → git@gitlab.com:user/repo@main
+func ExpandShorthandSSH(input string) string {
+	return expandShorthand(input, true)
+}
+
+func expandShorthand(input string, preferSSH bool) string {
 	if !strings.HasPrefix(input, "@") {
 		return input
 	}
@@ -53,12 +76,20 @@ func ExpandShorthand(input string) string {
 		return input // no colon → not a valid shorthand
 	}
 	provider := rest[:colonIdx]
+	// rest[colonIdx+1:] is "user/repo[@branch][:path]"
+	suffix := rest[colonIdx+1:]
+	if preferSSH {
+		base, ok := shorthandSSHHosts[provider]
+		if !ok {
+			return input // unknown provider → pass through unchanged
+		}
+		return base + suffix
+	}
 	base, ok := shorthandHosts[provider]
 	if !ok {
 		return input // unknown provider → pass through unchanged
 	}
-	// rest[colonIdx+1:] is "user/repo[@branch][:path]"
-	return base + rest[colonIdx+1:]
+	return base + suffix
 }
 
 // IsGitURL checks if the given string is a git URL

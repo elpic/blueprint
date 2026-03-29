@@ -54,8 +54,12 @@ func (p *passwordStore) snapshot() map[string]string {
 // passwordCache stores decryption passwords by password-id to avoid re-prompting
 var passwordCache = &passwordStore{m: make(map[string]string)}
 
-func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID string, skipDecrypt bool) {
-	file = gitpkg.ExpandShorthand(file)
+func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID string, skipDecrypt bool, preferSSH bool) {
+	if preferSSH {
+		file = gitpkg.ExpandShorthandSSH(file)
+	} else {
+		file = gitpkg.ExpandShorthand(file)
+	}
 	var runNumber int
 
 	// Get next run number (only for non-dry runs)
@@ -68,7 +72,7 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 		}
 	}
 
-	setupPath, blueprintSHA, cleanup, err := resolveBlueprintFile(file, dry)
+	setupPath, blueprintSHA, cleanup, err := resolveBlueprintFile(file, dry, preferSSH)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -178,5 +182,5 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 }
 
 func Run(file string, dry bool) {
-	RunWithSkip(file, dry, "", "", "", false)
+	RunWithSkip(file, dry, "", "", "", false, false)
 }

@@ -32,11 +32,11 @@ func (v validateIssue) String() string {
 
 // Validate parses a blueprint file (or git URL) and runs semantic checks.
 // It prints all issues found and exits with code 1 if any are found.
-func Validate(file string) {
+func Validate(file string, preferSSH bool) {
 	fmt.Printf("\n%s\n", ui.FormatHighlight("=== Blueprint Validate ==="))
 	fmt.Printf("\nParsing %s...\n", file)
 
-	setupPath, _, cleanup, err := resolveBlueprintFile(file, true)
+	setupPath, _, cleanup, err := resolveBlueprintFile(file, true, preferSSH)
 	if err != nil {
 		fmt.Printf("  %s\n", ui.FormatError(fmt.Sprintf("Error resolving blueprint: %v", err)))
 		fmt.Printf("\n%s\n\n", ui.FormatError("Validation failed."))

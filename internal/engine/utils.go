@@ -211,9 +211,13 @@ func normalizeBlueprint(input string) string {
 // that subsequent commands (e.g. `blueprint doctor`) can inspect its contents.
 // Returns the git SHA of the resolved repo (empty string for local files).
 // The caller must call cleanup() when done (no-op for git URLs since the cache is kept).
-func resolveBlueprintFile(input string, verbose bool) (setupPath string, sha string, cleanup func(), err error) {
+func resolveBlueprintFile(input string, verbose bool, preferSSH bool) (setupPath string, sha string, cleanup func(), err error) {
 	cleanup = func() {}
-	input = gitpkg.ExpandShorthand(input)
+	if preferSSH {
+		input = gitpkg.ExpandShorthandSSH(input)
+	} else {
+		input = gitpkg.ExpandShorthand(input)
+	}
 
 	if gitpkg.IsGitURL(input) {
 		params := gitpkg.ParseGitURL(input)

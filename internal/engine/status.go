@@ -240,9 +240,13 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 
 // PrintDiff compares the desired state in the blueprint file against the installed state
 // in status.json and prints what would be added or removed on the next apply.
-func PrintDiff(blueprintFile string) {
-	blueprintFile = gitpkg.ExpandShorthand(blueprintFile)
-	setupPath, _, cleanup, err := resolveBlueprintFile(blueprintFile, false)
+func PrintDiff(blueprintFile string, preferSSH bool) {
+	if preferSSH {
+		blueprintFile = gitpkg.ExpandShorthandSSH(blueprintFile)
+	} else {
+		blueprintFile = gitpkg.ExpandShorthand(blueprintFile)
+	}
+	setupPath, _, cleanup, err := resolveBlueprintFile(blueprintFile, false, preferSSH)
 	if err != nil {
 		fmt.Printf("%s\n", ui.FormatError(err.Error()))
 		return
