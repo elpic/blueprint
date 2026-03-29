@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
 )
@@ -54,6 +55,7 @@ func (p *passwordStore) snapshot() map[string]string {
 var passwordCache = &passwordStore{m: make(map[string]string)}
 
 func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID string, skipDecrypt bool) {
+	file = gitpkg.ExpandShorthand(file)
 	var runNumber int
 
 	// Get next run number (only for non-dry runs)

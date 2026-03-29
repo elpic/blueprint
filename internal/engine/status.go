@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/elpic/blueprint/internal"
+	gitpkg "github.com/elpic/blueprint/internal/git"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
@@ -240,6 +241,7 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 // PrintDiff compares the desired state in the blueprint file against the installed state
 // in status.json and prints what would be added or removed on the next apply.
 func PrintDiff(blueprintFile string) {
+	blueprintFile = gitpkg.ExpandShorthand(blueprintFile)
 	setupPath, _, cleanup, err := resolveBlueprintFile(blueprintFile, false)
 	if err != nil {
 		fmt.Printf("%s\n", ui.FormatError(err.Error()))
