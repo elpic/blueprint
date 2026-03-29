@@ -213,6 +213,7 @@ func normalizeBlueprint(input string) string {
 // The caller must call cleanup() when done (no-op for git URLs since the cache is kept).
 func resolveBlueprintFile(input string, verbose bool) (setupPath string, sha string, cleanup func(), err error) {
 	cleanup = func() {}
+	input = gitpkg.ExpandShorthand(input)
 
 	if gitpkg.IsGitURL(input) {
 		params := gitpkg.ParseGitURL(input)
