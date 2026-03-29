@@ -26,8 +26,44 @@ type GitURLParams struct {
 	Path   string
 }
 
+// shorthandHosts maps @provider: prefixes to their base HTTPS URLs.
+var shorthandHosts = map[string]string{
+	"github":    "https://github.com/",
+	"gitlab":    "https://gitlab.com/",
+	"bitbucket": "https://bitbucket.org/",
+	"codeberg":  "https://codeberg.org/",
+}
+
+// ExpandShorthand expands @provider:user/repo[@branch][:path] to a full HTTPS URL.
+// Returns the input unchanged if it is not a shorthand form.
+//
+// Examples:
+//
+//	@github:user/repo              → https://github.com/user/repo
+//	@gitlab:user/repo@main         → https://gitlab.com/user/repo@main
+//	@bitbucket:user/repo@v1:ci.bp  → https://bitbucket.org/user/repo@v1:ci.bp
+func ExpandShorthand(input string) string {
+	if !strings.HasPrefix(input, "@") {
+		return input
+	}
+	// Format: @provider:user/repo[@branch][:path]
+	rest := input[1:] // strip leading "@"
+	colonIdx := strings.Index(rest, ":")
+	if colonIdx < 0 {
+		return input // no colon → not a valid shorthand
+	}
+	provider := rest[:colonIdx]
+	base, ok := shorthandHosts[provider]
+	if !ok {
+		return input // unknown provider → pass through unchanged
+	}
+	// rest[colonIdx+1:] is "user/repo[@branch][:path]"
+	return base + rest[colonIdx+1:]
+}
+
 // IsGitURL checks if the given string is a git URL
 func IsGitURL(input string) bool {
+	input = ExpandShorthand(input)
 	// Remove branch/path specifiers to check base URL
 	// Format: url[@branch][:path]
 
@@ -62,6 +98,7 @@ func IsGitURL(input string) bool {
 //	git@github.com:user/repo.git[@branch[:path/to/file.bp]]
 //	git://github.com/user/repo.git[@branch][:path/to/file.bp]
 func ParseGitURL(input string) GitURLParams {
+	input = ExpandShorthand(input)
 	params := GitURLParams{
 		Path: "setup.bp", // Default path
 	}

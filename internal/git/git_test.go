@@ -566,3 +566,111 @@ func TestCleanupRepository(t *testing.T) {
 		t.Error("CleanupRepository() did not remove directory")
 	}
 }
+
+func TestExpandShorthand(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		// GitHub
+		{"@github:user/repo", "https://github.com/user/repo"},
+		{"@github:user/repo@main", "https://github.com/user/repo@main"},
+		{"@github:user/repo@main:infra/setup.bp", "https://github.com/user/repo@main:infra/setup.bp"},
+
+		// GitLab
+		{"@gitlab:user/repo", "https://gitlab.com/user/repo"},
+		{"@gitlab:group/subgroup/repo", "https://gitlab.com/group/subgroup/repo"},
+		{"@gitlab:user/repo@develop", "https://gitlab.com/user/repo@develop"},
+
+		// Bitbucket
+		{"@bitbucket:user/repo", "https://bitbucket.org/user/repo"},
+		{"@bitbucket:user/repo@main:setup.bp", "https://bitbucket.org/user/repo@main:setup.bp"},
+
+		// Codeberg
+		{"@codeberg:user/repo", "https://codeberg.org/user/repo"},
+
+		// Non-shorthand — pass through unchanged
+		{"https://github.com/user/repo", "https://github.com/user/repo"},
+		{"git@github.com:user/repo.git", "git@github.com:user/repo.git"},
+		{"./local.bp", "./local.bp"},
+		{"@unknown:user/repo", "@unknown:user/repo"},
+		{"@noslash", "@noslash"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := ExpandShorthand(tt.input)
+			if got != tt.want {
+				t.Errorf("ExpandShorthand(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsGitURL_Shorthand(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"@github:user/repo", true},
+		{"@gitlab:user/repo", true},
+		{"@bitbucket:user/repo", true},
+		{"@codeberg:user/repo", true},
+		{"@unknown:user/repo", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := IsGitURL(tt.input)
+			if got != tt.want {
+				t.Errorf("IsGitURL(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseGitURL_Shorthand(t *testing.T) {
+	tests := []struct {
+		input      string
+		wantURL    string
+		wantBranch string
+		wantPath   string
+	}{
+		{
+			input:   "@github:user/repo",
+			wantURL: "https://github.com/user/repo",
+			wantPath: "setup.bp",
+		},
+		{
+			input:      "@gitlab:user/repo@main",
+			wantURL:    "https://gitlab.com/user/repo",
+			wantBranch: "main",
+			wantPath:   "setup.bp",
+		},
+		{
+			input:      "@github:user/repo@main:infra/setup.bp",
+			wantURL:    "https://github.com/user/repo",
+			wantBranch: "main",
+			wantPath:   "infra/setup.bp",
+		},
+		{
+			input:   "@bitbucket:user/repo",
+			wantURL: "https://bitbucket.org/user/repo",
+			wantPath: "setup.bp",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := ParseGitURL(tt.input)
+			if got.URL != tt.wantURL {
+				t.Errorf("URL = %q, want %q", got.URL, tt.wantURL)
+			}
+			if got.Branch != tt.wantBranch {
+				t.Errorf("Branch = %q, want %q", got.Branch, tt.wantBranch)
+			}
+			if got.Path != tt.wantPath {
+				t.Errorf("Path = %q, want %q", got.Path, tt.wantPath)
+			}
+		})
+	}
+}
