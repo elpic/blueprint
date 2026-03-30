@@ -674,3 +674,40 @@ func TestParseGitURL_Shorthand(t *testing.T) {
 		})
 	}
 }
+
+func TestExpandShorthandSSH(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		// GitHub
+		{"@github:user/repo", "git@github.com:user/repo"},
+		{"@github:user/repo@main", "git@github.com:user/repo@main"},
+		{"@github:user/repo@main:infra/setup.bp", "git@github.com:user/repo@main:infra/setup.bp"},
+
+		// GitLab
+		{"@gitlab:user/repo", "git@gitlab.com:user/repo"},
+		{"@gitlab:group/subgroup/repo", "git@gitlab.com:group/subgroup/repo"},
+
+		// Bitbucket
+		{"@bitbucket:user/repo", "git@bitbucket.org:user/repo"},
+
+		// Codeberg
+		{"@codeberg:user/repo", "git@codeberg.org:user/repo"},
+
+		// Non-shorthand — pass through unchanged
+		{"https://github.com/user/repo", "https://github.com/user/repo"},
+		{"git@github.com:user/repo.git", "git@github.com:user/repo.git"},
+		{"./local.bp", "./local.bp"},
+		{"@unknown:user/repo", "@unknown:user/repo"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := ExpandShorthandSSH(tt.input)
+			if got != tt.want {
+				t.Errorf("ExpandShorthandSSH(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

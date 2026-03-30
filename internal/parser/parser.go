@@ -163,11 +163,25 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 
 		// Handle include statements
 		if strings.HasPrefix(line, "include ") {
-			filePath := strings.TrimPrefix(line, "include ")
-			filePath = strings.TrimSpace(filePath)
+			rest := strings.TrimPrefix(line, "include ")
+			rest = strings.TrimSpace(rest)
+
+			// Parse optional prefer_ssh: true flag
+			preferSSH := false
+			filePath := rest
+			if idx := strings.Index(rest, "prefer_ssh:"); idx >= 0 {
+				filePath = strings.TrimSpace(rest[:idx])
+				val := strings.TrimSpace(rest[idx+len("prefer_ssh:"):])
+				preferSSH = strings.EqualFold(val, "true")
+			}
 
 			// Dispatch git URLs to the remote include handler
 			if git.IsGitURL(filePath) {
+				if preferSSH {
+					filePath = git.ExpandShorthandSSH(filePath)
+				} else {
+					filePath = git.ExpandShorthand(filePath)
+				}
 				if loadedFiles[filePath] {
 					fmt.Printf("Warning: Skipping circular include: %s\n", filePath)
 					continue

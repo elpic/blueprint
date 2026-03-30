@@ -12,8 +12,8 @@ import (
 var version = "dev"
 var commit = "none"
 
-// parseFlags extracts --skip-group, --skip-id, --skip-decrypt, and --only flags from arguments
-func parseFlags(args []string) (skipGroup, skipID, onlyID string, skipDecrypt bool) {
+// parseFlags extracts --skip-group, --skip-id, --skip-decrypt, --only, and --prefer-ssh flags from arguments
+func parseFlags(args []string) (skipGroup, skipID, onlyID string, skipDecrypt, preferSSH bool) {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--skip-group":
@@ -33,6 +33,8 @@ func parseFlags(args []string) (skipGroup, skipID, onlyID string, skipDecrypt bo
 			}
 		case "--skip-decrypt":
 			skipDecrypt = true
+		case "--prefer-ssh":
+			preferSSH = true
 		}
 	}
 	return
@@ -82,20 +84,20 @@ func main() {
 		engine.PrintHistory(runNumber, stepNumber)
 	case "plan":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint plan <file.bp> [--skip-group <name>] [--skip-id <name>] [--only <id>] [--skip-decrypt]")
+			fmt.Println("Usage: blueprint plan <file.bp> [--skip-group <name>] [--skip-id <name>] [--only <id>] [--skip-decrypt] [--prefer-ssh]")
 			os.Exit(1)
 		}
 		file := os.Args[2]
-		skipGroup, skipID, onlyID, skipDecrypt := parseFlags(os.Args[3:])
-		engine.RunWithSkip(file, true, skipGroup, skipID, onlyID, skipDecrypt) // dry-run
+		skipGroup, skipID, onlyID, skipDecrypt, preferSSH := parseFlags(os.Args[3:])
+		engine.RunWithSkip(file, true, skipGroup, skipID, onlyID, skipDecrypt, preferSSH) // dry-run
 	case "apply":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint apply <file.bp> [--skip-group <name>] [--skip-id <name>] [--only <id>] [--skip-decrypt]")
+			fmt.Println("Usage: blueprint apply <file.bp> [--skip-group <name>] [--skip-id <name>] [--only <id>] [--skip-decrypt] [--prefer-ssh]")
 			os.Exit(1)
 		}
 		file := os.Args[2]
-		skipGroup, skipID, onlyID, skipDecrypt := parseFlags(os.Args[3:])
-		engine.RunWithSkip(file, false, skipGroup, skipID, onlyID, skipDecrypt)
+		skipGroup, skipID, onlyID, skipDecrypt, preferSSH := parseFlags(os.Args[3:])
+		engine.RunWithSkip(file, false, skipGroup, skipID, onlyID, skipDecrypt, preferSSH)
 	case "encrypt":
 		if len(os.Args) < 3 {
 			fmt.Println("Usage: blueprint encrypt <file> [--password-id <id>]")
@@ -117,10 +119,11 @@ func main() {
 		engine.PrintPS()
 	case "diff":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint diff <file.bp>")
+			fmt.Println("Usage: blueprint diff <file.bp> [--prefer-ssh]")
 			os.Exit(1)
 		}
-		engine.PrintDiff(os.Args[2])
+		_, _, _, _, preferSSH := parseFlags(os.Args[3:])
+		engine.PrintDiff(os.Args[2], preferSSH)
 	case "slow":
 		topN := 10
 		for i := 2; i < len(os.Args); i++ {
@@ -140,10 +143,11 @@ func main() {
 		engine.DoctorCheck(fix)
 	case "validate":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint validate <file.bp>")
+			fmt.Println("Usage: blueprint validate <file.bp> [--prefer-ssh]")
 			os.Exit(1)
 		}
-		engine.Validate(os.Args[2])
+		_, _, _, _, preferSSH := parseFlags(os.Args[3:])
+		engine.Validate(os.Args[2], preferSSH)
 	default:
 		// Short mode: treat as file path only if it looks like a path (not a known command typo).
 		if !isKnownCommand(mode) {
