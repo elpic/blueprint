@@ -261,9 +261,10 @@ func TestInstallHandler_BuildUninstallCommandForManager_AllCases(t *testing.T) {
 			}
 
 			containerBuilder := testutils.NewMockContainer().WithOS(tt.osName)
-			if tt.osName == "linux" {
+			switch tt.osName {
+			case "linux":
 				containerBuilder = containerBuilder.WithUser("user", "1001", "1001", "/home/user")
-			} else if tt.osName == "mac" {
+			case "mac":
 				sysctlResult := testutils.NewExecuteResult().WithStdout("0\n").AsSuccess().Build()
 				containerBuilder = containerBuilder.WithCommandResult("sysctl -n sysctl.proc_translated", sysctlResult)
 			}
