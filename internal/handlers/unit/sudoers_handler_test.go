@@ -228,6 +228,128 @@ func TestSudoersHandler_GetDisplayDetails_Pure(t *testing.T) {
 	}
 }
 
+// TestSudoersHandler_IsInstalled_Pure tests IsInstalled against a status object.
+func TestSudoersHandler_IsInstalled_Pure(t *testing.T) {
+	status := &handlers.Status{
+		Sudoers: []handlers.SudoersStatus{
+			{User: "alice", Blueprint: "/test/bp.yml", OS: "linux"},
+			{User: "bob", Blueprint: "/other/bp.yml", OS: "linux"},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		user     string
+		bp       string
+		osName   string
+		expected bool
+	}{
+		{
+			name:     "user is in sudoers for matching blueprint and OS",
+			user:     "alice",
+			bp:       "/test/bp.yml",
+			osName:   "linux",
+			expected: true,
+		},
+		{
+			name:     "user not in sudoers",
+			user:     "charlie",
+			bp:       "/test/bp.yml",
+			osName:   "linux",
+			expected: false,
+		},
+		{
+			name:     "user exists but wrong blueprint",
+			user:     "alice",
+			bp:       "/other/bp.yml",
+			osName:   "linux",
+			expected: false,
+		},
+		{
+			name:     "user exists but wrong OS",
+			user:     "alice",
+			bp:       "/test/bp.yml",
+			osName:   "mac",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rule := parser.Rule{Action: "sudoers", SudoersUser: tt.user}
+			handler := handlers.NewSudoersHandler(rule, "/test")
+			got := handler.IsInstalled(status, tt.bp, tt.osName)
+			if got != tt.expected {
+				t.Errorf("IsInstalled() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestSudoersHandler_FindUninstallRules_Pure tests FindUninstallRules.
+func TestSudoersHandler_FindUninstallRules_Pure(t *testing.T) {
+	status := &handlers.Status{
+		Sudoers: []handlers.SudoersStatus{
+			{User: "alice", Blueprint: "/test/bp.yml", OS: "linux"},
+			{User: "bob", Blueprint: "/test/bp.yml", OS: "linux"},
+		},
+	}
+
+	tests := []struct {
+		name          string
+		currentRules  []parser.Rule
+		blueprintFile string
+		osName        string
+		wantCount     int
+		wantUser      string
+	}{
+		{
+			name:          "alice removed from blueprint → uninstall rule generated",
+			blueprintFile: "/test/bp.yml",
+			osName:        "linux",
+			currentRules: []parser.Rule{
+				{Action: "sudoers", SudoersUser: "alice"},
+			},
+			wantCount: 1,
+			wantUser:  "bob",
+		},
+		{
+			name:          "both users still present → no uninstall rules",
+			blueprintFile: "/test/bp.yml",
+			osName:        "linux",
+			currentRules: []parser.Rule{
+				{Action: "sudoers", SudoersUser: "alice"},
+				{Action: "sudoers", SudoersUser: "bob"},
+			},
+			wantCount: 0,
+		},
+		{
+			name:          "different OS → no match → no rules",
+			blueprintFile: "/test/bp.yml",
+			osName:        "mac",
+			currentRules:  []parser.Rule{},
+			wantCount:     0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rule := parser.Rule{Action: "sudoers"}
+			handler := handlers.NewSudoersHandler(rule, "/test")
+			rules := handler.FindUninstallRules(status, tt.currentRules, tt.blueprintFile, tt.osName)
+			if len(rules) != tt.wantCount {
+				t.Errorf("FindUninstallRules() returned %d rules, want %d", len(rules), tt.wantCount)
+				return
+			}
+			if tt.wantCount > 0 && tt.wantUser != "" {
+				if rules[0].SudoersUser != tt.wantUser {
+					t.Errorf("uninstall rule user = %q, want %q", rules[0].SudoersUser, tt.wantUser)
+				}
+			}
+		})
+	}
+}
+
 // TestSudoersHandler_GetState_Pure tests state generation for the "blueprint ps" command.
 func TestSudoersHandler_GetState_Pure(t *testing.T) {
 	tests := []struct {

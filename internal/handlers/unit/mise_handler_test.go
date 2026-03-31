@@ -702,6 +702,129 @@ func TestMiseHandler_Constructor_Pure(t *testing.T) {
 	}
 }
 
+// TestMiseHandler_UpdateStatus_MiseAction covers UpdateStatus for the mise action.
+func TestMiseHandler_UpdateStatus_MiseAction(t *testing.T) {
+	handlers.SetMiseCmdFunc(func() string { return "/usr/local/bin/mise" })
+	defer handlers.ResetMiseCmd()
+
+	rule := parser.Rule{
+		Action:       "mise",
+		MisePackages: []string{"node@18.0.0"},
+	}
+	handler := handlers.NewMiseHandler(rule, "/test")
+	status := &handlers.Status{}
+
+	cmd := handler.GetCommand()
+	records := []handlers.ExecutionRecord{
+		{Command: cmd, Status: "success"},
+	}
+
+	if err := handler.UpdateStatus(status, records, "/test/bp.yml", "linux"); err != nil {
+		t.Fatalf("UpdateStatus() error: %v", err)
+	}
+
+	if len(status.Mises) != 1 {
+		t.Fatalf("expected 1 mise entry, got %d", len(status.Mises))
+	}
+	if status.Mises[0].Tool != "node" || status.Mises[0].Version != "18.0.0" {
+		t.Errorf("mise entry = %+v, want node@18.0.0", status.Mises[0])
+	}
+}
+
+// TestMiseHandler_UpdateStatus_PackageWithoutVersion covers UpdateStatus for tool without @version.
+func TestMiseHandler_UpdateStatus_PackageWithoutVersion(t *testing.T) {
+	handlers.SetMiseCmdFunc(func() string { return "/usr/local/bin/mise" })
+	defer handlers.ResetMiseCmd()
+
+	rule := parser.Rule{
+		Action:       "mise",
+		MisePackages: []string{"terraform"},
+	}
+	handler := handlers.NewMiseHandler(rule, "/test")
+	status := &handlers.Status{}
+
+	cmd := handler.GetCommand()
+	records := []handlers.ExecutionRecord{
+		{Command: cmd, Status: "success"},
+	}
+
+	if err := handler.UpdateStatus(status, records, "/test/bp.yml", "linux"); err != nil {
+		t.Fatalf("UpdateStatus() error: %v", err)
+	}
+
+	if len(status.Mises) != 1 {
+		t.Fatalf("expected 1 mise entry, got %d", len(status.Mises))
+	}
+	if status.Mises[0].Tool != "terraform" || status.Mises[0].Version != "latest" {
+		t.Errorf("mise entry = %+v, want terraform@latest", status.Mises[0])
+	}
+}
+
+// TestMiseHandler_UpdateStatus_SkipsDuplicates verifies no duplicate is added on second apply.
+func TestMiseHandler_UpdateStatus_SkipsDuplicates(t *testing.T) {
+	handlers.SetMiseCmdFunc(func() string { return "/usr/local/bin/mise" })
+	defer handlers.ResetMiseCmd()
+
+	rule := parser.Rule{
+		Action:       "mise",
+		MisePackages: []string{"node@18.0.0"},
+	}
+	handler := handlers.NewMiseHandler(rule, "/test")
+
+	status := &handlers.Status{
+		Mises: []handlers.MiseStatus{
+			{Tool: "node", Version: "18.0.0", Blueprint: "/test/bp.yml", OS: "linux"},
+		},
+	}
+
+	cmd := handler.GetCommand()
+	records := []handlers.ExecutionRecord{
+		{Command: cmd, Status: "success"},
+	}
+
+	if err := handler.UpdateStatus(status, records, "/test/bp.yml", "linux"); err != nil {
+		t.Fatalf("UpdateStatus() error: %v", err)
+	}
+
+	if len(status.Mises) != 1 {
+		t.Errorf("expected 1 mise entry (no duplicate added), got %d", len(status.Mises))
+	}
+}
+
+// TestMiseHandler_IsInstalled_MatchesWithVersion checks IsInstalled when version is present.
+func TestMiseHandler_IsInstalled_ExactMatch(t *testing.T) {
+	status := &handlers.Status{
+		Mises: []handlers.MiseStatus{
+			{Tool: "node", Version: "18.0.0", Blueprint: "/test/bp.yml", OS: "linux"},
+		},
+	}
+
+	rule := parser.Rule{MisePackages: []string{"node@18.0.0"}}
+	handler := handlers.NewMiseHandler(rule, "/test")
+
+	if !handler.IsInstalled(status, "/test/bp.yml", "linux") {
+		t.Error("IsInstalled() = false, want true (exact match)")
+	}
+}
+
+// TestMiseHandler_ResolvedMisePath_TildeExpansion exercises resolvedMisePath via GetCommand.
+func TestMiseHandler_ResolvedMisePath_TildeExpansion(t *testing.T) {
+	handlers.SetMiseCmdFunc(func() string { return "/usr/local/bin/mise" })
+	defer handlers.ResetMiseCmd()
+
+	// A rule with a project path containing ~ — GetCommand should include the raw path
+	rule := parser.Rule{
+		Action:       "mise",
+		MisePackages: []string{"node@18.0.0"},
+		MisePath:     "~/projects/app",
+	}
+	handler := handlers.NewMiseHandler(rule, "/test")
+	cmd := handler.GetCommand()
+	if !contains(cmd, "~/projects/app") {
+		t.Errorf("GetCommand() = %q, expected to contain '~/projects/app'", cmd)
+	}
+}
+
 // Helper function to check if a string contains a substring
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && s != substr && (len(substr) == 0 || findSubstring(s, substr) >= 0)
