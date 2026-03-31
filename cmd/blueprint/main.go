@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/elpic/blueprint/internal/engine"
 )
@@ -54,6 +55,36 @@ func unknownCommandMessage(cmd string) string {
 	return fmt.Sprintf("unknown command: %q\nUsage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff|doctor|validate|version> [<file>]", cmd)
 }
 
+// parseNonNegativeInt parses s as a non-negative integer. On any error it
+// writes a human-readable message to stderr and returns -1, false.
+func parseNonNegativeInt(s, flagName string) (int, bool) {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %s must be a valid integer, got %q\n", flagName, s)
+		return -1, false
+	}
+	if n < 0 {
+		fmt.Fprintf(os.Stderr, "error: %s must be a non-negative integer, got %d\n", flagName, n)
+		return -1, false
+	}
+	return n, true
+}
+
+// parsePositiveInt parses s as a positive integer (>= 1). On any error it
+// writes a human-readable message to stderr and returns -1, false.
+func parsePositiveInt(s, flagName string) (int, bool) {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %s must be a valid integer, got %q\n", flagName, s)
+		return -1, false
+	}
+	if n < 1 {
+		fmt.Fprintf(os.Stderr, "error: %s must be a positive integer (>= 1), got %d\n", flagName, n)
+		return -1, false
+	}
+	return n, true
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff|doctor|validate|version> [<file|run_number>]")
@@ -76,10 +107,18 @@ func main() {
 		runNumber := 0
 		stepNumber := -1
 		if len(os.Args) >= 3 {
-			_, _ = fmt.Sscanf(os.Args[2], "%d", &runNumber)
+			n, ok := parseNonNegativeInt(os.Args[2], "run_number")
+			if !ok {
+				os.Exit(1)
+			}
+			runNumber = n
 		}
 		if len(os.Args) >= 4 {
-			_, _ = fmt.Sscanf(os.Args[3], "%d", &stepNumber)
+			n, ok := parseNonNegativeInt(os.Args[3], "step_number")
+			if !ok {
+				os.Exit(1)
+			}
+			stepNumber = n
 		}
 		engine.PrintHistory(runNumber, stepNumber)
 	case "plan":
@@ -128,7 +167,11 @@ func main() {
 		topN := 10
 		for i := 2; i < len(os.Args); i++ {
 			if os.Args[i] == "--top" && i+1 < len(os.Args) {
-				_, _ = fmt.Sscanf(os.Args[i+1], "%d", &topN)
+				n, ok := parsePositiveInt(os.Args[i+1], "--top")
+				if !ok {
+					os.Exit(1)
+				}
+				topN = n
 				i++
 			}
 		}
