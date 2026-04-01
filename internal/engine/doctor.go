@@ -273,6 +273,147 @@ func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []par
 	}
 }
 
+// checkStaleSymlinks scans all DotfilesStatus entries and reports symlinks
+// whose target path no longer resolves to a real file (broken symlink or
+// symlink that was deleted). With --fix it removes them from the filesystem
+// and from the status entry's Links list; entries with no remaining links are
+// removed from status entirely.
+func checkStaleSymlinks(status *handlerskg.Status) []doctorIssue {
+	type staleLink struct {
+		link      string // symlink path
+		entryURL  string // dotfiles URL owning this link
+		entryOS   string
+		entryBlue string
+	}
+	var stale []staleLink
+
+	for i := range status.Dotfiles {
+		entry := &status.Dotfiles[i]
+		for _, link := range entry.Links {
+			expanded := expandHomedir(link)
+			info, err := os.Lstat(expanded)
+			if err != nil {
+				// path does not exist at all
+				stale = append(stale, staleLink{link: link, entryURL: entry.URL, entryOS: entry.OS, entryBlue: entry.Blueprint})
+				continue
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				// path exists and is a symlink — check if target resolves
+				if _, err := os.Stat(expanded); err != nil {
+					stale = append(stale, staleLink{link: link, entryURL: entry.URL, entryOS: entry.OS, entryBlue: entry.Blueprint})
+				}
+			}
+		}
+	}
+
+	if len(stale) == 0 {
+		return nil
+	}
+
+	examples := make([]string, 0, 3)
+	for i, s := range stale {
+		if i >= 3 {
+			break
+		}
+		examples = append(examples, s.link)
+	}
+
+	fixFn := func() {
+		for _, s := range stale {
+			_ = os.Remove(expandHomedir(s.link))
+		}
+		// Remove stale links from each entry's Links slice; drop entries with
+		// no remaining links.
+		staleSet := make(map[string]bool, len(stale))
+		for _, s := range stale {
+			staleSet[s.link] = true
+		}
+		var kept []handlerskg.DotfilesStatus
+		for _, entry := range status.Dotfiles {
+			var links []string
+			for _, l := range entry.Links {
+				if !staleSet[l] {
+					links = append(links, l)
+				}
+			}
+			entry.Links = links
+			if len(links) > 0 {
+				kept = append(kept, entry)
+			}
+		}
+		status.Dotfiles = kept
+	}
+
+	return []doctorIssue{
+		{
+			description: fmt.Sprintf("%d stale dotfile symlink(s) (target missing or broken)", len(stale)),
+			count:       len(stale),
+			examples:    examples,
+			fix:         fixFn,
+		},
+	}
+}
+
+// expandHomedir replaces a leading ~ with the current user's home directory.
+func expandHomedir(path string) string {
+	if len(path) == 0 || path[0] != '~' {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	return filepath.Join(home, path[1:])
+}
+
+// checkMissingCloneDirs scans all CloneStatus entries and reports entries
+// whose local clone directory no longer exists on disk. With --fix it removes
+// those entries from status.
+func checkMissingCloneDirs(status *handlerskg.Status) []doctorIssue {
+	var missing []handlerskg.CloneStatus
+
+	for _, entry := range status.Clones {
+		expanded := expandHomedir(entry.Path)
+		if _, err := os.Stat(expanded); os.IsNotExist(err) {
+			missing = append(missing, entry)
+		}
+	}
+
+	if len(missing) == 0 {
+		return nil
+	}
+
+	examples := make([]string, 0, 3)
+	for i, m := range missing {
+		if i >= 3 {
+			break
+		}
+		examples = append(examples, m.Path)
+	}
+
+	fixFn := func() {
+		missingPaths := make(map[string]bool, len(missing))
+		for _, m := range missing {
+			missingPaths[m.Path] = true
+		}
+		status.FilterEntries(func(e handlerskg.StatusEntry) bool {
+			if e.GetAction() != "clone" {
+				return true
+			}
+			return !missingPaths[e.GetResourceKey()]
+		})
+	}
+
+	return []doctorIssue{
+		{
+			description: fmt.Sprintf("%d clone director(ies) missing from disk", len(missing)),
+			count:       len(missing),
+			examples:    examples,
+			fix:         fixFn,
+		},
+	}
+}
+
 // checkOrphans detects status entries whose resource no longer exists in the
 // blueprint file they were installed from. Uses status.BlueprintSHA to check
 // against the exact version that was applied.
@@ -333,11 +474,17 @@ func DoctorCheck(fix bool) {
 	issues = append(issues, checkDuplicates(&status)...)
 	fmt.Printf("\nChecking for orphaned entries...\n")
 	issues = append(issues, checkOrphans(&status)...)
+	fmt.Printf("\nChecking for stale symlinks...\n")
+	issues = append(issues, checkStaleSymlinks(&status)...)
+	fmt.Printf("\nChecking for missing clone directories...\n")
+	issues = append(issues, checkMissingCloneDirs(&status)...)
 
 	if len(issues) == 0 {
 		fmt.Printf("  %s\n", ui.FormatSuccess("blueprint URLs are normalized"))
 		fmt.Printf("  %s\n", ui.FormatSuccess("no duplicate entries"))
 		fmt.Printf("  %s\n", ui.FormatSuccess("no orphaned entries"))
+		fmt.Printf("  %s\n", ui.FormatSuccess("no stale symlinks"))
+		fmt.Printf("  %s\n", ui.FormatSuccess("no missing clone directories"))
 		fmt.Printf("\n%s\n\n", ui.FormatSuccess("No issues found."))
 		return
 	}
