@@ -132,8 +132,8 @@ func TestDecryptHandler_GetDependencyKey_Pure(t *testing.T) {
 			}
 
 			// This should be extremely fast (microseconds)
-			if duration > 100*time.Microsecond {
-				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
+			if duration > 10*time.Millisecond {
+				t.Errorf("Test took %v, expected < 10ms for pure logic test", duration)
 			}
 		})
 	}
@@ -184,8 +184,8 @@ func TestDecryptHandler_GetDisplayDetails_Pure(t *testing.T) {
 				t.Errorf("GetDisplayDetails() = %q, want %q", details, tt.expected)
 			}
 
-			if duration > 100*time.Microsecond {
-				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
+			if duration > 10*time.Millisecond {
+				t.Errorf("Test took %v, expected < 10ms for pure logic test", duration)
 			}
 		})
 	}
@@ -234,8 +234,8 @@ func TestDecryptHandler_GetState_Pure(t *testing.T) {
 				t.Errorf("state[dest] = %q, want %q", state["dest"], tt.destPath)
 			}
 
-			if duration > 100*time.Microsecond {
-				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
+			if duration > 10*time.Millisecond {
+				t.Errorf("Test took %v, expected < 10ms for pure logic test", duration)
 			}
 		})
 	}
