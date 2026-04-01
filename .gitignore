@@ -1,6 +1,6 @@
 # Binaries
-blueprint
-blueprint-*
+/blueprint
+/blueprint-*
 *.exe
 
 # Claude Code
