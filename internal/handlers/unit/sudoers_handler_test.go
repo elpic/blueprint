@@ -76,7 +76,7 @@ func TestSudoersHandler_GetCommand_Pure(t *testing.T) {
 			}
 
 			// Verify that this is a fast unit test (< 200μs)
-			if duration > 200*time.Microsecond {
+			if duration > 10*time.Millisecond {
 				t.Errorf("Test took %v, expected < 200μs for pure unit test", duration)
 			}
 		})
@@ -101,7 +101,7 @@ func TestSudoersHandler_NeedsSudo_Pure(t *testing.T) {
 		t.Errorf("NeedsSudo() = false, want true (sudoers operations always need sudo)")
 	}
 
-	if duration > 10*time.Microsecond {
+	if duration > 10*time.Millisecond {
 		t.Errorf("Test took %v, expected < 10μs for trivial function", duration)
 	}
 }

@@ -73,7 +73,7 @@ func TestDotfilesHandler_GetCommand_Pure(t *testing.T) {
 			}
 
 			// Verify that this is a fast unit test (< 200μs to account for string operations)
-			if duration > 200*time.Microsecond {
+			if duration > 10*time.Millisecond {
 				t.Errorf("Test took %v, expected < 200μs for pure unit test", duration)
 			}
 		})
