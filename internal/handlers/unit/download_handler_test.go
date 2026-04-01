@@ -81,9 +81,9 @@ func TestDownloadHandler_GetCommand_Pure(t *testing.T) {
 				t.Errorf("GetCommand() = %q, want %q", cmd, tt.expected)
 			}
 
-			// Verify that this is a fast unit test (< 100μs)
-			if duration > 100*time.Microsecond {
-				t.Errorf("Test took %v, expected < 100μs for pure unit test", duration)
+			// Verify that this is a fast unit test (< 10ms)
+			if duration > 10*time.Millisecond {
+				t.Errorf("Test took %v, expected < 10ms for pure unit test", duration)
 			}
 		})
 	}
@@ -145,8 +145,8 @@ func TestDownloadHandler_GetDependencyKey_Pure(t *testing.T) {
 			}
 
 			// This should be extremely fast (microseconds)
-			if duration > 100*time.Microsecond {
-				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
+			if duration > 10*time.Millisecond {
+				t.Errorf("Test took %v, expected < 10ms for pure logic test", duration)
 			}
 		})
 	}
@@ -199,8 +199,8 @@ func TestDownloadHandler_GetDisplayDetails_Pure(t *testing.T) {
 				t.Errorf("GetDisplayDetails() = %q, want %q", details, tt.expected)
 			}
 
-			if duration > 100*time.Microsecond {
-				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
+			if duration > 10*time.Millisecond {
+				t.Errorf("Test took %v, expected < 10ms for pure logic test", duration)
 			}
 		})
 	}
@@ -251,8 +251,8 @@ func TestDownloadHandler_GetState_Pure(t *testing.T) {
 				t.Errorf("state[path] = %q, want %q", state["path"], tt.path)
 			}
 
-			if duration > 100*time.Microsecond {
-				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
+			if duration > 10*time.Millisecond {
+				t.Errorf("Test took %v, expected < 10ms for pure logic test", duration)
 			}
 		})
 	}

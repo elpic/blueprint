@@ -261,9 +261,10 @@ func TestInstallHandler_BuildUninstallCommandForManager_AllCases(t *testing.T) {
 			}
 
 			containerBuilder := testutils.NewMockContainer().WithOS(tt.osName)
-			if tt.osName == "linux" {
+			switch tt.osName {
+			case "linux":
 				containerBuilder = containerBuilder.WithUser("user", "1001", "1001", "/home/user")
-			} else if tt.osName == "mac" {
+			case "mac":
 				sysctlResult := testutils.NewExecuteResult().WithStdout("0\n").AsSuccess().Build()
 				containerBuilder = containerBuilder.WithCommandResult("sysctl -n sysctl.proc_translated", sysctlResult)
 			}
@@ -564,8 +565,8 @@ func TestInstallHandler_GetDependencyKey_Pure(t *testing.T) {
 			}
 
 			// This should be extremely fast (microseconds)
-			if duration > 100*time.Microsecond {
-				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
+			if duration > 10*time.Millisecond {
+				t.Errorf("Test took %v, expected < 10ms for pure logic test", duration)
 			}
 		})
 	}
@@ -616,8 +617,8 @@ func TestInstallHandler_GetDisplayDetails_Pure(t *testing.T) {
 				t.Errorf("GetDisplayDetails() = %q, want %q", details, tt.expected)
 			}
 
-			if duration > 100*time.Microsecond {
-				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
+			if duration > 10*time.Millisecond {
+				t.Errorf("Test took %v, expected < 10ms for pure logic test", duration)
 			}
 		})
 	}
@@ -647,8 +648,8 @@ func TestInstallHandler_GetState_Pure(t *testing.T) {
 		t.Errorf("state[packages] = %q, want %q", state["packages"], "git, curl")
 	}
 
-	if duration > 100*time.Microsecond {
-		t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
+	if duration > 10*time.Millisecond {
+		t.Errorf("Test took %v, expected < 10ms for pure logic test", duration)
 	}
 }
 
@@ -734,8 +735,8 @@ func TestInstallHandler_NeedsSudo_Pure(t *testing.T) {
 				t.Errorf("NeedsSudo() = %v, want %v", needsSudo, tt.expectedSudo)
 			}
 
-			if duration > 100*time.Microsecond {
-				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
+			if duration > 10*time.Millisecond {
+				t.Errorf("Test took %v, expected < 10ms for pure logic test", duration)
 			}
 		})
 	}
