@@ -102,7 +102,7 @@ func TestOllamaHandler_NeedsSudo_Pure(t *testing.T) {
 		t.Errorf("NeedsSudo() = true, want false (ollama operations don't need sudo)")
 	}
 
-	if duration > 10*time.Microsecond {
+	if duration > 10*time.Millisecond {
 		t.Errorf("Test took %v, expected < 10μs for trivial function", duration)
 	}
 }

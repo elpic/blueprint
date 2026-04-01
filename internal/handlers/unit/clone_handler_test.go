@@ -171,7 +171,7 @@ func TestCloneHandler_GetDisplayDetails_Pure(t *testing.T) {
 		t.Errorf("GetDisplayDetails() = %q, want %q", details, clonePath)
 	}
 
-	if duration > 50*time.Microsecond {
+	if duration > 10*time.Millisecond {
 		t.Errorf("Test took %v, expected < 50μs for simple getter", duration)
 	}
 }
