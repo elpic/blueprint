@@ -268,7 +268,9 @@ func TestDownloadHandler_IsInstalled_FilePresence(t *testing.T) {
 		t.Fatal(err)
 	}
 	presentPath := f.Name()
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	missingPath := presentPath + ".gone"
 
