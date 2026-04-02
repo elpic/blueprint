@@ -648,3 +648,59 @@ func TestExpandHomedir(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckMissingDownloadFiles_NoneTracked(t *testing.T) {
+	status := &handlerskg.Status{}
+	issues := checkMissingDownloadFiles(status)
+	if len(issues) != 0 {
+		t.Errorf("expected 0 issues for empty status, got %d", len(issues))
+	}
+}
+
+func TestCheckMissingDownloadFiles_AllPresent(t *testing.T) {
+	f := t.TempDir() + "/file.sh"
+	if err := os.WriteFile(f, []byte("#!/bin/sh"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	status := &handlerskg.Status{
+		Downloads: []handlerskg.DownloadStatus{
+			{URL: "https://example.com/file.sh", Path: f, Blueprint: "https://github.com/u/setup", OS: "mac"},
+		},
+	}
+	issues := checkMissingDownloadFiles(status)
+	if len(issues) != 0 {
+		t.Errorf("expected 0 issues for existing file, got %d", len(issues))
+	}
+}
+
+func TestCheckMissingDownloadFiles_Missing(t *testing.T) {
+	status := &handlerskg.Status{
+		Downloads: []handlerskg.DownloadStatus{
+			{URL: "https://example.com/file.sh", Path: "/tmp/does_not_exist_dl_xyz", Blueprint: "https://github.com/u/setup", OS: "mac"},
+		},
+	}
+	issues := checkMissingDownloadFiles(status)
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue for missing file, got %d", len(issues))
+	}
+	if issues[0].count != 1 {
+		t.Errorf("expected count 1, got %d", issues[0].count)
+	}
+}
+
+func TestCheckMissingDownloadFiles_Fix(t *testing.T) {
+	status := &handlerskg.Status{
+		Downloads: []handlerskg.DownloadStatus{
+			{URL: "https://example.com/file.sh", Path: "/tmp/does_not_exist_dl_xyz", Blueprint: "https://github.com/u/setup", OS: "mac"},
+		},
+	}
+	issues := checkMissingDownloadFiles(status)
+	if len(issues) == 0 || issues[0].fix == nil {
+		t.Fatal("expected issue with fix func")
+	}
+	issues[0].fix()
+
+	if len(status.Downloads) != 0 {
+		t.Errorf("expected download entry to be removed, got %d entries", len(status.Downloads))
+	}
+}

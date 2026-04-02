@@ -414,6 +414,54 @@ func checkMissingCloneDirs(status *handlerskg.Status) []doctorIssue {
 	}
 }
 
+// checkMissingDownloadFiles scans all DownloadStatus entries and reports entries
+// whose destination file no longer exists on disk. With --fix it removes those
+// stale entries from status.
+func checkMissingDownloadFiles(status *handlerskg.Status) []doctorIssue {
+	var missing []handlerskg.DownloadStatus
+
+	for _, entry := range status.Downloads {
+		expanded := expandHomedir(entry.Path)
+		if _, err := os.Stat(expanded); os.IsNotExist(err) {
+			missing = append(missing, entry)
+		}
+	}
+
+	if len(missing) == 0 {
+		return nil
+	}
+
+	examples := make([]string, 0, 3)
+	for i, m := range missing {
+		if i >= 3 {
+			break
+		}
+		examples = append(examples, m.Path)
+	}
+
+	fixFn := func() {
+		missingPaths := make(map[string]bool, len(missing))
+		for _, m := range missing {
+			missingPaths[m.Path] = true
+		}
+		status.FilterEntries(func(e handlerskg.StatusEntry) bool {
+			if e.GetAction() != "download" {
+				return true
+			}
+			return !missingPaths[e.GetResourceKey()]
+		})
+	}
+
+	return []doctorIssue{
+		{
+			description: fmt.Sprintf("%d downloaded file(s) missing from disk", len(missing)),
+			count:       len(missing),
+			examples:    examples,
+			fix:         fixFn,
+		},
+	}
+}
+
 // checkOrphans detects status entries whose resource no longer exists in the
 // blueprint file they were installed from. Uses status.BlueprintSHA to check
 // against the exact version that was applied.
@@ -478,6 +526,8 @@ func DoctorCheck(fix bool) {
 	issues = append(issues, checkStaleSymlinks(&status)...)
 	fmt.Printf("\nChecking for missing clone directories...\n")
 	issues = append(issues, checkMissingCloneDirs(&status)...)
+	fmt.Printf("\nChecking for missing downloaded files...\n")
+	issues = append(issues, checkMissingDownloadFiles(&status)...)
 
 	if len(issues) == 0 {
 		fmt.Printf("  %s\n", ui.FormatSuccess("blueprint URLs are normalized"))
@@ -485,6 +535,7 @@ func DoctorCheck(fix bool) {
 		fmt.Printf("  %s\n", ui.FormatSuccess("no orphaned entries"))
 		fmt.Printf("  %s\n", ui.FormatSuccess("no stale symlinks"))
 		fmt.Printf("  %s\n", ui.FormatSuccess("no missing clone directories"))
+		fmt.Printf("  %s\n", ui.FormatSuccess("no missing downloaded files"))
 		fmt.Printf("\n%s\n\n", ui.FormatSuccess("No issues found."))
 		return
 	}
