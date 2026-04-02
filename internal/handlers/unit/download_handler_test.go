@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -255,5 +256,45 @@ func TestDownloadHandler_GetState_Pure(t *testing.T) {
 				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
 			}
 		})
+	}
+}
+
+// TestDownloadHandler_IsInstalled_FilePresence tests that IsInstalled respects
+// whether the file actually exists on disk, not just the status entry.
+func TestDownloadHandler_IsInstalled_FilePresence(t *testing.T) {
+	// Create a real temp file to use as the "downloaded" path.
+	f, err := os.CreateTemp(t.TempDir(), "download-*.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	presentPath := f.Name()
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	missingPath := presentPath + ".gone"
+
+	bp := "https://github.com/u/setup"
+	status := &handlers.Status{
+		Downloads: []handlers.DownloadStatus{
+			{URL: "https://example.com/file.sh", Path: presentPath, Blueprint: bp, OS: "linux"},
+			{URL: "https://example.com/file.sh", Path: missingPath, Blueprint: bp, OS: "linux"},
+		},
+	}
+
+	present := handlers.NewDownloadHandler(
+		parser.Rule{DownloadURL: "https://example.com/file.sh", DownloadPath: presentPath},
+		"",
+	)
+	missing := handlers.NewDownloadHandler(
+		parser.Rule{DownloadURL: "https://example.com/file.sh", DownloadPath: missingPath},
+		"",
+	)
+
+	if !present.IsInstalled(status, bp, "linux") {
+		t.Error("expected IsInstalled=true when file exists on disk")
+	}
+	if missing.IsInstalled(status, bp, "linux") {
+		t.Error("expected IsInstalled=false when file is missing from disk")
 	}
 }

@@ -256,12 +256,15 @@ func (h *DownloadHandler) FindUninstallRules(status *Status, currentRules []pars
 	return rules
 }
 
-// IsInstalled returns true if the download path in this rule is already in status.
+// IsInstalled returns true if the download path is recorded in status AND the
+// file still exists on disk. If the file has been deleted since it was
+// downloaded, we treat it as not installed so Up() re-downloads it.
 func (h *DownloadHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
 	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 	for _, dl := range status.Downloads {
 		if dl.Path == h.Rule.DownloadPath && normalizeBlueprint(dl.Blueprint) == normalizedBlueprint && dl.OS == osName {
-			return true
+			_, err := os.Stat(expandPath(h.Rule.DownloadPath))
+			return err == nil
 		}
 	}
 	return false
