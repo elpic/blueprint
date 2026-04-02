@@ -18,6 +18,7 @@ type doctorIssue struct {
 	count       int
 	examples    []string // up to a small number of representative entries
 	fix         func()   // optional: called in --fix mode to repair the issue in-place
+	hint        string   // optional: printed after fix to guide the user on next steps
 }
 
 // checkBlueprintURLs scans all Blueprint fields in the status for entries
@@ -275,17 +276,22 @@ func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []par
 
 // checkStaleSymlinks scans all DotfilesStatus entries and reports symlinks
 // whose target path no longer resolves to a real file (broken symlink or
-// symlink that was deleted). With --fix it removes them from the filesystem
-// and from the status entry's Links list; entries with no remaining links are
-// removed from status entirely.
+// symlink that was deleted). With --fix it tries to recreate each stale
+// symlink by pointing it back at the corresponding file in the clone
+// directory. If the source file no longer exists it removes the broken
+// symlink from the filesystem and drops it from the status entry's Links
+// list; entries with no remaining links are removed from status entirely.
 func checkStaleSymlinks(status *handlerskg.Status) []doctorIssue {
 	type staleLink struct {
-		link      string // symlink path
-		entryURL  string // dotfiles URL owning this link
+		link      string // symlink destination path (may contain ~)
+		clonePath string // expanded clone directory for the owning entry
+		entryURL  string
 		entryOS   string
 		entryBlue string
 	}
 	var stale []staleLink
+
+	home, _ := os.UserHomeDir()
 
 	for i := range status.Dotfiles {
 		entry := &status.Dotfiles[i]
@@ -294,13 +300,13 @@ func checkStaleSymlinks(status *handlerskg.Status) []doctorIssue {
 			info, err := os.Lstat(expanded)
 			if err != nil {
 				// path does not exist at all
-				stale = append(stale, staleLink{link: link, entryURL: entry.URL, entryOS: entry.OS, entryBlue: entry.Blueprint})
+				stale = append(stale, staleLink{link: link, clonePath: expandHomedir(entry.Path), entryURL: entry.URL, entryOS: entry.OS, entryBlue: entry.Blueprint})
 				continue
 			}
 			if info.Mode()&os.ModeSymlink != 0 {
 				// path exists and is a symlink — check if target resolves
 				if _, err := os.Stat(expanded); err != nil {
-					stale = append(stale, staleLink{link: link, entryURL: entry.URL, entryOS: entry.OS, entryBlue: entry.Blueprint})
+					stale = append(stale, staleLink{link: link, clonePath: expandHomedir(entry.Path), entryURL: entry.URL, entryOS: entry.OS, entryBlue: entry.Blueprint})
 				}
 			}
 		}
@@ -319,29 +325,51 @@ func checkStaleSymlinks(status *handlerskg.Status) []doctorIssue {
 	}
 
 	fixFn := func() {
+		// For each stale symlink, try to recreate it from the clone dir.
+		// If the source file is gone, remove the broken link and drop it from status.
+		notRecreated := make(map[string]bool)
 		for _, s := range stale {
-			_ = os.Remove(expandHomedir(s.link))
-		}
-		// Remove stale links from each entry's Links slice; drop entries with
-		// no remaining links.
-		staleSet := make(map[string]bool, len(stale))
-		for _, s := range stale {
-			staleSet[s.link] = true
-		}
-		var kept []handlerskg.DotfilesStatus
-		for _, entry := range status.Dotfiles {
-			var links []string
-			for _, l := range entry.Links {
-				if !staleSet[l] {
-					links = append(links, l)
+			dst := expandHomedir(s.link)
+
+			// Derive the source path: replace the home prefix with the clone path.
+			rel, err := filepath.Rel(home, dst)
+			var src string
+			if err == nil {
+				src = filepath.Join(s.clonePath, rel)
+			}
+
+			if src != "" {
+				if _, statErr := os.Stat(src); statErr == nil {
+					// Source exists — remove old/broken link and recreate it.
+					_ = os.Remove(dst)
+					if symlinkErr := os.Symlink(src, dst); symlinkErr == nil {
+						continue // successfully recreated
+					}
 				}
 			}
-			entry.Links = links
-			if len(links) > 0 {
-				kept = append(kept, entry)
-			}
+
+			// Source gone or symlink failed — remove the broken link entirely.
+			_ = os.Remove(dst)
+			notRecreated[s.link] = true
 		}
-		status.Dotfiles = kept
+
+		// Remove non-recreated links from status entries.
+		if len(notRecreated) > 0 {
+			var kept []handlerskg.DotfilesStatus
+			for _, entry := range status.Dotfiles {
+				var links []string
+				for _, l := range entry.Links {
+					if !notRecreated[l] {
+						links = append(links, l)
+					}
+				}
+				entry.Links = links
+				if len(links) > 0 {
+					kept = append(kept, entry)
+				}
+			}
+			status.Dotfiles = kept
+		}
 	}
 
 	return []doctorIssue{
@@ -391,25 +419,47 @@ func checkMissingCloneDirs(status *handlerskg.Status) []doctorIssue {
 		examples = append(examples, m.Path)
 	}
 
-	fixFn := func() {
-		missingPaths := make(map[string]bool, len(missing))
-		for _, m := range missing {
-			missingPaths[m.Path] = true
-		}
-		status.FilterEntries(func(e handlerskg.StatusEntry) bool {
-			if e.GetAction() != "clone" {
-				return true
-			}
-			return !missingPaths[e.GetResourceKey()]
-		})
-	}
-
 	return []doctorIssue{
 		{
 			description: fmt.Sprintf("%d clone director(ies) missing from disk", len(missing)),
 			count:       len(missing),
 			examples:    examples,
-			fix:         fixFn,
+			hint:        "Run 'blueprint apply <file>' to restore missing clone directories.",
+		},
+	}
+}
+
+// checkMissingDownloadFiles scans all DownloadStatus entries and reports entries
+// whose destination file no longer exists on disk. With --fix it removes those
+// stale entries from status.
+func checkMissingDownloadFiles(status *handlerskg.Status) []doctorIssue {
+	var missing []handlerskg.DownloadStatus
+
+	for _, entry := range status.Downloads {
+		expanded := expandHomedir(entry.Path)
+		if _, err := os.Stat(expanded); os.IsNotExist(err) {
+			missing = append(missing, entry)
+		}
+	}
+
+	if len(missing) == 0 {
+		return nil
+	}
+
+	examples := make([]string, 0, 3)
+	for i, m := range missing {
+		if i >= 3 {
+			break
+		}
+		examples = append(examples, m.Path)
+	}
+
+	return []doctorIssue{
+		{
+			description: fmt.Sprintf("%d downloaded file(s) missing from disk", len(missing)),
+			count:       len(missing),
+			examples:    examples,
+			hint:        "Run 'blueprint apply <file>' to restore missing downloaded files.",
 		},
 	}
 }
@@ -478,6 +528,8 @@ func DoctorCheck(fix bool) {
 	issues = append(issues, checkStaleSymlinks(&status)...)
 	fmt.Printf("\nChecking for missing clone directories...\n")
 	issues = append(issues, checkMissingCloneDirs(&status)...)
+	fmt.Printf("\nChecking for missing downloaded files...\n")
+	issues = append(issues, checkMissingDownloadFiles(&status)...)
 
 	if len(issues) == 0 {
 		fmt.Printf("  %s\n", ui.FormatSuccess("blueprint URLs are normalized"))
@@ -485,6 +537,7 @@ func DoctorCheck(fix bool) {
 		fmt.Printf("  %s\n", ui.FormatSuccess("no orphaned entries"))
 		fmt.Printf("  %s\n", ui.FormatSuccess("no stale symlinks"))
 		fmt.Printf("  %s\n", ui.FormatSuccess("no missing clone directories"))
+		fmt.Printf("  %s\n", ui.FormatSuccess("no missing downloaded files"))
 		fmt.Printf("\n%s\n\n", ui.FormatSuccess("No issues found."))
 		return
 	}
@@ -510,9 +563,16 @@ func DoctorCheck(fix bool) {
 		}
 
 		for _, issue := range issues {
-			fmt.Printf("  %s\n", ui.FormatSuccess(fmt.Sprintf("Fixed: %s", issue.description)))
+			if issue.fix != nil {
+				fmt.Printf("  %s\n", ui.FormatSuccess(fmt.Sprintf("Fixed: %s", issue.description)))
+			} else {
+				fmt.Printf("  %s\n", ui.FormatInfo(fmt.Sprintf("Cannot auto-fix: %s", issue.description)))
+			}
+			if issue.hint != "" {
+				fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("Hint: %s", issue.hint)))
+			}
 		}
-		fmt.Printf("\n%s\n\n", ui.FormatSuccess("All issues fixed."))
+		fmt.Printf("\n%s\n\n", ui.FormatSuccess("All auto-fixable issues repaired."))
 		return
 	}
 
@@ -521,6 +581,9 @@ func DoctorCheck(fix bool) {
 		fmt.Printf("  %s\n", ui.FormatError(issue.description))
 		for _, ex := range issue.examples {
 			fmt.Printf("    %s\n", ui.FormatDim(ex))
+		}
+		if issue.hint != "" {
+			fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("Hint: %s", issue.hint)))
 		}
 	}
 

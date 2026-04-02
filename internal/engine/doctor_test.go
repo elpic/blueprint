@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
@@ -577,6 +578,58 @@ func TestCheckStaleSymlinks_Fix(t *testing.T) {
 	}
 }
 
+func TestCheckStaleSymlinks_FixRecreates(t *testing.T) {
+	// Set up a fake home and clone dir so that the symlink basename matches
+	// the source file in the clone dir — that's what the fix logic requires.
+	fakeHome := t.TempDir()
+	cloneDir := t.TempDir()
+
+	// Source file inside the clone dir: cloneDir/dotfile
+	srcName := "dotfile"
+	src := filepath.Join(cloneDir, srcName)
+	if err := os.WriteFile(src, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Broken symlink at fakeHome/dotfile pointing to a gone target.
+	link := filepath.Join(fakeHome, srcName)
+	if err := os.Symlink(filepath.Join(cloneDir, "nonexistent"), link); err != nil {
+		t.Fatal(err)
+	}
+
+	// Override the home dir so expandHomedir and the fix logic agree.
+	// We achieve this by storing the link as an absolute path (no ~) and
+	// monkey-patching the fix by temporarily setting HOME.
+	t.Setenv("HOME", fakeHome)
+
+	status := &handlerskg.Status{
+		Dotfiles: []handlerskg.DotfilesStatus{
+			{URL: "https://github.com/u/dots", Path: cloneDir, Links: []string{link}, OS: "linux", Blueprint: "https://github.com/u/setup"},
+		},
+	}
+	issues := checkStaleSymlinks(status)
+	if len(issues) == 0 || issues[0].fix == nil {
+		t.Fatal("expected issue with fix func")
+	}
+	issues[0].fix()
+
+	// The symlink should now exist and resolve correctly.
+	if _, err := os.Stat(link); err != nil {
+		t.Errorf("expected symlink to be recreated and valid: %v", err)
+	}
+	target, err := os.Readlink(link)
+	if err != nil {
+		t.Fatalf("expected a symlink at %s: %v", link, err)
+	}
+	if target != src {
+		t.Errorf("expected symlink target %s, got %s", src, target)
+	}
+	// Status entry should still be present (link was restored, not removed).
+	if len(status.Dotfiles) == 0 {
+		t.Error("expected dotfiles entry to remain in status after successful recreation")
+	}
+}
+
 func TestCheckMissingCloneDirs_NoDirs(t *testing.T) {
 	status := &handlerskg.Status{}
 	issues := checkMissingCloneDirs(status)
@@ -613,20 +666,21 @@ func TestCheckMissingCloneDirs_Missing(t *testing.T) {
 	}
 }
 
-func TestCheckMissingCloneDirs_Fix(t *testing.T) {
+func TestCheckMissingCloneDirs_HasHint(t *testing.T) {
 	status := &handlerskg.Status{
 		Clones: []handlerskg.CloneStatus{
 			{URL: "https://github.com/u/repo", Path: "/tmp/does_not_exist_xyz_123", Blueprint: "https://github.com/u/setup", OS: "linux"},
 		},
 	}
 	issues := checkMissingCloneDirs(status)
-	if len(issues) == 0 || issues[0].fix == nil {
-		t.Fatal("expected issue with fix func")
+	if len(issues) == 0 {
+		t.Fatal("expected 1 issue")
 	}
-	issues[0].fix()
-
-	if len(status.Clones) != 0 {
-		t.Errorf("expected clone entry to be removed, got %d entries", len(status.Clones))
+	if issues[0].fix != nil {
+		t.Error("expected no fix func — missing clone dirs cannot be auto-fixed")
+	}
+	if issues[0].hint == "" {
+		t.Error("expected a hint message to guide the user")
 	}
 }
 
@@ -646,5 +700,62 @@ func TestExpandHomedir(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("expandHomedir(%q) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+func TestCheckMissingDownloadFiles_NoneTracked(t *testing.T) {
+	status := &handlerskg.Status{}
+	issues := checkMissingDownloadFiles(status)
+	if len(issues) != 0 {
+		t.Errorf("expected 0 issues for empty status, got %d", len(issues))
+	}
+}
+
+func TestCheckMissingDownloadFiles_AllPresent(t *testing.T) {
+	f := t.TempDir() + "/file.sh"
+	if err := os.WriteFile(f, []byte("#!/bin/sh"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	status := &handlerskg.Status{
+		Downloads: []handlerskg.DownloadStatus{
+			{URL: "https://example.com/file.sh", Path: f, Blueprint: "https://github.com/u/setup", OS: "mac"},
+		},
+	}
+	issues := checkMissingDownloadFiles(status)
+	if len(issues) != 0 {
+		t.Errorf("expected 0 issues for existing file, got %d", len(issues))
+	}
+}
+
+func TestCheckMissingDownloadFiles_Missing(t *testing.T) {
+	status := &handlerskg.Status{
+		Downloads: []handlerskg.DownloadStatus{
+			{URL: "https://example.com/file.sh", Path: "/tmp/does_not_exist_dl_xyz", Blueprint: "https://github.com/u/setup", OS: "mac"},
+		},
+	}
+	issues := checkMissingDownloadFiles(status)
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue for missing file, got %d", len(issues))
+	}
+	if issues[0].count != 1 {
+		t.Errorf("expected count 1, got %d", issues[0].count)
+	}
+}
+
+func TestCheckMissingDownloadFiles_HasHint(t *testing.T) {
+	status := &handlerskg.Status{
+		Downloads: []handlerskg.DownloadStatus{
+			{URL: "https://example.com/file.sh", Path: "/tmp/does_not_exist_dl_xyz", Blueprint: "https://github.com/u/setup", OS: "mac"},
+		},
+	}
+	issues := checkMissingDownloadFiles(status)
+	if len(issues) == 0 {
+		t.Fatal("expected 1 issue")
+	}
+	if issues[0].fix != nil {
+		t.Error("expected no fix func — missing download files cannot be auto-fixed")
+	}
+	if issues[0].hint == "" {
+		t.Error("expected a hint message to guide the user")
 	}
 }
