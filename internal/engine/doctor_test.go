@@ -613,20 +613,21 @@ func TestCheckMissingCloneDirs_Missing(t *testing.T) {
 	}
 }
 
-func TestCheckMissingCloneDirs_Fix(t *testing.T) {
+func TestCheckMissingCloneDirs_HasHint(t *testing.T) {
 	status := &handlerskg.Status{
 		Clones: []handlerskg.CloneStatus{
 			{URL: "https://github.com/u/repo", Path: "/tmp/does_not_exist_xyz_123", Blueprint: "https://github.com/u/setup", OS: "linux"},
 		},
 	}
 	issues := checkMissingCloneDirs(status)
-	if len(issues) == 0 || issues[0].fix == nil {
-		t.Fatal("expected issue with fix func")
+	if len(issues) == 0 {
+		t.Fatal("expected 1 issue")
 	}
-	issues[0].fix()
-
-	if len(status.Clones) != 0 {
-		t.Errorf("expected clone entry to be removed, got %d entries", len(status.Clones))
+	if issues[0].fix != nil {
+		t.Error("expected no fix func — missing clone dirs cannot be auto-fixed")
+	}
+	if issues[0].hint == "" {
+		t.Error("expected a hint message to guide the user")
 	}
 }
 
@@ -688,19 +689,20 @@ func TestCheckMissingDownloadFiles_Missing(t *testing.T) {
 	}
 }
 
-func TestCheckMissingDownloadFiles_Fix(t *testing.T) {
+func TestCheckMissingDownloadFiles_HasHint(t *testing.T) {
 	status := &handlerskg.Status{
 		Downloads: []handlerskg.DownloadStatus{
 			{URL: "https://example.com/file.sh", Path: "/tmp/does_not_exist_dl_xyz", Blueprint: "https://github.com/u/setup", OS: "mac"},
 		},
 	}
 	issues := checkMissingDownloadFiles(status)
-	if len(issues) == 0 || issues[0].fix == nil {
-		t.Fatal("expected issue with fix func")
+	if len(issues) == 0 {
+		t.Fatal("expected 1 issue")
 	}
-	issues[0].fix()
-
-	if len(status.Downloads) != 0 {
-		t.Errorf("expected download entry to be removed, got %d entries", len(status.Downloads))
+	if issues[0].fix != nil {
+		t.Error("expected no fix func — missing download files cannot be auto-fixed")
+	}
+	if issues[0].hint == "" {
+		t.Error("expected a hint message to guide the user")
 	}
 }

@@ -18,6 +18,7 @@ type doctorIssue struct {
 	count       int
 	examples    []string // up to a small number of representative entries
 	fix         func()   // optional: called in --fix mode to repair the issue in-place
+	hint        string   // optional: printed after fix to guide the user on next steps
 }
 
 // checkBlueprintURLs scans all Blueprint fields in the status for entries
@@ -391,25 +392,12 @@ func checkMissingCloneDirs(status *handlerskg.Status) []doctorIssue {
 		examples = append(examples, m.Path)
 	}
 
-	fixFn := func() {
-		missingPaths := make(map[string]bool, len(missing))
-		for _, m := range missing {
-			missingPaths[m.Path] = true
-		}
-		status.FilterEntries(func(e handlerskg.StatusEntry) bool {
-			if e.GetAction() != "clone" {
-				return true
-			}
-			return !missingPaths[e.GetResourceKey()]
-		})
-	}
-
 	return []doctorIssue{
 		{
 			description: fmt.Sprintf("%d clone director(ies) missing from disk", len(missing)),
 			count:       len(missing),
 			examples:    examples,
-			fix:         fixFn,
+			hint:        "Run 'blueprint apply <file>' to restore missing clone directories.",
 		},
 	}
 }
@@ -439,25 +427,12 @@ func checkMissingDownloadFiles(status *handlerskg.Status) []doctorIssue {
 		examples = append(examples, m.Path)
 	}
 
-	fixFn := func() {
-		missingPaths := make(map[string]bool, len(missing))
-		for _, m := range missing {
-			missingPaths[m.Path] = true
-		}
-		status.FilterEntries(func(e handlerskg.StatusEntry) bool {
-			if e.GetAction() != "download" {
-				return true
-			}
-			return !missingPaths[e.GetResourceKey()]
-		})
-	}
-
 	return []doctorIssue{
 		{
 			description: fmt.Sprintf("%d downloaded file(s) missing from disk", len(missing)),
 			count:       len(missing),
 			examples:    examples,
-			fix:         fixFn,
+			hint:        "Run 'blueprint apply <file>' to restore missing downloaded files.",
 		},
 	}
 }
@@ -561,9 +536,16 @@ func DoctorCheck(fix bool) {
 		}
 
 		for _, issue := range issues {
-			fmt.Printf("  %s\n", ui.FormatSuccess(fmt.Sprintf("Fixed: %s", issue.description)))
+			if issue.fix != nil {
+				fmt.Printf("  %s\n", ui.FormatSuccess(fmt.Sprintf("Fixed: %s", issue.description)))
+			} else {
+				fmt.Printf("  %s\n", ui.FormatInfo(fmt.Sprintf("Cannot auto-fix: %s", issue.description)))
+			}
+			if issue.hint != "" {
+				fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("Hint: %s", issue.hint)))
+			}
 		}
-		fmt.Printf("\n%s\n\n", ui.FormatSuccess("All issues fixed."))
+		fmt.Printf("\n%s\n\n", ui.FormatSuccess("All auto-fixable issues repaired."))
 		return
 	}
 
@@ -572,6 +554,9 @@ func DoctorCheck(fix bool) {
 		fmt.Printf("  %s\n", ui.FormatError(issue.description))
 		for _, ex := range issue.examples {
 			fmt.Printf("    %s\n", ui.FormatDim(ex))
+		}
+		if issue.hint != "" {
+			fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("Hint: %s", issue.hint)))
 		}
 	}
 
