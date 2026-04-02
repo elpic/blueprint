@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
@@ -574,6 +575,58 @@ func TestCheckStaleSymlinks_Fix(t *testing.T) {
 	// Entry with no remaining links should be removed from status.
 	if len(status.Dotfiles) != 0 {
 		t.Errorf("expected dotfiles entry to be removed, got %d entries", len(status.Dotfiles))
+	}
+}
+
+func TestCheckStaleSymlinks_FixRecreates(t *testing.T) {
+	// Set up a fake home and clone dir so that the symlink basename matches
+	// the source file in the clone dir — that's what the fix logic requires.
+	fakeHome := t.TempDir()
+	cloneDir := t.TempDir()
+
+	// Source file inside the clone dir: cloneDir/dotfile
+	srcName := "dotfile"
+	src := filepath.Join(cloneDir, srcName)
+	if err := os.WriteFile(src, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Broken symlink at fakeHome/dotfile pointing to a gone target.
+	link := filepath.Join(fakeHome, srcName)
+	if err := os.Symlink(filepath.Join(cloneDir, "nonexistent"), link); err != nil {
+		t.Fatal(err)
+	}
+
+	// Override the home dir so expandHomedir and the fix logic agree.
+	// We achieve this by storing the link as an absolute path (no ~) and
+	// monkey-patching the fix by temporarily setting HOME.
+	t.Setenv("HOME", fakeHome)
+
+	status := &handlerskg.Status{
+		Dotfiles: []handlerskg.DotfilesStatus{
+			{URL: "https://github.com/u/dots", Path: cloneDir, Links: []string{link}, OS: "linux", Blueprint: "https://github.com/u/setup"},
+		},
+	}
+	issues := checkStaleSymlinks(status)
+	if len(issues) == 0 || issues[0].fix == nil {
+		t.Fatal("expected issue with fix func")
+	}
+	issues[0].fix()
+
+	// The symlink should now exist and resolve correctly.
+	if _, err := os.Stat(link); err != nil {
+		t.Errorf("expected symlink to be recreated and valid: %v", err)
+	}
+	target, err := os.Readlink(link)
+	if err != nil {
+		t.Fatalf("expected a symlink at %s: %v", link, err)
+	}
+	if target != src {
+		t.Errorf("expected symlink target %s, got %s", src, target)
+	}
+	// Status entry should still be present (link was restored, not removed).
+	if len(status.Dotfiles) == 0 {
+		t.Error("expected dotfiles entry to remain in status after successful recreation")
 	}
 }
 

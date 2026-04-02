@@ -276,17 +276,22 @@ func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []par
 
 // checkStaleSymlinks scans all DotfilesStatus entries and reports symlinks
 // whose target path no longer resolves to a real file (broken symlink or
-// symlink that was deleted). With --fix it removes them from the filesystem
-// and from the status entry's Links list; entries with no remaining links are
-// removed from status entirely.
+// symlink that was deleted). With --fix it tries to recreate each stale
+// symlink by pointing it back at the corresponding file in the clone
+// directory. If the source file no longer exists it removes the broken
+// symlink from the filesystem and drops it from the status entry's Links
+// list; entries with no remaining links are removed from status entirely.
 func checkStaleSymlinks(status *handlerskg.Status) []doctorIssue {
 	type staleLink struct {
-		link      string // symlink path
-		entryURL  string // dotfiles URL owning this link
+		link      string // symlink destination path (may contain ~)
+		clonePath string // expanded clone directory for the owning entry
+		entryURL  string
 		entryOS   string
 		entryBlue string
 	}
 	var stale []staleLink
+
+	home, _ := os.UserHomeDir()
 
 	for i := range status.Dotfiles {
 		entry := &status.Dotfiles[i]
@@ -295,13 +300,13 @@ func checkStaleSymlinks(status *handlerskg.Status) []doctorIssue {
 			info, err := os.Lstat(expanded)
 			if err != nil {
 				// path does not exist at all
-				stale = append(stale, staleLink{link: link, entryURL: entry.URL, entryOS: entry.OS, entryBlue: entry.Blueprint})
+				stale = append(stale, staleLink{link: link, clonePath: expandHomedir(entry.Path), entryURL: entry.URL, entryOS: entry.OS, entryBlue: entry.Blueprint})
 				continue
 			}
 			if info.Mode()&os.ModeSymlink != 0 {
 				// path exists and is a symlink — check if target resolves
 				if _, err := os.Stat(expanded); err != nil {
-					stale = append(stale, staleLink{link: link, entryURL: entry.URL, entryOS: entry.OS, entryBlue: entry.Blueprint})
+					stale = append(stale, staleLink{link: link, clonePath: expandHomedir(entry.Path), entryURL: entry.URL, entryOS: entry.OS, entryBlue: entry.Blueprint})
 				}
 			}
 		}
@@ -320,29 +325,51 @@ func checkStaleSymlinks(status *handlerskg.Status) []doctorIssue {
 	}
 
 	fixFn := func() {
+		// For each stale symlink, try to recreate it from the clone dir.
+		// If the source file is gone, remove the broken link and drop it from status.
+		notRecreated := make(map[string]bool)
 		for _, s := range stale {
-			_ = os.Remove(expandHomedir(s.link))
-		}
-		// Remove stale links from each entry's Links slice; drop entries with
-		// no remaining links.
-		staleSet := make(map[string]bool, len(stale))
-		for _, s := range stale {
-			staleSet[s.link] = true
-		}
-		var kept []handlerskg.DotfilesStatus
-		for _, entry := range status.Dotfiles {
-			var links []string
-			for _, l := range entry.Links {
-				if !staleSet[l] {
-					links = append(links, l)
+			dst := expandHomedir(s.link)
+
+			// Derive the source path: replace the home prefix with the clone path.
+			rel, err := filepath.Rel(home, dst)
+			var src string
+			if err == nil {
+				src = filepath.Join(s.clonePath, rel)
+			}
+
+			if src != "" {
+				if _, statErr := os.Stat(src); statErr == nil {
+					// Source exists — remove old/broken link and recreate it.
+					_ = os.Remove(dst)
+					if symlinkErr := os.Symlink(src, dst); symlinkErr == nil {
+						continue // successfully recreated
+					}
 				}
 			}
-			entry.Links = links
-			if len(links) > 0 {
-				kept = append(kept, entry)
-			}
+
+			// Source gone or symlink failed — remove the broken link entirely.
+			_ = os.Remove(dst)
+			notRecreated[s.link] = true
 		}
-		status.Dotfiles = kept
+
+		// Remove non-recreated links from status entries.
+		if len(notRecreated) > 0 {
+			var kept []handlerskg.DotfilesStatus
+			for _, entry := range status.Dotfiles {
+				var links []string
+				for _, l := range entry.Links {
+					if !notRecreated[l] {
+						links = append(links, l)
+					}
+				}
+				entry.Links = links
+				if len(links) > 0 {
+					kept = append(kept, entry)
+				}
+			}
+			status.Dotfiles = kept
+		}
 	}
 
 	return []doctorIssue{
