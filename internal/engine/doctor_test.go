@@ -482,3 +482,169 @@ func TestCheckOrphans_FixRemovesOrphanedEntry(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckStaleSymlinks_NoLinks(t *testing.T) {
+	status := &handlerskg.Status{}
+	issues := checkStaleSymlinks(status)
+	if len(issues) != 0 {
+		t.Errorf("expected 0 issues for empty status, got %d", len(issues))
+	}
+}
+
+func TestCheckStaleSymlinks_AllValid(t *testing.T) {
+	// Create a real symlink pointing to a real file.
+	dir := t.TempDir()
+	target := dir + "/target.txt"
+	link := dir + "/link"
+	if err := os.WriteFile(target, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	status := &handlerskg.Status{
+		Dotfiles: []handlerskg.DotfilesStatus{
+			{URL: "https://github.com/u/dots", Path: dir, Links: []string{link}, OS: "linux", Blueprint: "https://github.com/u/setup"},
+		},
+	}
+	issues := checkStaleSymlinks(status)
+	if len(issues) != 0 {
+		t.Errorf("expected 0 issues for valid symlink, got %d", len(issues))
+	}
+}
+
+func TestCheckStaleSymlinks_BrokenSymlink(t *testing.T) {
+	dir := t.TempDir()
+	link := dir + "/broken"
+	// Create symlink pointing to a non-existent target.
+	if err := os.Symlink(dir+"/nonexistent", link); err != nil {
+		t.Fatal(err)
+	}
+
+	status := &handlerskg.Status{
+		Dotfiles: []handlerskg.DotfilesStatus{
+			{URL: "https://github.com/u/dots", Path: dir, Links: []string{link}, OS: "linux", Blueprint: "https://github.com/u/setup"},
+		},
+	}
+	issues := checkStaleSymlinks(status)
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue for broken symlink, got %d", len(issues))
+	}
+	if issues[0].count != 1 {
+		t.Errorf("expected count 1, got %d", issues[0].count)
+	}
+}
+
+func TestCheckStaleSymlinks_MissingPath(t *testing.T) {
+	// Link path does not exist at all.
+	status := &handlerskg.Status{
+		Dotfiles: []handlerskg.DotfilesStatus{
+			{URL: "https://github.com/u/dots", Path: "/tmp/dots", Links: []string{"/tmp/nonexistent_link_xyz"}, OS: "linux", Blueprint: "https://github.com/u/setup"},
+		},
+	}
+	issues := checkStaleSymlinks(status)
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue for missing path, got %d", len(issues))
+	}
+}
+
+func TestCheckStaleSymlinks_Fix(t *testing.T) {
+	dir := t.TempDir()
+	link := dir + "/broken"
+	if err := os.Symlink(dir+"/nonexistent", link); err != nil {
+		t.Fatal(err)
+	}
+
+	status := &handlerskg.Status{
+		Dotfiles: []handlerskg.DotfilesStatus{
+			{URL: "https://github.com/u/dots", Path: dir, Links: []string{link}, OS: "linux", Blueprint: "https://github.com/u/setup"},
+		},
+	}
+	issues := checkStaleSymlinks(status)
+	if len(issues) == 0 || issues[0].fix == nil {
+		t.Fatal("expected issue with fix func")
+	}
+	issues[0].fix()
+
+	// Symlink should be removed from disk.
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Error("expected broken symlink to be removed from disk")
+	}
+	// Entry with no remaining links should be removed from status.
+	if len(status.Dotfiles) != 0 {
+		t.Errorf("expected dotfiles entry to be removed, got %d entries", len(status.Dotfiles))
+	}
+}
+
+func TestCheckMissingCloneDirs_NoDirs(t *testing.T) {
+	status := &handlerskg.Status{}
+	issues := checkMissingCloneDirs(status)
+	if len(issues) != 0 {
+		t.Errorf("expected 0 issues for empty status, got %d", len(issues))
+	}
+}
+
+func TestCheckMissingCloneDirs_AllPresent(t *testing.T) {
+	dir := t.TempDir()
+	status := &handlerskg.Status{
+		Clones: []handlerskg.CloneStatus{
+			{URL: "https://github.com/u/repo", Path: dir, Blueprint: "https://github.com/u/setup", OS: "linux"},
+		},
+	}
+	issues := checkMissingCloneDirs(status)
+	if len(issues) != 0 {
+		t.Errorf("expected 0 issues for existing dir, got %d", len(issues))
+	}
+}
+
+func TestCheckMissingCloneDirs_Missing(t *testing.T) {
+	status := &handlerskg.Status{
+		Clones: []handlerskg.CloneStatus{
+			{URL: "https://github.com/u/repo", Path: "/tmp/does_not_exist_xyz_123", Blueprint: "https://github.com/u/setup", OS: "linux"},
+		},
+	}
+	issues := checkMissingCloneDirs(status)
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue for missing dir, got %d", len(issues))
+	}
+	if issues[0].count != 1 {
+		t.Errorf("expected count 1, got %d", issues[0].count)
+	}
+}
+
+func TestCheckMissingCloneDirs_Fix(t *testing.T) {
+	status := &handlerskg.Status{
+		Clones: []handlerskg.CloneStatus{
+			{URL: "https://github.com/u/repo", Path: "/tmp/does_not_exist_xyz_123", Blueprint: "https://github.com/u/setup", OS: "linux"},
+		},
+	}
+	issues := checkMissingCloneDirs(status)
+	if len(issues) == 0 || issues[0].fix == nil {
+		t.Fatal("expected issue with fix func")
+	}
+	issues[0].fix()
+
+	if len(status.Clones) != 0 {
+		t.Errorf("expected clone entry to be removed, got %d entries", len(status.Clones))
+	}
+}
+
+func TestExpandHomedir(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"~/foo/bar", home + "/foo/bar"},
+		{"/absolute/path", "/absolute/path"},
+		{"relative/path", "relative/path"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		got := expandHomedir(tt.input)
+		if got != tt.want {
+			t.Errorf("expandHomedir(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
