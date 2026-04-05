@@ -125,54 +125,55 @@ func TestParsePositiveInt_EmptyRejected(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestParseFlags_Empty(t *testing.T) {
-	skipGroup, skipID, onlyID, skipDecrypt, preferSSH := parseFlags([]string{})
-	if skipGroup != "" || skipID != "" || onlyID != "" || skipDecrypt || preferSSH {
+	skipGroup, skipID, onlyID, skipDecrypt, preferSSH, noStatus := parseFlags([]string{})
+	if skipGroup != "" || skipID != "" || onlyID != "" || skipDecrypt || preferSSH || noStatus {
 		t.Fatal("expected all zero values for empty args")
 	}
 }
 
 func TestParseFlags_SkipGroup(t *testing.T) {
-	skipGroup, _, _, _, _ := parseFlags([]string{"--skip-group", "mygroup"})
+	skipGroup, _, _, _, _, _ := parseFlags([]string{"--skip-group", "mygroup"})
 	if skipGroup != "mygroup" {
 		t.Fatalf("expected skipGroup=%q, got %q", "mygroup", skipGroup)
 	}
 }
 
 func TestParseFlags_SkipID(t *testing.T) {
-	_, skipID, _, _, _ := parseFlags([]string{"--skip-id", "myid"})
+	_, skipID, _, _, _, _ := parseFlags([]string{"--skip-id", "myid"})
 	if skipID != "myid" {
 		t.Fatalf("expected skipID=%q, got %q", "myid", skipID)
 	}
 }
 
 func TestParseFlags_Only(t *testing.T) {
-	_, _, onlyID, _, _ := parseFlags([]string{"--only", "step-42"})
+	_, _, onlyID, _, _, _ := parseFlags([]string{"--only", "step-42"})
 	if onlyID != "step-42" {
 		t.Fatalf("expected onlyID=%q, got %q", "step-42", onlyID)
 	}
 }
 
 func TestParseFlags_SkipDecrypt(t *testing.T) {
-	_, _, _, skipDecrypt, _ := parseFlags([]string{"--skip-decrypt"})
+	_, _, _, skipDecrypt, _, _ := parseFlags([]string{"--skip-decrypt"})
 	if !skipDecrypt {
 		t.Fatal("expected skipDecrypt=true")
 	}
 }
 
 func TestParseFlags_PreferSSH(t *testing.T) {
-	_, _, _, _, preferSSH := parseFlags([]string{"--prefer-ssh"})
+	_, _, _, _, preferSSH, _ := parseFlags([]string{"--prefer-ssh"})
 	if !preferSSH {
 		t.Fatal("expected preferSSH=true")
 	}
 }
 
 func TestParseFlags_Combined(t *testing.T) {
-	skipGroup, skipID, onlyID, skipDecrypt, preferSSH := parseFlags([]string{
+	skipGroup, skipID, onlyID, skipDecrypt, preferSSH, noStatus := parseFlags([]string{
 		"--skip-group", "grp",
 		"--skip-id", "sid",
 		"--only", "oid",
 		"--skip-decrypt",
 		"--prefer-ssh",
+		"--no-status",
 	})
 	if skipGroup != "grp" {
 		t.Errorf("skipGroup: want %q got %q", "grp", skipGroup)
@@ -189,11 +190,21 @@ func TestParseFlags_Combined(t *testing.T) {
 	if !preferSSH {
 		t.Error("expected preferSSH=true")
 	}
+	if !noStatus {
+		t.Error("expected noStatus=true")
+	}
+}
+
+func TestParseFlags_NoStatus(t *testing.T) {
+	_, _, _, _, _, noStatus := parseFlags([]string{"--no-status"})
+	if !noStatus {
+		t.Fatal("expected noStatus=true")
+	}
 }
 
 func TestParseFlags_MissingValueIgnored(t *testing.T) {
 	// Flag present but no following argument — should not panic, value stays empty.
-	skipGroup, _, _, _, _ := parseFlags([]string{"--skip-group"})
+	skipGroup, _, _, _, _, _ := parseFlags([]string{"--skip-group"})
 	if skipGroup != "" {
 		t.Fatalf("expected skipGroup=%q when value is missing, got %q", "", skipGroup)
 	}

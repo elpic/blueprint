@@ -14,6 +14,9 @@ Status entries written before URL normalization may store blueprint sources in n
 ### Duplicate entries
 Two or more entries tracking the same resource on the same OS from the same blueprint (after URL normalization). This can happen if `apply` was interrupted or if status was manually edited.
 
+### Branch-duplicate entries
+Resources that appear in status from multiple branches of the same repository. This commonly happens when testing blueprint changes on a feature branch with `blueprint apply repo@feat/test` — the branch apply creates entries alongside the existing main-branch entries. Use `blueprint apply <repo> --no-status` to avoid this.
+
 ### Orphaned entries
 Resources recorded in status whose rule no longer exists in the blueprint file they came from. This happens when you remove a rule from your blueprint but the entry lingers in status because the `apply` was never re-run.
 
@@ -48,6 +51,7 @@ Repairs auto-fixable issues in place and rewrites `~/.blueprint/status.json`. Fo
 |-------|-----------------|
 | Stale blueprint URLs | Auto-fixed — normalizes URLs in status |
 | Duplicate entries | Auto-fixed — removes duplicates |
+| Branch-duplicate entries | Auto-fixed — rewrites branch URLs to canonical form, then dedup removes the newest |
 | Orphaned entries | Auto-fixed — removes orphaned entries from status |
 | Stale symlinks | Auto-fixed — recreates the symlink if the source file still exists in the clone dir; removes the broken link if the source is also gone |
 | Missing clone directories | **Not auto-fixed** — run `blueprint apply <file>` to restore |

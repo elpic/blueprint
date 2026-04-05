@@ -54,7 +54,7 @@ func (p *passwordStore) snapshot() map[string]string {
 // passwordCache stores decryption passwords by password-id to avoid re-prompting
 var passwordCache = &passwordStore{m: make(map[string]string)}
 
-func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID string, skipDecrypt bool, preferSSH bool) {
+func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID string, skipDecrypt bool, preferSSH bool, noStatus bool) {
 	if preferSSH {
 		file = gitpkg.ExpandShorthandSSH(file)
 	} else {
@@ -172,8 +172,10 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 			fmt.Printf("Warning: Failed to save history: %v\n", err)
 		}
 		// Use the original file path/URL for status (never temp paths)
-		if err := saveStatus(allRules, records, file, blueprintSHA, currentOS); err != nil {
-			fmt.Printf("Warning: Failed to save status: %v\n", err)
+		if !noStatus {
+			if err := saveStatus(allRules, records, file, blueprintSHA, currentOS); err != nil {
+				fmt.Printf("Warning: Failed to save status: %v\n", err)
+			}
 		}
 
 		// Clear sudo cache on all operating systems
@@ -182,5 +184,5 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 }
 
 func Run(file string, dry bool) {
-	RunWithSkip(file, dry, "", "", "", false, false)
+	RunWithSkip(file, dry, "", "", "", false, false, false)
 }

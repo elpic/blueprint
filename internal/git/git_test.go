@@ -446,6 +446,30 @@ func TestNormalizeGitURLEquality(t *testing.T) {
 	}
 }
 
+func TestStripBranch(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"https://github.com/user/repo", "https://github.com/user/repo"},
+		{"https://github.com/user/repo@main", "https://github.com/user/repo"},
+		{"https://github.com/user/repo@feat/test", "https://github.com/user/repo"},
+		{"https://github.com/user/repo@feat/test:setup.bp", "https://github.com/user/repo"},
+		{"git@github.com:user/repo.git", "git@github.com:user/repo.git"},
+		{"git@github.com:user/repo.git@main", "git@github.com:user/repo.git"},
+		{"git@github.com:user/repo.git@feat/test:setup.bp", "git@github.com:user/repo.git"},
+		{"/local/path/setup.bp", "/local/path/setup.bp"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := StripBranch(tt.input)
+			if got != tt.want {
+				t.Errorf("StripBranch(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestGenerateRepositoryID(t *testing.T) {
 	tests := []struct {
 		name        string

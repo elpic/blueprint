@@ -615,6 +615,27 @@ func generateRepositoryID(url, branch string) string {
 	return fmt.Sprintf("%x", hasher.Sum(nil))[:16] // Use first 16 chars of hash
 }
 
+// StripBranch removes the @branch and :path specifiers from a git URL,
+// returning just the base repository URL. This is useful for comparing
+// whether two blueprint URLs point to the same repo regardless of branch.
+func StripBranch(input string) string {
+	// SSH URLs: git@host:user/repo.git@branch:path
+	if strings.HasPrefix(input, "git@") {
+		if gitIdx := strings.Index(input, ".git"); gitIdx >= 0 {
+			return input[:gitIdx+4] // keep up to and including .git
+		}
+		// No .git suffix — strip trailing @branch if present (second @ only)
+		return input
+	}
+
+	// HTTPS/HTTP/git:// URLs: url@branch:path — strip @branch and beyond
+	if idx := strings.Index(input, "@"); idx > 0 {
+		return input[:idx]
+	}
+
+	return input
+}
+
 // NormalizeGitURL normalizes a git URL for consistent identification.
 // It converts SSH URLs to HTTPS and lowercases the result.
 func NormalizeGitURL(url string) string {
