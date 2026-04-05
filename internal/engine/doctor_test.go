@@ -759,3 +759,69 @@ func TestCheckMissingDownloadFiles_HasHint(t *testing.T) {
 		t.Error("expected a hint message to guide the user")
 	}
 }
+
+func TestCheckBranchDuplicates_Detected(t *testing.T) {
+	// Same package installed from two branches of the same repo.
+	status := &handlerskg.Status{
+		Packages: []handlerskg.PackageStatus{
+			{Name: "vim", Blueprint: "https://github.com/user/setup", OS: "linux"},
+			{Name: "vim", Blueprint: "https://github.com/user/setup@feat/test", OS: "linux"},
+		},
+	}
+
+	issues := checkBranchDuplicates(status)
+	if len(issues) == 0 {
+		t.Fatal("expected branch duplicate issue, got none")
+	}
+	if issues[0].count != 1 {
+		t.Errorf("expected count 1, got %d", issues[0].count)
+	}
+	if issues[0].fix == nil {
+		t.Error("expected a fix function")
+	}
+	if issues[0].hint == "" {
+		t.Error("expected a hint about --no-status")
+	}
+}
+
+func TestCheckBranchDuplicates_NoDuplicates(t *testing.T) {
+	// Different resources from different branches — not duplicates.
+	status := &handlerskg.Status{
+		Packages: []handlerskg.PackageStatus{
+			{Name: "vim", Blueprint: "https://github.com/user/setup", OS: "linux"},
+			{Name: "git", Blueprint: "https://github.com/user/setup@feat/test", OS: "linux"},
+		},
+	}
+
+	issues := checkBranchDuplicates(status)
+	if len(issues) != 0 {
+		t.Errorf("expected 0 issues, got %d", len(issues))
+	}
+}
+
+func TestCheckBranchDuplicates_Fix(t *testing.T) {
+	status := &handlerskg.Status{
+		Packages: []handlerskg.PackageStatus{
+			{Name: "vim", Blueprint: "https://github.com/user/setup", OS: "linux", InstalledAt: "2024-01-01"},
+			{Name: "vim", Blueprint: "https://github.com/user/setup@feat/test", OS: "linux", InstalledAt: "2024-02-01"},
+		},
+	}
+
+	issues := checkBranchDuplicates(status)
+	if len(issues) == 0 {
+		t.Fatal("expected issues")
+	}
+
+	// Run the fix — should keep the oldest (first) entry and remove the newer branch one.
+	issues[0].fix()
+
+	if len(status.Packages) != 1 {
+		t.Fatalf("expected 1 package after fix, got %d", len(status.Packages))
+	}
+	if status.Packages[0].InstalledAt != "2024-01-01" {
+		t.Errorf("expected oldest entry to be kept, got installed_at=%q", status.Packages[0].InstalledAt)
+	}
+	if status.Packages[0].Blueprint != "https://github.com/user/setup" {
+		t.Errorf("expected branchless blueprint, got %q", status.Packages[0].Blueprint)
+	}
+}

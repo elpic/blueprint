@@ -110,6 +110,92 @@ func checkDuplicates(status *handlerskg.Status) []doctorIssue {
 	}
 }
 
+// stripBranchFromBlueprint normalizes a blueprint URL and strips the branch
+// specifier, returning just the base repo identity. Two URLs that differ only
+// by branch will return the same value.
+func stripBranchFromBlueprint(bp string) string {
+	return handlerskg.NormalizeBlueprint(gitpkg.StripBranch(bp))
+}
+
+// checkBranchDuplicates detects entries where the same resource+OS pair appears
+// from different branches of the same repository. This commonly happens when
+// testing blueprint changes on a feature branch: applying repo@feat/test creates
+// entries alongside the existing repo (main) entries. With --fix it rewrites the
+// blueprint field to the branchless canonical form so that the existing dedup
+// logic can collapse them.
+func checkBranchDuplicates(status *handlerskg.Status) []doctorIssue {
+	type key struct{ resource, os, repo string }
+	// Track which (resource, OS, repo-without-branch) combos have entries from
+	// multiple distinct (normalized) blueprint URLs.
+	type info struct {
+		blueprints map[string]bool // distinct normalized blueprint URLs
+	}
+	seen := map[key]*info{}
+
+	for _, e := range status.AllEntries() {
+		bp := normalizeBlueprintForDoctor(e.GetBlueprint())
+		repo := stripBranchFromBlueprint(e.GetBlueprint())
+		k := key{e.GetResourceKey(), e.GetOS(), repo}
+		if seen[k] == nil {
+			seen[k] = &info{blueprints: map[string]bool{}}
+		}
+		seen[k].blueprints[bp] = true
+	}
+
+	count := 0
+	var examples []string
+	for k, inf := range seen {
+		if len(inf.blueprints) > 1 {
+			count += len(inf.blueprints) - 1 // extra entries beyond the first
+			if len(examples) < 3 {
+				bps := make([]string, 0, len(inf.blueprints))
+				for bp := range inf.blueprints {
+					bps = append(bps, bp)
+				}
+				examples = append(examples, fmt.Sprintf("%s from %d branches (%s)", k.resource, len(bps), bps[0]))
+			}
+		}
+	}
+
+	if count == 0 {
+		return nil
+	}
+
+	fixFn := func() {
+		// For each (resource, OS, repo) group with multiple branches, keep the
+		// oldest entry (the original apply) and remove the newer branch entries.
+		first := map[key]bool{}
+
+		status.FilterEntries(func(e handlerskg.StatusEntry) bool {
+			repo := stripBranchFromBlueprint(e.GetBlueprint())
+			k := key{e.GetResourceKey(), e.GetOS(), repo}
+
+			inf := seen[k]
+			if inf == nil || len(inf.blueprints) <= 1 {
+				return true // not a branch-duplicate — keep
+			}
+
+			// Keep the first occurrence (oldest), drop the rest.
+			if !first[k] {
+				first[k] = true
+				e.SetBlueprint(repo) // normalize to branchless form
+				return true
+			}
+			return false
+		})
+	}
+
+	return []doctorIssue{
+		{
+			description: fmt.Sprintf("%d entries duplicated across branches of the same repo", count),
+			count:       count,
+			examples:    examples,
+			fix:         fixFn,
+			hint:        "Use 'blueprint apply <repo> --no-status' when testing branch changes to avoid this.",
+		},
+	}
+}
+
 // findBlueprintSetupFile returns the path to setup.bp inside localPath, or an
 // error if the file does not exist.
 func findBlueprintSetupFile(localPath string) (string, error) {
@@ -522,6 +608,7 @@ func DoctorCheck(fix bool) {
 
 	issues := checkBlueprintURLs(&status)
 	issues = append(issues, checkDuplicates(&status)...)
+	issues = append(issues, checkBranchDuplicates(&status)...)
 	fmt.Printf("\nChecking for orphaned entries...\n")
 	issues = append(issues, checkOrphans(&status)...)
 	fmt.Printf("\nChecking for stale symlinks...\n")
@@ -534,6 +621,7 @@ func DoctorCheck(fix bool) {
 	if len(issues) == 0 {
 		fmt.Printf("  %s\n", ui.FormatSuccess("blueprint URLs are normalized"))
 		fmt.Printf("  %s\n", ui.FormatSuccess("no duplicate entries"))
+		fmt.Printf("  %s\n", ui.FormatSuccess("no branch-duplicate entries"))
 		fmt.Printf("  %s\n", ui.FormatSuccess("no orphaned entries"))
 		fmt.Printf("  %s\n", ui.FormatSuccess("no stale symlinks"))
 		fmt.Printf("  %s\n", ui.FormatSuccess("no missing clone directories"))
