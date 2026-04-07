@@ -172,6 +172,80 @@ func TestResolveDependenciesChain(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// groupIntoWaves
+// ---------------------------------------------------------------------------
+
+func TestGroupIntoWaves_NoDeps(t *testing.T) {
+	// All independent rules → single wave
+	rules := []parser.Rule{
+		{ID: "a", Action: "run", RunCommand: "echo a"},
+		{ID: "b", Action: "run", RunCommand: "echo b"},
+		{ID: "c", Action: "run", RunCommand: "echo c"},
+	}
+	sorted, _ := resolveDependencies(rules)
+	waves := groupIntoWaves(sorted)
+	if len(waves) != 1 {
+		t.Fatalf("expected 1 wave, got %d", len(waves))
+	}
+	if len(waves[0]) != 3 {
+		t.Errorf("expected 3 rules in wave 0, got %d", len(waves[0]))
+	}
+}
+
+func TestGroupIntoWaves_Chain(t *testing.T) {
+	// c → b → a: 3 waves of 1 each
+	rules := []parser.Rule{
+		{ID: "c", Action: "run", RunCommand: "echo c", After: []string{"b"}},
+		{ID: "b", Action: "run", RunCommand: "echo b", After: []string{"a"}},
+		{ID: "a", Action: "run", RunCommand: "echo a"},
+	}
+	sorted, _ := resolveDependencies(rules)
+	waves := groupIntoWaves(sorted)
+	if len(waves) != 3 {
+		t.Fatalf("expected 3 waves, got %d", len(waves))
+	}
+	for i, w := range waves {
+		if len(w) != 1 {
+			t.Errorf("wave %d: expected 1 rule, got %d", i, len(w))
+		}
+	}
+	if waves[0][0].ID != "a" || waves[1][0].ID != "b" || waves[2][0].ID != "c" {
+		t.Errorf("wrong order: got [%s, %s, %s]", waves[0][0].ID, waves[1][0].ID, waves[2][0].ID)
+	}
+}
+
+func TestGroupIntoWaves_Diamond(t *testing.T) {
+	// a → (b, c) → d: wave 0=[a], wave 1=[b,c], wave 2=[d]
+	rules := []parser.Rule{
+		{ID: "a", Action: "run", RunCommand: "echo a"},
+		{ID: "b", Action: "run", RunCommand: "echo b", After: []string{"a"}},
+		{ID: "c", Action: "run", RunCommand: "echo c", After: []string{"a"}},
+		{ID: "d", Action: "run", RunCommand: "echo d", After: []string{"b", "c"}},
+	}
+	sorted, _ := resolveDependencies(rules)
+	waves := groupIntoWaves(sorted)
+	if len(waves) != 3 {
+		t.Fatalf("expected 3 waves, got %d", len(waves))
+	}
+	if len(waves[0]) != 1 || waves[0][0].ID != "a" {
+		t.Errorf("wave 0: expected [a], got %v", waves[0])
+	}
+	if len(waves[1]) != 2 {
+		t.Errorf("wave 1: expected 2 rules, got %d", len(waves[1]))
+	}
+	if len(waves[2]) != 1 || waves[2][0].ID != "d" {
+		t.Errorf("wave 2: expected [d], got %v", waves[2])
+	}
+}
+
+func TestGroupIntoWaves_Empty(t *testing.T) {
+	waves := groupIntoWaves(nil)
+	if waves != nil {
+		t.Errorf("expected nil for nil input, got %v", waves)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // formatDuration
 // ---------------------------------------------------------------------------
 
