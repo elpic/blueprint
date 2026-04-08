@@ -191,6 +191,59 @@ func resolveDependencies(rules []parser.Rule) ([]parser.Rule, error) {
 	return sorted, nil
 }
 
+// groupIntoWaves takes topologically sorted rules and groups them into waves.
+// Rules in the same wave have no dependencies on each other and can run in
+// parallel. Each wave's rules depend only on rules in earlier waves.
+func groupIntoWaves(sorted []parser.Rule) [][]parser.Rule {
+	if len(sorted) == 0 {
+		return nil
+	}
+
+	// Build a set of rule keys for each rule's dependencies.
+	// A rule's wave = max(wave of each dependency) + 1.
+	ruleWave := make(map[string]int, len(sorted))
+
+	// Map rule IDs and package names to their rule key for dependency lookup.
+	idToKey := make(map[string]string, len(sorted))
+	for _, r := range sorted {
+		key := handlerskg.RuleKey(r)
+		if r.ID != "" {
+			idToKey[r.ID] = key
+		}
+		for _, pkg := range r.Packages {
+			idToKey[pkg.Name] = key
+		}
+	}
+
+	maxWave := 0
+	for _, r := range sorted {
+		key := handlerskg.RuleKey(r)
+		wave := 0
+		for _, dep := range r.After {
+			depKey := dep
+			if mapped, ok := idToKey[dep]; ok {
+				depKey = mapped
+			}
+			if dw, ok := ruleWave[depKey]; ok && dw+1 > wave {
+				wave = dw + 1
+			}
+		}
+		ruleWave[key] = wave
+		if wave > maxWave {
+			maxWave = wave
+		}
+	}
+
+	waves := make([][]parser.Rule, maxWave+1)
+	for _, r := range sorted {
+		key := handlerskg.RuleKey(r)
+		w := ruleWave[key]
+		waves[w] = append(waves[w], r)
+	}
+
+	return waves
+}
+
 // isGitURL returns true if the input is a git URL
 func isGitURL(input string) bool {
 	return gitpkg.IsGitURL(input)
