@@ -23,6 +23,10 @@ type SummaryFunc func(rule parser.Rule) string
 // Call index(key) for each key this rule contributes.
 type OrphanIndexFunc func(rule parser.Rule, index func(key string))
 
+// ShellExportFunc returns shell commands for a rule. format is "bash" or "sh".
+// osName is "mac" or "linux". Returns nil to emit a skip comment.
+type ShellExportFunc func(rule parser.Rule, format, osName string) []string
+
 // ActionDef captures everything the system needs to know about one action type.
 type ActionDef struct {
 	Name        string
@@ -32,6 +36,7 @@ type ActionDef struct {
 	Detect      DetectFunc
 	Summary     SummaryFunc
 	OrphanIndex OrphanIndexFunc
+	ShellExport ShellExportFunc
 	// OrphanCheckExcluded skips key-based orphan detection for this action.
 	// Set this when the status entry's resource key format cannot be matched
 	// against the keys produced by OrphanIndex (e.g. asdf/mise store
