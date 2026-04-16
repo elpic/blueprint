@@ -218,35 +218,15 @@ func exportGPGKey(rule parser.Rule, _, _ string) []string {
 }
 
 func exportOllama(rule parser.Rule, _, _ string) []string {
-	lines := []string{
-		`if ! command -v ollama >/dev/null 2>&1; then`,
-		`  curl -fsSL https://ollama.com/install.sh | sh`,
-		`fi`,
-	}
+	var lines []string
 	for _, model := range rule.OllamaModels {
 		lines = append(lines, "ollama pull "+shellQ(model))
 	}
 	return lines
 }
 
-func exportMise(rule parser.Rule, _, osName string) []string {
+func exportMise(rule parser.Rule, _, _ string) []string {
 	var lines []string
-	lines = append(lines,
-		`if ! command -v mise >/dev/null 2>&1; then`,
-	)
-	if osName == "mac" {
-		lines = append(lines, `  brew install mise`)
-	} else {
-		lines = append(lines,
-			`  mkdir -p "$HOME/.local/bin"`,
-			`  curl -fsSL https://mise.run | sh`,
-		)
-	}
-	lines = append(lines,
-		`fi`,
-		`export PATH="$HOME/.local/bin:$PATH"`,
-	)
-
 	for _, pkg := range rule.MisePackages {
 		if rule.MisePath != "" {
 			lines = append(lines, fmt.Sprintf("cd %s && mise use %s", shellQ(rule.MisePath), shellQ(pkg)))
@@ -257,23 +237,8 @@ func exportMise(rule parser.Rule, _, osName string) []string {
 	return lines
 }
 
-func exportAsdf(rule parser.Rule, _, osName string) []string {
+func exportAsdf(rule parser.Rule, _, _ string) []string {
 	var lines []string
-	lines = append(lines, `if ! command -v asdf >/dev/null 2>&1; then`)
-	if osName == "mac" {
-		lines = append(lines, `  brew install asdf`)
-	} else {
-		lines = append(lines,
-			`  # Install asdf from GitHub releases`,
-			`  ASDF_ARCH="$(uname -m)"`,
-			`  curl -fsSL "https://github.com/asdf-vm/asdf/releases/latest/download/asdf-linux-${ASDF_ARCH}.tar.gz" -o /tmp/asdf.tar.gz`,
-			`  tar -xzf /tmp/asdf.tar.gz -C /tmp`,
-			`  sudo cp /tmp/asdf /usr/local/bin/asdf && sudo chmod 755 /usr/local/bin/asdf`,
-			`  rm -f /tmp/asdf.tar.gz /tmp/asdf`,
-		)
-	}
-	lines = append(lines, `fi`)
-
 	for _, pkg := range rule.AsdfPackages {
 		parts := strings.SplitN(pkg, "@", 2)
 		plugin := parts[0]

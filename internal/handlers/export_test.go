@@ -209,38 +209,39 @@ func TestExportOllama(t *testing.T) {
 	}
 	lines := exportOllama(rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
-	if !strings.Contains(joined, "ollama.com/install.sh") {
-		t.Error("expected ollama install")
+	if !strings.Contains(joined, `ollama pull "llama3"`) {
+		t.Error("expected ollama pull for llama3")
 	}
-	if !strings.Contains(joined, "ollama pull") {
-		t.Error("expected ollama pull")
+	if !strings.Contains(joined, `ollama pull "codellama"`) {
+		t.Error("expected ollama pull for codellama")
 	}
 }
 
-func TestExportMise_Mac(t *testing.T) {
+func TestExportMise(t *testing.T) {
 	rule := parser.Rule{
 		Action:       "mise",
-		MisePackages: []string{"node@20"},
+		MisePackages: []string{"node@20", "python@3.11"},
 	}
 	lines := exportMise(rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
-	if !strings.Contains(joined, "brew install mise") {
-		t.Error("expected brew install on mac")
+	if !strings.Contains(joined, "mise use -g \"node@20\"") {
+		t.Errorf("expected mise use -g for node, got:\n%s", joined)
 	}
-	if !strings.Contains(joined, "mise use -g") {
-		t.Error("expected mise use -g")
+	if !strings.Contains(joined, "mise use -g \"python@3.11\"") {
+		t.Error("expected mise use -g for python")
 	}
 }
 
-func TestExportMise_Linux(t *testing.T) {
+func TestExportMise_ProjectLocal(t *testing.T) {
 	rule := parser.Rule{
 		Action:       "mise",
 		MisePackages: []string{"node@20"},
+		MisePath:     "/tmp/project",
 	}
-	lines := exportMise(rule, "bash", "linux")
+	lines := exportMise(rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
-	if !strings.Contains(joined, "mise.run") {
-		t.Error("expected curl mise.run on linux")
+	if !strings.Contains(joined, "cd") || !strings.Contains(joined, "mise use") {
+		t.Errorf("expected cd and mise use for project-local, got:\n%s", joined)
 	}
 }
 

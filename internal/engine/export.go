@@ -62,6 +62,7 @@ func buildScript(rules []parser.Rule, format, osName, blueprintFile string) stri
 
 	writeHeader(&b, format, osName, blueprintFile)
 	writeHelpers(&b, format)
+	writePrerequisites(&b, rules, osName)
 
 	for i, rule := range rules {
 		writeRule(&b, rule, i+1, len(rules), format, osName)
@@ -71,6 +72,107 @@ func buildScript(rules []parser.Rule, format, osName, blueprintFile string) stri
 	writeFooter(&b, format)
 
 	return b.String()
+}
+
+// toolNeeds scans rules to determine which tools need to be bootstrapped.
+type toolNeeds struct {
+	brew   bool // homebrew action OR install action on mac
+	mise   bool
+	asdf   bool
+	ollama bool
+}
+
+func detectToolNeeds(rules []parser.Rule, osName string) toolNeeds {
+	var t toolNeeds
+	for _, r := range rules {
+		switch r.Action {
+		case "homebrew":
+			t.brew = true
+		case "install":
+			if osName == "mac" {
+				t.brew = true
+			}
+		case "mise":
+			t.mise = true
+			if osName == "mac" {
+				t.brew = true // mise is installed via brew on mac
+			}
+		case "asdf":
+			t.asdf = true
+			if osName == "mac" {
+				t.brew = true // asdf is installed via brew on mac
+			}
+		case "ollama":
+			t.ollama = true
+		}
+	}
+	return t
+}
+
+func writePrerequisites(b *strings.Builder, rules []parser.Rule, osName string) {
+	needs := detectToolNeeds(rules, osName)
+	if !needs.brew && !needs.mise && !needs.asdf && !needs.ollama {
+		return
+	}
+
+	b.WriteString("# --- Prerequisites ---\n")
+
+	if needs.brew {
+		b.WriteString(`if ! command_exists brew; then
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  if [ -x /opt/homebrew/bin/brew ]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [ -x /usr/local/bin/brew ]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  elif [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+    eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+  fi
+fi
+`)
+	}
+
+	if needs.mise {
+		if osName == "mac" {
+			b.WriteString(`if ! command_exists mise; then
+  brew install mise
+fi
+`)
+		} else {
+			b.WriteString(`if ! command_exists mise; then
+  mkdir -p "$HOME/.local/bin"
+  curl -fsSL https://mise.run | sh
+fi
+export PATH="$HOME/.local/bin:$PATH"
+`)
+		}
+	}
+
+	if needs.asdf {
+		if osName == "mac" {
+			b.WriteString(`if ! command_exists asdf; then
+  brew install asdf
+fi
+`)
+		} else {
+			b.WriteString(`if ! command_exists asdf; then
+  ASDF_ARCH="$(uname -m)"
+  curl -fsSL "https://github.com/asdf-vm/asdf/releases/latest/download/asdf-linux-${ASDF_ARCH}.tar.gz" -o /tmp/asdf.tar.gz
+  tar -xzf /tmp/asdf.tar.gz -C /tmp
+  sudo cp /tmp/asdf /usr/local/bin/asdf && sudo chmod 755 /usr/local/bin/asdf
+  rm -f /tmp/asdf.tar.gz /tmp/asdf
+fi
+`)
+		}
+	}
+
+	if needs.ollama {
+		b.WriteString(`if ! command_exists ollama; then
+  curl -fsSL https://ollama.com/install.sh | sh
+fi
+`)
+	}
+
+	b.WriteString("\n")
 }
 
 func writeHeader(b *strings.Builder, format, osName, blueprintFile string) {
