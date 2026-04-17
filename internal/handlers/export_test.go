@@ -73,8 +73,24 @@ func TestExportClone(t *testing.T) {
 	if !strings.Contains(joined, "$HOME/projects/repo") {
 		t.Errorf("expected $HOME path, got:\n%s", joined)
 	}
-	if !strings.Contains(joined, "pull") {
-		t.Error("expected pull fallback in else branch")
+	if !strings.Contains(joined, "mktemp -d") {
+		t.Error("expected two-stage clone via temp dir")
+	}
+	if !strings.Contains(joined, "cp -a") {
+		t.Error("expected copy from temp to target")
+	}
+}
+
+func TestExportClone_NoBranch(t *testing.T) {
+	rule := parser.Rule{
+		Action:    "clone",
+		CloneURL:  "https://github.com/user/repo",
+		ClonePath: "~/projects/repo",
+	}
+	lines := exportClone(rule, "bash", "mac")
+	joined := strings.Join(lines, "\n")
+	if strings.Contains(joined, "-b") {
+		t.Error("should not have branch flag when no branch specified")
 	}
 }
 

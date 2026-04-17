@@ -101,18 +101,20 @@ func exportInstall(rule parser.Rule, format, osName string) []string {
 
 func exportClone(rule parser.Rule, _, _ string) []string {
 	path := shellHome(rule.ClonePath)
-	cloneCmd := "git clone"
+	branchFlag := ""
 	if rule.Branch != "" {
-		cloneCmd += " -b " + shellQ(rule.Branch)
+		branchFlag = " -b " + shellQ(rule.Branch)
 	}
-	cloneCmd += " " + shellQ(rule.CloneURL) + " " + path
 
+	// Blueprint uses a two-stage approach: clone to a temp dir, then copy to
+	// the target. This avoids .git pollution in the target. The shell export
+	// replicates this behavior.
 	return []string{
-		fmt.Sprintf("if [ ! -d %s ]; then", path),
-		"  " + cloneCmd,
-		"else",
-		fmt.Sprintf("  git -C %s pull", path),
-		"fi",
+		fmt.Sprintf("CLONE_TMP=\"$(mktemp -d)\""),
+		fmt.Sprintf("git clone%s %s \"$CLONE_TMP\" 2>/dev/null", branchFlag, shellQ(rule.CloneURL)),
+		fmt.Sprintf("rm -rf %s", path),
+		fmt.Sprintf("cp -a \"$CLONE_TMP\" %s", path),
+		"rm -rf \"$CLONE_TMP\"",
 	}
 }
 
