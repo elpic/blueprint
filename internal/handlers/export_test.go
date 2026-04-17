@@ -73,11 +73,20 @@ func TestExportClone(t *testing.T) {
 	if !strings.Contains(joined, "$HOME/projects/repo") {
 		t.Errorf("expected $HOME path, got:\n%s", joined)
 	}
-	if !strings.Contains(joined, "mktemp -d") {
-		t.Error("expected two-stage clone via temp dir")
+	if !strings.Contains(joined, ".blueprint/repos") {
+		t.Error("expected persistent cache dir under ~/.blueprint/repos")
 	}
-	if !strings.Contains(joined, "cp -a") {
-		t.Error("expected copy from temp to target")
+	if !strings.Contains(joined, "shasum") {
+		t.Error("expected SHA-based cache key")
+	}
+	if !strings.Contains(joined, "rev-parse HEAD") {
+		t.Error("expected SHA comparison via rev-parse")
+	}
+	if !strings.Contains(joined, "rsync") {
+		t.Error("expected rsync copy excluding .git")
+	}
+	if !strings.Contains(joined, ".blueprint-sha") {
+		t.Error("expected SHA marker file")
 	}
 }
 
@@ -91,6 +100,20 @@ func TestExportClone_NoBranch(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 	if strings.Contains(joined, "-b") {
 		t.Error("should not have branch flag when no branch specified")
+	}
+}
+
+func TestExportClone_SkipsCopyWhenUpToDate(t *testing.T) {
+	rule := parser.Rule{
+		Action:    "clone",
+		CloneURL:  "https://github.com/user/repo",
+		ClonePath: "~/projects/repo",
+	}
+	lines := exportClone(rule, "bash", "mac")
+	joined := strings.Join(lines, "\n")
+	// Should compare old SHA with new SHA and skip if equal
+	if !strings.Contains(joined, `"$CLONE_SHA" != "$OLD_SHA"`) {
+		t.Error("expected SHA comparison to skip copy when up to date")
 	}
 }
 

@@ -106,15 +106,33 @@ func exportClone(rule parser.Rule, _, _ string) []string {
 		branchFlag = " -b " + shellQ(rule.Branch)
 	}
 
-	// Blueprint uses a two-stage approach: clone to a temp dir, then copy to
-	// the target. This avoids .git pollution in the target. The shell export
-	// replicates this behavior.
+	// Blueprint uses a two-stage approach: clone to a persistent cache dir,
+	// compare SHAs, and only copy if the target is stale. The cache lives
+	// under ~/.blueprint/repos/<hash> matching the engine's storage path.
+	// Target directories don't have .git (contents-only copy), so we store
+	// the last-copied SHA in a marker file next to the target.
+	cacheKey := shellQ(rule.CloneURL)
+	if rule.Branch != "" {
+		cacheKey = shellQ(rule.CloneURL + "@" + rule.Branch)
+	}
+
 	return []string{
-		fmt.Sprintf("CLONE_TMP=\"$(mktemp -d)\""),
-		fmt.Sprintf("git clone%s %s \"$CLONE_TMP\" 2>/dev/null", branchFlag, shellQ(rule.CloneURL)),
-		fmt.Sprintf("rm -rf %s", path),
-		fmt.Sprintf("cp -a \"$CLONE_TMP\" %s", path),
-		"rm -rf \"$CLONE_TMP\"",
+		fmt.Sprintf(`CLONE_CACHE="$HOME/.blueprint/repos/$(echo -n %s | shasum -a 256 | cut -c1-16)"`, cacheKey),
+		fmt.Sprintf("if [ -d \"$CLONE_CACHE/.git\" ]; then"),
+		fmt.Sprintf("  git -C \"$CLONE_CACHE\" pull -q"),
+		fmt.Sprintf("else"),
+		fmt.Sprintf("  rm -rf \"$CLONE_CACHE\""),
+		fmt.Sprintf("  git clone%s %s \"$CLONE_CACHE\" -q", branchFlag, shellQ(rule.CloneURL)),
+		fmt.Sprintf("fi"),
+		`CLONE_SHA="$(git -C "$CLONE_CACHE" rev-parse HEAD)"`,
+		fmt.Sprintf(`CLONE_SHA_FILE=%s.blueprint-sha`, path),
+		`OLD_SHA=""`,
+		`[ -f "$CLONE_SHA_FILE" ] && OLD_SHA="$(cat "$CLONE_SHA_FILE")"`,
+		`if [ "$CLONE_SHA" != "$OLD_SHA" ]; then`,
+		fmt.Sprintf("  mkdir -p %s", path),
+		fmt.Sprintf(`  rsync -a --delete --exclude='.git' "$CLONE_CACHE/" %s/`, path),
+		`  echo "$CLONE_SHA" > "$CLONE_SHA_FILE"`,
+		`fi`,
 	}
 }
 
