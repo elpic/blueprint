@@ -47,7 +47,7 @@ func Export(file string, format string, output string, preferSSH bool) {
 	script := buildScript(sorted, format, currentOS, file)
 
 	if output != "" {
-		if err := os.WriteFile(output, []byte(script), 0o700); err != nil {
+		if err := os.WriteFile(output, []byte(script), 0o700); err != nil { // #nosec G306 -- exported shell script must be executable
 			fmt.Fprintf(os.Stderr, "%s\n", ui.FormatError(fmt.Sprintf("Error writing file: %v", err)))
 			os.Exit(1)
 		}
