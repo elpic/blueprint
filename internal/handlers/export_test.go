@@ -7,12 +7,25 @@ import (
 	"github.com/elpic/blueprint/internal/parser"
 )
 
+// shellExport is a test helper that calls the ShellExport function for an action.
+func shellExport(t *testing.T, action string, rule parser.Rule, format, osName string) []string {
+	t.Helper()
+	def := GetAction(action)
+	if def == nil {
+		t.Fatalf("action %q not registered", action)
+	}
+	if def.ShellExport == nil {
+		return nil
+	}
+	return def.ShellExport(rule, format, osName)
+}
+
 func TestExportInstall_Mac(t *testing.T) {
 	rule := parser.Rule{
 		Action:   "install",
 		Packages: []parser.Package{{Name: "vim"}, {Name: "git"}},
 	}
-	lines := exportInstall(rule, "bash", "mac")
+	lines := shellExport(t, "install", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "brew list --versions vim") || !strings.Contains(joined, "brew list --cask vim") {
 		t.Error("expected both formula and cask check for vim")
@@ -30,7 +43,7 @@ func TestExportInstall_Linux(t *testing.T) {
 		Action:   "install",
 		Packages: []parser.Package{{Name: "vim"}, {Name: "git"}},
 	}
-	lines := exportInstall(rule, "bash", "linux")
+	lines := shellExport(t, "install", rule, "bash", "linux")
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "dpkg -s vim") {
 		t.Error("expected dpkg check for vim")
@@ -48,7 +61,7 @@ func TestExportInstall_SnapPackages(t *testing.T) {
 			{Name: "code", PackageManager: "snap"},
 		},
 	}
-	lines := exportInstall(rule, "bash", "linux")
+	lines := shellExport(t, "install", rule, "bash", "linux")
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "dpkg -s vim") {
 		t.Error("expected dpkg check for vim")
@@ -68,7 +81,7 @@ func TestExportClone(t *testing.T) {
 		ClonePath: "~/projects/repo",
 		Branch:    "main",
 	}
-	lines := exportClone(rule, "bash", "mac")
+	lines := shellExport(t, "clone", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "git clone") {
 		t.Error("expected git clone")
@@ -102,7 +115,7 @@ func TestExportClone_NoBranch(t *testing.T) {
 		CloneURL:  "https://github.com/user/repo",
 		ClonePath: "~/projects/repo",
 	}
-	lines := exportClone(rule, "bash", "mac")
+	lines := shellExport(t, "clone", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
 	if strings.Contains(joined, "-b") {
 		t.Error("should not have branch flag when no branch specified")
@@ -115,9 +128,8 @@ func TestExportClone_SkipsCopyWhenUpToDate(t *testing.T) {
 		CloneURL:  "https://github.com/user/repo",
 		ClonePath: "~/projects/repo",
 	}
-	lines := exportClone(rule, "bash", "mac")
+	lines := shellExport(t, "clone", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
-	// Should compare old SHA with new SHA and skip if equal
 	if !strings.Contains(joined, `"$CLONE_SHA" != "$OLD_SHA"`) {
 		t.Error("expected SHA comparison to skip copy when up to date")
 	}
@@ -129,7 +141,7 @@ func TestExportRun_WithUnless(t *testing.T) {
 		RunCommand: "echo hello",
 		RunUnless:  "test -f /tmp/done",
 	}
-	lines := exportRun(rule, "bash", "mac")
+	lines := shellExport(t, "run", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "if !") {
 		t.Error("expected unless check")
@@ -144,7 +156,7 @@ func TestExportRun_Simple(t *testing.T) {
 		Action:     "run",
 		RunCommand: "echo hello",
 	}
-	lines := exportRun(rule, "bash", "mac")
+	lines := shellExport(t, "run", rule, "bash", "mac")
 	if len(lines) != 1 || lines[0] != "echo hello" {
 		t.Errorf("expected simple command, got %v", lines)
 	}
@@ -156,7 +168,7 @@ func TestExportRun_Sudo(t *testing.T) {
 		RunCommand: "systemctl enable foo",
 		RunSudo:    true,
 	}
-	lines := exportRun(rule, "bash", "linux")
+	lines := shellExport(t, "run", rule, "bash", "linux")
 	if len(lines) != 1 || !strings.HasPrefix(lines[0], "sudo ") {
 		t.Errorf("expected sudo prefix, got %v", lines)
 	}
@@ -169,7 +181,7 @@ func TestExportDownload(t *testing.T) {
 		DownloadPath:  "~/.local/bin/tool",
 		DownloadPerms: "0755",
 	}
-	lines := exportDownload(rule, "bash", "mac")
+	lines := shellExport(t, "download", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "curl") {
 		t.Error("expected curl")
@@ -189,7 +201,7 @@ func TestExportDownload_Overwrite(t *testing.T) {
 		DownloadPath:      "~/.local/bin/tool",
 		DownloadOverwrite: true,
 	}
-	lines := exportDownload(rule, "bash", "mac")
+	lines := shellExport(t, "download", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
 	if strings.Contains(joined, "if [") {
 		t.Error("overwrite mode should not have existence check")
@@ -202,7 +214,7 @@ func TestExportMkdir(t *testing.T) {
 		Mkdir:      "~/projects",
 		MkdirPerms: "755",
 	}
-	lines := exportMkdir(rule, "bash", "mac")
+	lines := shellExport(t, "mkdir", rule, "bash", "mac")
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 lines, got %d", len(lines))
 	}
@@ -219,7 +231,7 @@ func TestExportKnownHosts(t *testing.T) {
 		Action:     "known_hosts",
 		KnownHosts: "github.com",
 	}
-	lines := exportKnownHosts(rule, "bash", "mac")
+	lines := shellExport(t, "known_hosts", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "ssh-keyscan") {
 		t.Error("expected ssh-keyscan")
@@ -235,7 +247,7 @@ func TestExportHomebrew(t *testing.T) {
 		HomebrewPackages: []string{"node", "git"},
 		HomebrewCasks:    []string{"docker"},
 	}
-	lines := exportHomebrew(rule, "bash", "mac")
+	lines := shellExport(t, "homebrew", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "brew list --versions node") || !strings.Contains(joined, "brew list --cask node") {
 		t.Error("expected both formula and cask check for node")
@@ -256,13 +268,11 @@ func TestExportHomebrew_VersionedFormula(t *testing.T) {
 		Action:           "homebrew",
 		HomebrewPackages: []string{"node@20"},
 	}
-	lines := exportHomebrew(rule, "bash", "mac")
+	lines := shellExport(t, "homebrew", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
-	// Check uses base name without version, both formula and cask
 	if !strings.Contains(joined, "brew list --versions node") || !strings.Contains(joined, "brew list --cask node") {
 		t.Error("expected both formula and cask check using base name")
 	}
-	// Install uses full versioned name
 	if !strings.Contains(joined, "brew install node@20") {
 		t.Error("expected brew install with version")
 	}
@@ -273,7 +283,7 @@ func TestExportOllama(t *testing.T) {
 		Action:       "ollama",
 		OllamaModels: []string{"llama3", "codellama"},
 	}
-	lines := exportOllama(rule, "bash", "mac")
+	lines := shellExport(t, "ollama", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, `ollama pull "llama3"`) {
 		t.Error("expected ollama pull for llama3")
@@ -288,7 +298,7 @@ func TestExportMise(t *testing.T) {
 		Action:       "mise",
 		MisePackages: []string{"node@20", "python@3.11"},
 	}
-	lines := exportMise(rule, "bash", "mac")
+	lines := shellExport(t, "mise", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "mise use -g \"node@20\"") {
 		t.Errorf("expected mise use -g for node, got:\n%s", joined)
@@ -304,7 +314,7 @@ func TestExportMise_ProjectLocal(t *testing.T) {
 		MisePackages: []string{"node@20"},
 		MisePath:     "/tmp/project",
 	}
-	lines := exportMise(rule, "bash", "mac")
+	lines := shellExport(t, "mise", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "cd") || !strings.Contains(joined, "mise use") {
 		t.Errorf("expected cd and mise use for project-local, got:\n%s", joined)
@@ -316,7 +326,7 @@ func TestExportAsdf(t *testing.T) {
 		Action:       "asdf",
 		AsdfPackages: []string{"nodejs@21.4.0"},
 	}
-	lines := exportAsdf(rule, "bash", "mac")
+	lines := shellExport(t, "asdf", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "asdf plugin add") {
 		t.Error("expected plugin add")
@@ -331,7 +341,7 @@ func TestExportSudoers(t *testing.T) {
 		Action:      "sudoers",
 		SudoersUser: "deploy",
 	}
-	lines := exportSudoers(rule, "bash", "linux")
+	lines := shellExport(t, "sudoers", rule, "bash", "linux")
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "deploy ALL=(ALL) NOPASSWD: ALL") {
 		t.Error("expected sudoers entry")
@@ -346,7 +356,7 @@ func TestExportShell(t *testing.T) {
 		Action:    "shell",
 		ShellName: "zsh",
 	}
-	lines := exportShell(rule, "bash", "mac")
+	lines := shellExport(t, "shell", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "chsh") {
 		t.Error("expected chsh")
@@ -358,7 +368,7 @@ func TestExportDotfiles(t *testing.T) {
 		Action:      "dotfiles",
 		DotfilesURL: "https://github.com/user/dotfiles",
 	}
-	lines := exportDotfiles(rule, "bash", "mac")
+	lines := shellExport(t, "dotfiles", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "git clone") {
 		t.Error("expected git clone")
@@ -378,7 +388,6 @@ func TestExportDotfiles(t *testing.T) {
 }
 
 func TestExportDecrypt_ReturnsNil(t *testing.T) {
-	RegisterExportFuncs()
 	def := GetAction("decrypt")
 	if def == nil {
 		t.Fatal("decrypt action not found")
@@ -394,7 +403,7 @@ func TestExportSchedule(t *testing.T) {
 		SchedulePreset: "daily",
 		ScheduleSource: "setup.bp",
 	}
-	lines := exportSchedule(rule, "bash", "mac")
+	lines := shellExport(t, "schedule", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "crontab") {
 		t.Error("expected crontab")
@@ -409,7 +418,7 @@ func TestExportAuthorizedKeys(t *testing.T) {
 		Action:             "authorized_keys",
 		AuthorizedKeysFile: "~/.ssh/id_rsa.pub",
 	}
-	lines := exportAuthorizedKeys(rule, "bash", "mac")
+	lines := shellExport(t, "authorized_keys", rule, "bash", "mac")
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "authorized_keys") {
 		t.Error("expected authorized_keys path")
@@ -421,7 +430,7 @@ func TestExportAuthorizedKeys_Encrypted_ReturnsNil(t *testing.T) {
 		Action:                  "authorized_keys",
 		AuthorizedKeysEncrypted: "keys.enc",
 	}
-	lines := exportAuthorizedKeys(rule, "bash", "mac")
+	lines := shellExport(t, "authorized_keys", rule, "bash", "mac")
 	if lines != nil {
 		t.Error("encrypted authorized_keys should return nil")
 	}

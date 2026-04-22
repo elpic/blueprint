@@ -36,6 +36,24 @@ func init() {
 			index(rule.ScheduleSource)
 			index(NormalizeBlueprint(rule.ScheduleSource))
 		},
+		ShellExport: func(rule parser.Rule, _, _ string) []string {
+			cron := rule.ScheduleCron
+			if cron == "" {
+				switch rule.SchedulePreset {
+				case "daily":
+					cron = "0 9 * * *"
+				case "weekly":
+					cron = "0 9 * * 1"
+				case "hourly":
+					cron = "0 * * * *"
+				}
+			}
+			source := rule.ScheduleSource
+			cronLine := fmt.Sprintf(`%s blueprint apply %s --skip-decrypt >> ~/.blueprint/schedule.log 2>&1`, cron, shellQ(source))
+			return []string{
+				fmt.Sprintf(`(crontab -l 2>/dev/null | grep -v %s; echo %s) | crontab -`, shellQ(source), shellQ(cronLine)),
+			}
+		},
 	})
 }
 

@@ -32,6 +32,17 @@ func init() {
 			index(rule.SudoersUser)
 		},
 		OrphanCheckExcluded: true, // orphan cleanup handled by FindUninstallRules; key-based check would match user not entry
+		ShellExport: func(rule parser.Rule, _, _ string) []string {
+			user := rule.SudoersUser
+			if user == "" {
+				user = "$USER"
+			}
+			return []string{
+				fmt.Sprintf(`echo "%s ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/%s > /dev/null`, user, user),
+				fmt.Sprintf(`sudo chmod 0440 /etc/sudoers.d/%s`, user),
+				`sudo visudo -c -q`,
+			}
+		},
 	})
 }
 

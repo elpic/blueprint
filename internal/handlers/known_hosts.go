@@ -33,6 +33,16 @@ func init() {
 		OrphanIndex: func(rule parser.Rule, index func(string)) {
 			index(rule.KnownHosts)
 		},
+		ShellExport: func(rule parser.Rule, _, _ string) []string {
+			keyType := rule.KnownHostsKey
+			if keyType == "" {
+				keyType = "ed25519"
+			}
+			return []string{
+				`mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"`,
+				fmt.Sprintf(`ssh-keyscan -t %s %s >> "$HOME/.ssh/known_hosts" 2>/dev/null`, keyType, rule.KnownHosts),
+			}
+		},
 	})
 }
 

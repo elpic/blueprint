@@ -32,6 +32,20 @@ func init() {
 		OrphanIndex: func(rule parser.Rule, index func(string)) {
 			index(rule.RunCommand)
 		},
+		ShellExport: func(rule parser.Rule, _, _ string) []string {
+			cmd := rule.RunCommand
+			if rule.RunSudo {
+				cmd = "sudo " + cmd
+			}
+			if rule.RunUnless != "" {
+				return []string{
+					fmt.Sprintf("if ! (%s) >/dev/null 2>&1; then", rule.RunUnless),
+					"  " + cmd,
+					"fi",
+				}
+			}
+			return []string{cmd}
+		},
 	})
 	RegisterAction(ActionDef{
 		Name:   "run-sh",
@@ -50,6 +64,20 @@ func init() {
 		},
 		OrphanIndex: func(rule parser.Rule, index func(string)) {
 			index(rule.RunShURL)
+		},
+		ShellExport: func(rule parser.Rule, _, _ string) []string {
+			cmd := fmt.Sprintf("curl -fsSL %s | sh", shellQ(rule.RunShURL))
+			if rule.RunSudo {
+				cmd = fmt.Sprintf("curl -fsSL %s | sudo sh", shellQ(rule.RunShURL))
+			}
+			if rule.RunUnless != "" {
+				return []string{
+					fmt.Sprintf("if ! (%s) >/dev/null 2>&1; then", rule.RunUnless),
+					"  " + cmd,
+					"fi",
+				}
+			}
+			return []string{cmd}
 		},
 	})
 }

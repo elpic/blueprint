@@ -35,6 +35,13 @@ func init() {
 				index(model)
 			}
 		},
+		ShellExport: func(rule parser.Rule, _, _ string) []string {
+			var lines []string
+			for _, model := range rule.OllamaModels {
+				lines = append(lines, "ollama pull "+shellQ(model))
+			}
+			return lines
+		},
 	})
 }
 

@@ -32,6 +32,52 @@ func init() {
 			index(rule.DotfilesURL)
 		},
 		AlwaysRunUp: true,
+		ShellExport: func(rule parser.Rule, _, _ string) []string {
+			clonePath := rule.DotfilesPath
+			if clonePath == "" {
+				parts := strings.Split(strings.TrimSuffix(rule.DotfilesURL, ".git"), "/")
+				repoName := parts[len(parts)-1]
+				clonePath = "~/.blueprint/dotfiles/" + repoName
+			}
+			path := shellHome(clonePath)
+			cloneCmd := "git clone"
+			if rule.DotfilesBranch != "" {
+				cloneCmd += " -b " + shellQ(rule.DotfilesBranch)
+			}
+			cloneCmd += " " + shellQ(rule.DotfilesURL) + " " + path
+			skipCase := ".|..|.git|.github|README*|readme*|LICENSE*|license*"
+			for _, s := range rule.DotfilesSkip {
+				skipCase += "|" + s
+			}
+			resetRef := "origin/HEAD"
+			if rule.DotfilesBranch != "" {
+				resetRef = "origin/" + rule.DotfilesBranch
+			}
+			return []string{
+				fmt.Sprintf("if [ ! -d %s ]; then", path),
+				"  " + cloneCmd,
+				"else",
+				fmt.Sprintf("  git -C %s fetch -q origin", path),
+				fmt.Sprintf("  git -C %s reset --hard %s -q 2>/dev/null || git -C %s reset --hard FETCH_HEAD -q", path, resetRef, path),
+				"fi",
+				"# Symlink dotfiles to home directory",
+				fmt.Sprintf(`for f in %s/.* %s/*; do`, path, path),
+				`  name="$(basename "$f")"`,
+				`  case "$name" in`,
+				`    ` + skipCase + `) continue ;;`,
+				`  esac`,
+				`  if [ -f "$f" ] || [ -L "$f" ]; then`,
+				`    ln -sf "$f" "$HOME/$name"`,
+				`  elif [ -d "$f" ]; then`,
+				`    mkdir -p "$HOME/$name"`,
+				`    for child in "$f"/*; do`,
+				`      [ -e "$child" ] || continue`,
+				`      ln -sf "$child" "$HOME/$name/$(basename "$child")"`,
+				`    done`,
+				`  fi`,
+				`done`,
+			}
+		},
 	})
 }
 

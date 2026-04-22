@@ -70,6 +70,22 @@ func init() {
 			}
 		},
 		OrphanCheckExcluded: true, // status stores "plugin\x00version"; FindUninstallRules handles orphan cleanup
+		ShellExport: func(rule parser.Rule, _, _ string) []string {
+			var lines []string
+			for _, pkg := range rule.AsdfPackages {
+				parts := strings.SplitN(pkg, "@", 2)
+				plugin := parts[0]
+				version := "latest"
+				if len(parts) > 1 {
+					version = parts[1]
+				}
+				lines = append(lines,
+					fmt.Sprintf("asdf plugin add %s 2>/dev/null || true", shellQ(plugin)),
+					fmt.Sprintf("asdf install %s %s", shellQ(plugin), shellQ(version)),
+				)
+			}
+			return lines
+		},
 	})
 }
 

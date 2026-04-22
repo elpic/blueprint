@@ -44,6 +44,36 @@ func init() {
 				index(pkg.Name)
 			}
 		},
+		ShellExport: func(rule parser.Rule, _, osName string) []string {
+			var lines []string
+			for _, p := range rule.Packages {
+				name := p.Name
+				if p.PackageManager == "snap" {
+					lines = append(lines,
+						fmt.Sprintf("if ! snap list %s >/dev/null 2>&1; then", name),
+						fmt.Sprintf("  sudo snap install %s", name),
+						"fi",
+					)
+				} else if osName == "mac" {
+					lines = append(lines,
+						fmt.Sprintf("if ! brew list --versions %s >/dev/null 2>&1 && ! brew list --cask %s >/dev/null 2>&1; then", name, name),
+						fmt.Sprintf("  brew install %s", name),
+						"fi",
+					)
+				} else {
+					installName := name
+					if p.Version != "" && p.Version != "latest" {
+						installName += "=" + p.Version
+					}
+					lines = append(lines,
+						fmt.Sprintf("if ! dpkg -s %s >/dev/null 2>&1; then", name),
+						fmt.Sprintf("  sudo apt-get install -y %s", installName),
+						"fi",
+					)
+				}
+			}
+			return lines
+		},
 	})
 	RegisterAction(ActionDef{
 		Name:   "uninstall",

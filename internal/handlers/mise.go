@@ -60,6 +60,17 @@ func init() {
 			}
 		},
 		OrphanCheckExcluded: true, // status stores "tool\x00version"; FindUninstallRules handles orphan cleanup
+		ShellExport: func(rule parser.Rule, _, _ string) []string {
+			var lines []string
+			for _, pkg := range rule.MisePackages {
+				if rule.MisePath != "" {
+					lines = append(lines, fmt.Sprintf("cd %s && mise use %s", shellQ(rule.MisePath), shellQ(pkg)))
+				} else {
+					lines = append(lines, "mise use -g "+shellQ(pkg))
+				}
+			}
+			return lines
+		},
 	})
 }
 
