@@ -15,7 +15,6 @@ import (
 // Export generates a shell script from a blueprint file.
 // format is "bash" or "sh". output is "" for stdout or a file path.
 func Export(file string, format string, output string, preferSSH bool) {
-	handlerskg.RegisterExportFuncs()
 	if preferSSH {
 		file = gitpkg.ExpandShorthandSSH(file)
 	} else {
