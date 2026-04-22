@@ -13,11 +13,15 @@ func TestExportInstall_Mac(t *testing.T) {
 		Packages: []parser.Package{{Name: "vim"}, {Name: "git"}},
 	}
 	lines := exportInstall(rule, "bash", "mac")
-	if len(lines) != 1 {
-		t.Fatalf("expected 1 line, got %d", len(lines))
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "brew list --versions vim") || !strings.Contains(joined, "brew list --cask vim") {
+		t.Error("expected both formula and cask check for vim")
 	}
-	if lines[0] != "brew install vim git" {
-		t.Errorf("got %q", lines[0])
+	if !strings.Contains(joined, "brew install vim") {
+		t.Error("expected brew install vim")
+	}
+	if !strings.Contains(joined, "brew list --versions git") {
+		t.Error("expected brew list check for git")
 	}
 }
 
@@ -27,11 +31,12 @@ func TestExportInstall_Linux(t *testing.T) {
 		Packages: []parser.Package{{Name: "vim"}, {Name: "git"}},
 	}
 	lines := exportInstall(rule, "bash", "linux")
-	if len(lines) != 1 {
-		t.Fatalf("expected 1 line, got %d", len(lines))
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "dpkg -s vim") {
+		t.Error("expected dpkg check for vim")
 	}
-	if lines[0] != "sudo apt-get install -y vim git" {
-		t.Errorf("got %q", lines[0])
+	if !strings.Contains(joined, "sudo apt-get install -y vim") {
+		t.Error("expected apt-get install for vim")
 	}
 }
 
@@ -44,14 +49,15 @@ func TestExportInstall_SnapPackages(t *testing.T) {
 		},
 	}
 	lines := exportInstall(rule, "bash", "linux")
-	if len(lines) != 2 {
-		t.Fatalf("expected 2 lines, got %d", len(lines))
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "dpkg -s vim") {
+		t.Error("expected dpkg check for vim")
 	}
-	if !strings.Contains(lines[0], "apt-get") {
-		t.Errorf("expected apt-get line, got %q", lines[0])
+	if !strings.Contains(joined, "snap list code") {
+		t.Error("expected snap list check for code")
 	}
-	if !strings.Contains(lines[1], "snap install") {
-		t.Errorf("expected snap line, got %q", lines[1])
+	if !strings.Contains(joined, "sudo snap install code") {
+		t.Error("expected snap install for code")
 	}
 }
 
@@ -230,14 +236,35 @@ func TestExportHomebrew(t *testing.T) {
 		HomebrewCasks:    []string{"docker"},
 	}
 	lines := exportHomebrew(rule, "bash", "mac")
-	if len(lines) != 2 {
-		t.Fatalf("expected 2 lines, got %d", len(lines))
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "brew list --versions node") || !strings.Contains(joined, "brew list --cask node") {
+		t.Error("expected both formula and cask check for node")
 	}
-	if lines[0] != "brew install node git" {
-		t.Errorf("got %q", lines[0])
+	if !strings.Contains(joined, "brew install node") {
+		t.Error("expected brew install node")
 	}
-	if lines[1] != "brew install --cask docker" {
-		t.Errorf("got %q", lines[1])
+	if !strings.Contains(joined, "brew list --cask docker") {
+		t.Error("expected brew list --cask check for docker")
+	}
+	if !strings.Contains(joined, "brew install --cask docker") {
+		t.Error("expected brew install --cask docker")
+	}
+}
+
+func TestExportHomebrew_VersionedFormula(t *testing.T) {
+	rule := parser.Rule{
+		Action:           "homebrew",
+		HomebrewPackages: []string{"node@20"},
+	}
+	lines := exportHomebrew(rule, "bash", "mac")
+	joined := strings.Join(lines, "\n")
+	// Check uses base name without version, both formula and cask
+	if !strings.Contains(joined, "brew list --versions node") || !strings.Contains(joined, "brew list --cask node") {
+		t.Error("expected both formula and cask check using base name")
+	}
+	// Install uses full versioned name
+	if !strings.Contains(joined, "brew install node@20") {
+		t.Error("expected brew install with version")
 	}
 }
 
@@ -335,6 +362,12 @@ func TestExportDotfiles(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "git clone") {
 		t.Error("expected git clone")
+	}
+	if !strings.Contains(joined, "fetch -q origin") {
+		t.Error("expected git fetch instead of git pull")
+	}
+	if !strings.Contains(joined, "reset --hard") {
+		t.Error("expected git reset --hard for dirty repo safety")
 	}
 	if !strings.Contains(joined, "ln -sf") {
 		t.Error("expected symlink creation")

@@ -70,32 +70,35 @@ func RegisterExportFuncs() {
 }
 
 func exportInstall(rule parser.Rule, format, osName string) []string {
-	// Separate by package manager and build name lists
-	var brewPkgs, aptPkgs, snapPkgs []string
+	var lines []string
+
 	for _, p := range rule.Packages {
 		name := p.Name
 		if p.PackageManager == "snap" {
-			snapPkgs = append(snapPkgs, name)
+			lines = append(lines,
+				fmt.Sprintf("if ! snap list %s >/dev/null 2>&1; then", name),
+				fmt.Sprintf("  sudo snap install %s", name),
+				"fi",
+			)
+		} else if osName == "mac" {
+			lines = append(lines,
+				fmt.Sprintf("if ! brew list --versions %s >/dev/null 2>&1 && ! brew list --cask %s >/dev/null 2>&1; then", name, name),
+				fmt.Sprintf("  brew install %s", name),
+				"fi",
+			)
 		} else {
+			installName := name
 			if p.Version != "" && p.Version != "latest" {
-				name += "=" + p.Version
+				installName += "=" + p.Version
 			}
-			brewPkgs = append(brewPkgs, name)
-			aptPkgs = append(aptPkgs, name)
+			lines = append(lines,
+				fmt.Sprintf("if ! dpkg -s %s >/dev/null 2>&1; then", name),
+				fmt.Sprintf("  sudo apt-get install -y %s", installName),
+				"fi",
+			)
 		}
 	}
 
-	if osName == "mac" {
-		return []string{"brew install " + strings.Join(brewPkgs, " ")}
-	}
-
-	var lines []string
-	if len(aptPkgs) > 0 {
-		lines = append(lines, "sudo apt-get install -y "+strings.Join(aptPkgs, " "))
-	}
-	if len(snapPkgs) > 0 {
-		lines = append(lines, "sudo snap install "+strings.Join(snapPkgs, " "))
-	}
 	return lines
 }
 
@@ -116,10 +119,17 @@ func exportClone(rule parser.Rule, _, _ string) []string {
 		cacheKey = shellQ(rule.CloneURL + "@" + rule.Branch)
 	}
 
+	// Determine the remote ref to reset to after fetch
+	resetRef := "origin/HEAD"
+	if rule.Branch != "" {
+		resetRef = "origin/" + rule.Branch
+	}
+
 	return []string{
 		fmt.Sprintf(`CLONE_CACHE="$HOME/.blueprint/repos/$(echo -n %s | shasum -a 256 | cut -c1-16)"`, cacheKey),
 		fmt.Sprintf("if [ -d \"$CLONE_CACHE/.git\" ]; then"),
-		fmt.Sprintf("  git -C \"$CLONE_CACHE\" pull -q"),
+		fmt.Sprintf("  git -C \"$CLONE_CACHE\" fetch -q origin"),
+		fmt.Sprintf("  git -C \"$CLONE_CACHE\" reset --hard %s -q 2>/dev/null || git -C \"$CLONE_CACHE\" reset --hard FETCH_HEAD -q", resetRef),
 		fmt.Sprintf("else"),
 		fmt.Sprintf("  rm -rf \"$CLONE_CACHE\""),
 		fmt.Sprintf("  git clone%s %s \"$CLONE_CACHE\" -q", branchFlag, shellQ(rule.CloneURL)),
@@ -138,11 +148,23 @@ func exportClone(rule parser.Rule, _, _ string) []string {
 
 func exportHomebrew(rule parser.Rule, _, _ string) []string {
 	var lines []string
-	if len(rule.HomebrewPackages) > 0 {
-		lines = append(lines, "brew install "+strings.Join(rule.HomebrewPackages, " "))
+	for _, f := range rule.HomebrewPackages {
+		// Strip version for the check (brew list uses the base name)
+		name := strings.Split(f, "@")[0]
+		// Check both formula and cask — some packages (e.g. orbstack) are in
+		// Caskroom even when specified as a plain formula.
+		lines = append(lines,
+			fmt.Sprintf("if ! brew list --versions %s >/dev/null 2>&1 && ! brew list --cask %s >/dev/null 2>&1; then", name, name),
+			fmt.Sprintf("  brew install %s", f),
+			"fi",
+		)
 	}
-	if len(rule.HomebrewCasks) > 0 {
-		lines = append(lines, "brew install --cask "+strings.Join(rule.HomebrewCasks, " "))
+	for _, c := range rule.HomebrewCasks {
+		lines = append(lines,
+			fmt.Sprintf("if ! brew list --cask %s >/dev/null 2>&1; then", c),
+			fmt.Sprintf("  brew install --cask %s", c),
+			"fi",
+		)
 	}
 	return lines
 }
@@ -354,16 +376,22 @@ func exportDotfiles(rule parser.Rule, _, _ string) []string {
 	cloneCmd += " " + shellQ(rule.DotfilesURL) + " " + path
 
 	// Build skip list
-	skipCase := ".git|.github|README*|readme*|LICENSE*|license*"
+	skipCase := ".|..|.git|.github|README*|readme*|LICENSE*|license*"
 	for _, s := range rule.DotfilesSkip {
 		skipCase += "|" + s
+	}
+
+	resetRef := "origin/HEAD"
+	if rule.DotfilesBranch != "" {
+		resetRef = "origin/" + rule.DotfilesBranch
 	}
 
 	return []string{
 		fmt.Sprintf("if [ ! -d %s ]; then", path),
 		"  " + cloneCmd,
 		"else",
-		fmt.Sprintf("  git -C %s pull", path),
+		fmt.Sprintf("  git -C %s fetch -q origin", path),
+		fmt.Sprintf("  git -C %s reset --hard %s -q 2>/dev/null || git -C %s reset --hard FETCH_HEAD -q", path, resetRef, path),
 		"fi",
 		"# Symlink dotfiles to home directory",
 		fmt.Sprintf(`for f in %s/.* %s/*; do`, path, path),

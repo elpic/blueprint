@@ -200,6 +200,23 @@ func writeHelpers(b *strings.Builder, _ string) {
 	b.WriteString("# --- Helpers ---\n")
 	b.WriteString("command_exists() { command -v \"$1\" >/dev/null 2>&1; }\n")
 	b.WriteString("\n")
+	b.WriteString("# --- Colors ---\n")
+	b.WriteString("if [ -t 3 ] 2>/dev/null || [ -t 1 ]; then\n")
+	b.WriteString("  GREEN='\\033[1;32m'\n")
+	b.WriteString("  YELLOW='\\033[1;33m'\n")
+	b.WriteString("  BLUE='\\033[1;34m'\n")
+	b.WriteString("  BOLD='\\033[1m'\n")
+	b.WriteString("  RESET='\\033[0m'\n")
+	b.WriteString("else\n")
+	b.WriteString("  GREEN='' YELLOW='' BLUE='' BOLD='' RESET=''\n")
+	b.WriteString("fi\n")
+	b.WriteString("\n")
+	b.WriteString("# --- Logging ---\n")
+	b.WriteString("BLUEPRINT_LOG=\"$HOME/.blueprint/blueprint.log\"\n")
+	b.WriteString("mkdir -p \"$HOME/.blueprint\"\n")
+	b.WriteString(": > \"$BLUEPRINT_LOG\"\n")
+	b.WriteString("exec 3>&1 1>>\"$BLUEPRINT_LOG\" 2>&1\n")
+	b.WriteString("\n")
 }
 
 func writeRule(b *strings.Builder, rule parser.Rule, index, total int, format, osName string) {
@@ -215,6 +232,7 @@ func writeRule(b *strings.Builder, rule parser.Rule, index, total int, format, o
 
 	// Check if this action has a shell export function
 	if def == nil || def.ShellExport == nil {
+		fmt.Fprintf(b, "printf '%%b\\n' \"${YELLOW}[%d/%d] skip %s %s${RESET}\" >&3\n", index, total, rule.Action, summary)
 		fmt.Fprintf(b, "# SKIP: %s cannot be exported as shell.\n", rule.Action)
 		if rule.Action == "decrypt" {
 			b.WriteString("#   Uses blueprint's built-in AES-256-GCM decryption.\n")
@@ -234,11 +252,13 @@ func writeRule(b *strings.Builder, rule parser.Rule, index, total int, format, o
 
 	lines := def.ShellExport(rule, format, osName)
 	if lines == nil {
+		fmt.Fprintf(b, "printf '%%b\\n' \"${YELLOW}[%d/%d] skip %s %s${RESET}\" >&3\n", index, total, rule.Action, summary)
 		fmt.Fprintf(b, "# SKIP: %s cannot be exported as shell.\n", rule.Action)
 		b.WriteString("\n")
 		return
 	}
 
+	fmt.Fprintf(b, "printf '%%b\\n' \"${GREEN}[%d/%d] %s %s${RESET}\" >&3\n", index, total, rule.Action, summary)
 	for _, line := range lines {
 		b.WriteString(line + "\n")
 	}
@@ -246,5 +266,6 @@ func writeRule(b *strings.Builder, rule parser.Rule, index, total int, format, o
 }
 
 func writeFooter(b *strings.Builder, _ string) {
-	b.WriteString("echo \"Done.\"\n")
+	b.WriteString("printf '%b\\n' \"${GREEN}Done.${RESET}\" >&3\n")
+	b.WriteString("printf '%b\\n' \"${BLUE}Log: $BLUEPRINT_LOG${RESET}\" >&3\n")
 }
