@@ -35,6 +35,20 @@ func init() {
 			}
 			return rule.AuthorizedKeysFile
 		},
+		ShellExport: func(rule parser.Rule, _, _ string) []string {
+			lines := []string{
+				`mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"`,
+				`touch "$HOME/.ssh/authorized_keys" && chmod 600 "$HOME/.ssh/authorized_keys"`,
+			}
+			if rule.AuthorizedKeysEncrypted != "" {
+				return nil
+			}
+			if rule.AuthorizedKeysFile != "" {
+				src := shellHome(rule.AuthorizedKeysFile)
+				lines = append(lines, fmt.Sprintf(`cat %s >> "$HOME/.ssh/authorized_keys"`, src))
+			}
+			return lines
+		},
 		OrphanIndex: func(rule parser.Rule, index func(string)) {
 			index(rule.AuthorizedKeysFile)
 			index(rule.AuthorizedKeysEncrypted)

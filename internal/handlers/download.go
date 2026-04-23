@@ -32,6 +32,30 @@ func init() {
 		OrphanIndex: func(rule parser.Rule, index func(string)) {
 			index(rule.DownloadPath)
 		},
+		ShellExport: func(rule parser.Rule, _, _ string) []string {
+			path := shellHome(rule.DownloadPath)
+			dir := shellHome(filepath.Dir(strings.Replace(rule.DownloadPath, "~/", "", 1)))
+			if strings.HasPrefix(rule.DownloadPath, "~/") {
+				dir = `"$HOME/` + filepath.Dir(rule.DownloadPath[2:]) + `"`
+			}
+			var lines []string
+			if !rule.DownloadOverwrite {
+				lines = append(lines, fmt.Sprintf("if [ ! -f %s ]; then", path))
+				lines = append(lines, fmt.Sprintf("  mkdir -p %s", dir))
+				lines = append(lines, fmt.Sprintf("  curl -fsSL -o %s %s", path, shellQ(rule.DownloadURL)))
+				if rule.DownloadPerms != "" {
+					lines = append(lines, fmt.Sprintf("  chmod %s %s", rule.DownloadPerms, path))
+				}
+				lines = append(lines, "fi")
+			} else {
+				lines = append(lines, fmt.Sprintf("mkdir -p %s", dir))
+				lines = append(lines, fmt.Sprintf("curl -fsSL -o %s %s", path, shellQ(rule.DownloadURL)))
+				if rule.DownloadPerms != "" {
+					lines = append(lines, fmt.Sprintf("chmod %s %s", rule.DownloadPerms, path))
+				}
+			}
+			return lines
+		},
 	})
 }
 

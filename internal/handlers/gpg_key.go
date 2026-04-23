@@ -35,6 +35,16 @@ func init() {
 		OrphanIndex: func(rule parser.Rule, index func(string)) {
 			index(rule.GPGKeyring)
 		},
+		ShellExport: func(rule parser.Rule, _, _ string) []string {
+			keyring := rule.GPGKeyring
+			return []string{
+				"sudo install -m 0755 -d /etc/apt/keyrings",
+				fmt.Sprintf("curl -fsSL %s | sudo tee /etc/apt/keyrings/%s.asc > /dev/null", shellQ(rule.GPGKeyURL), keyring),
+				fmt.Sprintf("sudo chmod go+r /etc/apt/keyrings/%s.asc", keyring),
+				fmt.Sprintf(`echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/%s.asc] %s" | sudo tee /etc/apt/sources.list.d/%s.list > /dev/null`, keyring, rule.GPGDebURL, keyring),
+				"sudo apt-get update",
+			}
+		},
 	})
 }
 

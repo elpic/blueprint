@@ -33,6 +33,14 @@ func init() {
 		OrphanIndex: func(rule parser.Rule, index func(string)) {
 			index(rule.Mkdir)
 		},
+		ShellExport: func(rule parser.Rule, _, _ string) []string {
+			path := shellHome(rule.Mkdir)
+			lines := []string{fmt.Sprintf("mkdir -p %s", path)}
+			if rule.MkdirPerms != "" {
+				lines = append(lines, fmt.Sprintf("chmod %s %s", rule.MkdirPerms, path))
+			}
+			return lines
+		},
 	})
 }
 

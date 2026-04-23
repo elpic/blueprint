@@ -134,6 +134,28 @@ blueprint plan "https://github.com/user/repo.git@develop:config/setup.bp"
 
 For private repos, set `GITHUB_USER` and `GITHUB_TOKEN` (HTTPS) or load your SSH key into the agent.
 
+### Export to Shell Script
+
+Generate a standalone shell script from a blueprint -- useful for machines without blueprint installed, CI pipelines, or Dockerfiles:
+
+```bash
+# Preview the generated script
+blueprint export setup.bp
+
+# Save to a file
+blueprint export setup.bp --output setup.sh
+
+# Run directly from a remote repo
+blueprint export @github:elpic/setup | bash
+
+# Choose POSIX sh instead of bash
+blueprint export setup.bp --format sh --output setup.sh
+```
+
+The exported script is fully standalone: it bootstraps prerequisites (homebrew, mise, asdf, ollama) if missing, checks for already-installed packages before re-installing, and logs command output to `~/.blueprint/blueprint.log` while showing colored progress in the terminal.
+
+Actions that cannot be exported (like `decrypt`) are shown as skipped with guidance on how to run them via blueprint directly.
+
 ### Modular Blueprints
 
 Split configuration across files with `include`:
@@ -209,6 +231,7 @@ blueprint-windows-amd64.exe apply setup.bp
 ## Further Reading
 
 - [`docs/`](docs/) -- full documentation for every action
+- [`docs/export.md`](docs/export.md) -- generate standalone shell scripts from blueprints
 - [`docs/doctor.md`](docs/doctor.md) -- inspect and repair `~/.blueprint/status.json`
 - [`docs/validate.md`](docs/validate.md) -- parse and semantic-check a blueprint without applying
 - [`docs/architecture.md`](docs/architecture.md) -- project structure, engine internals, handler interfaces

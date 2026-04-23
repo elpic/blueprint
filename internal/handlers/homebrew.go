@@ -39,6 +39,25 @@ func init() {
 				index(caskKey(cask))
 			}
 		},
+		ShellExport: func(rule parser.Rule, _, _ string) []string {
+			var lines []string
+			for _, f := range rule.HomebrewPackages {
+				name := strings.Split(f, "@")[0]
+				lines = append(lines,
+					fmt.Sprintf("if ! brew list --versions %s >/dev/null 2>&1 && ! brew list --cask %s >/dev/null 2>&1; then", name, name),
+					fmt.Sprintf("  brew install %s", f),
+					"fi",
+				)
+			}
+			for _, c := range rule.HomebrewCasks {
+				lines = append(lines,
+					fmt.Sprintf("if ! brew list --cask %s >/dev/null 2>&1; then", c),
+					fmt.Sprintf("  brew install --cask %s", c),
+					"fi",
+				)
+			}
+			return lines
+		},
 	})
 }
 

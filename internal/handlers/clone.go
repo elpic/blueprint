@@ -29,6 +29,40 @@ func init() {
 		OrphanIndex: func(rule parser.Rule, index func(string)) {
 			index(rule.ClonePath)
 		},
+		ShellExport: func(rule parser.Rule, _, _ string) []string {
+			path := shellHome(rule.ClonePath)
+			branchFlag := ""
+			if rule.Branch != "" {
+				branchFlag = " -b " + shellQ(rule.Branch)
+			}
+			cacheKey := shellQ(rule.CloneURL)
+			if rule.Branch != "" {
+				cacheKey = shellQ(rule.CloneURL + "@" + rule.Branch)
+			}
+			resetRef := "origin/HEAD"
+			if rule.Branch != "" {
+				resetRef = "origin/" + rule.Branch
+			}
+			return []string{
+				fmt.Sprintf(`CLONE_CACHE="$HOME/.blueprint/repos/$(echo -n %s | shasum -a 256 | cut -c1-16)"`, cacheKey),
+				`if [ -d "$CLONE_CACHE/.git" ]; then`,
+				`  git -C "$CLONE_CACHE" fetch -q origin`,
+				fmt.Sprintf(`  git -C "$CLONE_CACHE" reset --hard %s -q 2>/dev/null || git -C "$CLONE_CACHE" reset --hard FETCH_HEAD -q`, resetRef),
+				`else`,
+				`  rm -rf "$CLONE_CACHE"`,
+				fmt.Sprintf("  git clone%s %s \"$CLONE_CACHE\" -q", branchFlag, shellQ(rule.CloneURL)),
+				`fi`,
+				`CLONE_SHA="$(git -C "$CLONE_CACHE" rev-parse HEAD)"`,
+				fmt.Sprintf(`CLONE_SHA_FILE=%s.blueprint-sha`, path),
+				`OLD_SHA=""`,
+				`[ -f "$CLONE_SHA_FILE" ] && OLD_SHA="$(cat "$CLONE_SHA_FILE")"`,
+				`if [ "$CLONE_SHA" != "$OLD_SHA" ]; then`,
+				fmt.Sprintf("  mkdir -p %s", path),
+				fmt.Sprintf(`  rsync -a --delete --exclude='.git' "$CLONE_CACHE/" %s/`, path),
+				`  echo "$CLONE_SHA" > "$CLONE_SHA_FILE"`,
+				`fi`,
+			}
+		},
 	})
 }
 

@@ -37,6 +37,16 @@ func init() {
 		OrphanIndex: func(rule parser.Rule, index func(string)) {
 			index(rule.ShellName)
 		},
+		ShellExport: func(rule parser.Rule, _, _ string) []string {
+			shell := rule.ShellName
+			if !strings.HasPrefix(shell, "/") {
+				return []string{
+					fmt.Sprintf(`SHELL_PATH="$(command -v %s)"`, shellQ(shell)),
+					`chsh -s "$SHELL_PATH"`,
+				}
+			}
+			return []string{"chsh -s " + shellQ(shell)}
+		},
 	})
 }
 

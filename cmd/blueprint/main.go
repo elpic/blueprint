@@ -44,7 +44,7 @@ func parseFlags(args []string) (skipGroup, skipID, onlyID string, skipDecrypt, p
 }
 
 var knownCommands = map[string]bool{
-	"plan": true, "apply": true, "encrypt": true,
+	"plan": true, "apply": true, "encrypt": true, "export": true,
 	"status": true, "history": true, "ps": true, "slow": true, "diff": true,
 	"version": true, "doctor": true, "validate": true,
 }
@@ -54,7 +54,7 @@ func isKnownCommand(cmd string) bool {
 }
 
 func unknownCommandMessage(cmd string) string {
-	return fmt.Sprintf("unknown command: %q\nUsage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff|doctor|validate|version> [<file>]", cmd)
+	return fmt.Sprintf("unknown command: %q\nUsage: blueprint <plan|apply|encrypt|export|status|history|ps|slow|diff|doctor|validate|version> [<file>]", cmd)
 }
 
 // parseNonNegativeInt parses s as a non-negative integer. On any error it
@@ -89,7 +89,7 @@ func parsePositiveInt(s, flagName string) (int, bool) {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: blueprint <plan|apply|encrypt|status|history|ps|slow|diff|doctor|validate|version> [<file|run_number>]")
+		fmt.Println("Usage: blueprint <plan|apply|encrypt|export|status|history|ps|slow|diff|doctor|validate|version> [<file|run_number>]")
 		os.Exit(1)
 	}
 
@@ -154,6 +154,34 @@ func main() {
 			}
 		}
 		engine.EncryptFile(file, passwordID)
+	case "export":
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: blueprint export <file.bp> [--format bash|sh] [--output <path>] [--prefer-ssh]")
+			os.Exit(1)
+		}
+		file := os.Args[2]
+		format := "bash"
+		output := ""
+		_, _, _, _, preferSSH, _ := parseFlags(os.Args[3:])
+		for i := 3; i < len(os.Args); i++ {
+			switch os.Args[i] {
+			case "--format":
+				if i+1 < len(os.Args) {
+					format = os.Args[i+1]
+					i++
+				}
+			case "--output":
+				if i+1 < len(os.Args) {
+					output = os.Args[i+1]
+					i++
+				}
+			}
+		}
+		if format != "bash" && format != "sh" {
+			fmt.Fprintf(os.Stderr, "error: --format must be \"bash\" or \"sh\", got %q\n", format)
+			os.Exit(1)
+		}
+		engine.Export(file, format, output, preferSSH)
 	case "status":
 		engine.PrintStatus()
 	case "ps":
