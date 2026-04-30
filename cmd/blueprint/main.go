@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/elpic/blueprint/internal/engine"
 )
@@ -48,6 +49,24 @@ var knownCommands = map[string]bool{
 	"status": true, "history": true, "ps": true, "slow": true, "diff": true,
 	"version": true, "doctor": true, "validate": true,
 	"render": true, "check": true, "get": true,
+}
+
+// parseVarFlags extracts all --var KEY=VALUE pairs from args into a map.
+func parseVarFlags(args []string) map[string]string {
+	vars := map[string]string{}
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--var" && i+1 < len(args) {
+			kv := args[i+1]
+			i++
+			idx := strings.Index(kv, "=")
+			if idx < 0 {
+				fmt.Fprintf(os.Stderr, "error: --var must be KEY=VALUE, got %q\n", kv)
+				os.Exit(1)
+			}
+			vars[kv[:idx]] = kv[idx+1:]
+		}
+	}
+	return vars
 }
 
 func isKnownCommand(cmd string) bool {
@@ -224,7 +243,7 @@ func main() {
 		engine.Validate(os.Args[2], preferSSH)
 	case "render":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint render <file.bp> --template <file.tmpl> [--output <path>] [--prefer-ssh]")
+			fmt.Println("Usage: blueprint render <file.bp> --template <file.tmpl> [--output <path>] [--var KEY=VALUE] [--prefer-ssh]")
 			os.Exit(1)
 		}
 		file := os.Args[2]
@@ -249,10 +268,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, "error: --template <file.tmpl> is required")
 			os.Exit(1)
 		}
-		engine.Render(file, tmplPath, output, preferSSH)
+		cliVars := parseVarFlags(os.Args[3:])
+		engine.Render(file, tmplPath, output, preferSSH, cliVars)
 	case "check":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint check <file.bp> --template <file.tmpl> --against <file> [--prefer-ssh]")
+			fmt.Println("Usage: blueprint check <file.bp> --template <file.tmpl> --against <file> [--var KEY=VALUE] [--prefer-ssh]")
 			os.Exit(1)
 		}
 		file := os.Args[2]
@@ -281,21 +301,24 @@ func main() {
 			fmt.Fprintln(os.Stderr, "error: --against <file> is required")
 			os.Exit(1)
 		}
-		engine.Check(file, tmplPath, against, preferSSH)
+		cliVars := parseVarFlags(os.Args[3:])
+		engine.Check(file, tmplPath, against, preferSSH, cliVars)
 	case "get":
 		if len(os.Args) < 5 {
-			fmt.Println("Usage: blueprint get <file.bp> <action> <key>")
+			fmt.Println("Usage: blueprint get <file.bp> <action> <key> [--var KEY=VALUE]")
 			fmt.Println("Examples:")
 			fmt.Println("  blueprint get setup.bp mise ruby")
 			fmt.Println("  blueprint get setup.bp asdf nodejs")
 			fmt.Println("  blueprint get setup.bp homebrew formula")
+			fmt.Println("  blueprint get setup.bp var APP_NAME")
 			os.Exit(1)
 		}
 		file := os.Args[2]
 		action := os.Args[3]
 		key := os.Args[4]
 		_, _, _, _, preferSSH, _ := parseFlags(os.Args[5:])
-		engine.Get(file, action, key, preferSSH)
+		cliVars := parseVarFlags(os.Args[5:])
+		engine.Get(file, action, key, preferSSH, cliVars)
 	default:
 		// Short mode: treat as file path only if it looks like a path (not a known command typo).
 		if !isKnownCommand(mode) {

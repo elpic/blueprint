@@ -11,12 +11,18 @@ import (
 // TemplateData holds all values extractable from a parsed blueprint for use
 // in templates and blueprint get queries.
 type TemplateData struct {
-	rules []parser.Rule
+	rules   []parser.Rule
+	cliVars map[string]string // --var overrides from the command line
 }
 
 // BuildTemplateData constructs a TemplateData from a slice of rules.
-func BuildTemplateData(rules []parser.Rule) *TemplateData {
-	return &TemplateData{rules: rules}
+// cliVars are values passed via --var KEY=VALUE and take precedence over
+// defaults defined in the blueprint.
+func BuildTemplateData(rules []parser.Rule, cliVars map[string]string) *TemplateData {
+	if cliVars == nil {
+		cliVars = map[string]string{}
+	}
+	return &TemplateData{rules: rules, cliVars: cliVars}
 }
 
 // FuncMap returns a text/template FuncMap with all blueprint template functions.
@@ -29,6 +35,7 @@ func (d *TemplateData) FuncMap() template.FuncMap {
 		"homebrewFormulas": d.homebrewFormulas,
 		"homebrewCasks":    d.homebrewCasks,
 		"cloneURL":         d.cloneURL,
+		"var":              d.varValue,
 	}
 }
 
@@ -53,8 +60,10 @@ func (d *TemplateData) Get(action, key string) (string, error) {
 		}
 	case "clone":
 		return d.cloneURL(key)
+	case "var":
+		return d.varValue(key)
 	default:
-		return "", fmt.Errorf("unknown action %q: supported actions are mise, asdf, packages, homebrew, clone", action)
+		return "", fmt.Errorf("unknown action %q: supported actions are mise, asdf, packages, homebrew, clone, var", action)
 	}
 }
 
@@ -155,6 +164,28 @@ func (d *TemplateData) cloneURL(name string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("clone rule matching %q not found in blueprint", name)
+}
+
+// varValue resolves a variable by name. Precedence:
+//  1. CLI --var override
+//  2. Default defined in the blueprint via "var NAME default"
+//  3. Missing with no default → error
+func (d *TemplateData) varValue(name string) (string, error) {
+	// CLI overrides win
+	if v, ok := d.cliVars[name]; ok {
+		return v, nil
+	}
+	// Look for a var rule in the blueprint
+	for _, r := range d.rules {
+		if r.Action != "var" || r.VarName != name {
+			continue
+		}
+		if r.VarRequired {
+			return "", fmt.Errorf("variable %q is required but was not set\nhint: pass it with --var %s=<value>", name, name)
+		}
+		return r.VarDefault, nil
+	}
+	return "", fmt.Errorf("variable %q is not defined in the blueprint\nhint: add \"var %s <default>\" to your blueprint or pass --var %s=<value>", name, name, name)
 }
 
 // splitToolVersion splits "tool@version" into (tool, version, true).

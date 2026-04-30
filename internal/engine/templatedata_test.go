@@ -41,7 +41,7 @@ func testRules() []parser.Rule {
 }
 
 func TestMiseVersion(t *testing.T) {
-	d := BuildTemplateData(testRules())
+	d := BuildTemplateData(testRules(), nil)
 	v, err := d.Get("mise", "ruby")
 	if err != nil {
 		t.Fatal(err)
@@ -52,7 +52,7 @@ func TestMiseVersion(t *testing.T) {
 }
 
 func TestMiseVersion_CaseInsensitive(t *testing.T) {
-	d := BuildTemplateData(testRules())
+	d := BuildTemplateData(testRules(), nil)
 	v, err := d.Get("mise", "Ruby")
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +63,7 @@ func TestMiseVersion_CaseInsensitive(t *testing.T) {
 }
 
 func TestMiseVersion_NotFound(t *testing.T) {
-	d := BuildTemplateData(testRules())
+	d := BuildTemplateData(testRules(), nil)
 	_, err := d.Get("mise", "python")
 	if err == nil {
 		t.Error("expected error for missing mise tool")
@@ -71,7 +71,7 @@ func TestMiseVersion_NotFound(t *testing.T) {
 }
 
 func TestAsdfVersion(t *testing.T) {
-	d := BuildTemplateData(testRules())
+	d := BuildTemplateData(testRules(), nil)
 	v, err := d.Get("asdf", "nodejs")
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestAsdfVersion(t *testing.T) {
 }
 
 func TestPackages_All(t *testing.T) {
-	d := BuildTemplateData(testRules())
+	d := BuildTemplateData(testRules(), nil)
 	v, err := d.Get("packages", "")
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +93,7 @@ func TestPackages_All(t *testing.T) {
 }
 
 func TestPackages_FilteredBySnap(t *testing.T) {
-	d := BuildTemplateData(testRules())
+	d := BuildTemplateData(testRules(), nil)
 	// packages filter uses Get("packages", "snap") but packages() is variadic
 	// so we call via FuncMap
 	fm := d.FuncMap()
@@ -105,7 +105,7 @@ func TestPackages_FilteredBySnap(t *testing.T) {
 }
 
 func TestHomebrewFormulas(t *testing.T) {
-	d := BuildTemplateData(testRules())
+	d := BuildTemplateData(testRules(), nil)
 	v, err := d.Get("homebrew", "formula")
 	if err != nil {
 		t.Fatal(err)
@@ -116,7 +116,7 @@ func TestHomebrewFormulas(t *testing.T) {
 }
 
 func TestHomebrewCasks(t *testing.T) {
-	d := BuildTemplateData(testRules())
+	d := BuildTemplateData(testRules(), nil)
 	v, err := d.Get("homebrew", "cask")
 	if err != nil {
 		t.Fatal(err)
@@ -127,7 +127,7 @@ func TestHomebrewCasks(t *testing.T) {
 }
 
 func TestCloneURL(t *testing.T) {
-	d := BuildTemplateData(testRules())
+	d := BuildTemplateData(testRules(), nil)
 	v, err := d.Get("clone", "myapp")
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +138,7 @@ func TestCloneURL(t *testing.T) {
 }
 
 func TestCloneURL_NotFound(t *testing.T) {
-	d := BuildTemplateData(testRules())
+	d := BuildTemplateData(testRules(), nil)
 	_, err := d.Get("clone", "nonexistent")
 	if err == nil {
 		t.Error("expected error for missing clone rule")
@@ -146,7 +146,7 @@ func TestCloneURL_NotFound(t *testing.T) {
 }
 
 func TestUnknownAction(t *testing.T) {
-	d := BuildTemplateData(testRules())
+	d := BuildTemplateData(testRules(), nil)
 	_, err := d.Get("bogus", "key")
 	if err == nil {
 		t.Error("expected error for unknown action")
@@ -154,7 +154,7 @@ func TestUnknownAction(t *testing.T) {
 }
 
 func TestFuncMap_TemplateRender(t *testing.T) {
-	d := BuildTemplateData(testRules())
+	d := BuildTemplateData(testRules(), nil)
 	src := `FROM ruby:{{ mise "ruby" }}-slim
 RUN apt-get install -y {{ packages }}`
 
@@ -176,7 +176,7 @@ RUN apt-get install -y {{ packages }}`
 }
 
 func TestFuncMap_MissingKeyFails(t *testing.T) {
-	d := BuildTemplateData(testRules())
+	d := BuildTemplateData(testRules(), nil)
 	src := `{{ mise "nonexistent" }}`
 	tmpl, err := template.New("t").Option("missingkey=error").Funcs(d.FuncMap()).Parse(src)
 	if err != nil {
@@ -186,6 +186,111 @@ func TestFuncMap_MissingKeyFails(t *testing.T) {
 	err = tmpl.Execute(&buf, nil)
 	if err == nil {
 		t.Error("expected error for missing mise tool in template")
+	}
+}
+
+func TestVar_Default(t *testing.T) {
+	rules := append(testRules(), parser.Rule{
+		Action:      "var",
+		VarName:     "PORT",
+		VarDefault:  "8000",
+		VarRequired: false,
+	})
+	d := BuildTemplateData(rules, nil)
+	v, err := d.Get("var", "PORT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != "8000" {
+		t.Errorf("expected default 8000, got %q", v)
+	}
+}
+
+func TestVar_CLIOverridesDefault(t *testing.T) {
+	rules := append(testRules(), parser.Rule{
+		Action:      "var",
+		VarName:     "PORT",
+		VarDefault:  "8000",
+		VarRequired: false,
+	})
+	d := BuildTemplateData(rules, map[string]string{"PORT": "9000"})
+	v, err := d.Get("var", "PORT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != "9000" {
+		t.Errorf("expected CLI override 9000, got %q", v)
+	}
+}
+
+func TestVar_RequiredWithoutCLI_Fails(t *testing.T) {
+	rules := append(testRules(), parser.Rule{
+		Action:      "var",
+		VarName:     "APP_NAME",
+		VarRequired: true,
+	})
+	d := BuildTemplateData(rules, nil)
+	_, err := d.Get("var", "APP_NAME")
+	if err == nil {
+		t.Error("expected error for required var with no value")
+	}
+}
+
+func TestVar_RequiredSatisfiedByCLI(t *testing.T) {
+	rules := append(testRules(), parser.Rule{
+		Action:      "var",
+		VarName:     "APP_NAME",
+		VarRequired: true,
+	})
+	d := BuildTemplateData(rules, map[string]string{"APP_NAME": "myapp"})
+	v, err := d.Get("var", "APP_NAME")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != "myapp" {
+		t.Errorf("expected myapp, got %q", v)
+	}
+}
+
+func TestVar_Undefined_Fails(t *testing.T) {
+	d := BuildTemplateData(testRules(), nil)
+	_, err := d.Get("var", "UNDEFINED")
+	if err == nil {
+		t.Error("expected error for undefined var")
+	}
+}
+
+func TestVar_InTemplate(t *testing.T) {
+	rules := append(testRules(), parser.Rule{
+		Action:      "var",
+		VarName:     "APP_NAME",
+		VarDefault:  "myapp",
+		VarRequired: false,
+	})
+	d := BuildTemplateData(rules, nil)
+	src := `CMD ["uv", "run", "python", "-m", "{{ var "APP_NAME" }}"]`
+	tmpl, err := template.New("t").Funcs(d.FuncMap()).Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "myapp") {
+		t.Errorf("expected APP_NAME in output, got: %s", buf.String())
+	}
+}
+
+func TestParseVarRule_WithDefault(t *testing.T) {
+	// Ensure the parser correctly populates var rules
+	rules := []parser.Rule{
+		{Action: "var", VarName: "PORT", VarDefault: "8000", VarRequired: false},
+	}
+	d := BuildTemplateData(rules, nil)
+	v, err := d.varValue("PORT")
+	if err != nil || v != "8000" {
+		t.Errorf("expected 8000, got %q, err=%v", v, err)
 	}
 }
 

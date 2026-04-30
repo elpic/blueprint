@@ -14,17 +14,17 @@ import (
 
 // Render parses a blueprint, renders tmplPath against it, and writes the
 // result to output (stdout when output is "").
-func Render(file, tmplPath, output string, preferSSH bool) {
+func Render(file, tmplPath, output string, preferSSH bool, cliVars map[string]string) {
 	rules := loadRulesForRender(file, preferSSH)
-	result := renderTemplate(tmplPath, rules)
+	result := renderTemplate(tmplPath, rules, cliVars)
 	writeOutput(result, output)
 }
 
 // Check parses a blueprint, renders tmplPath, and compares the result with the
 // content of againstPath. Exits 0 when identical, 1 when different.
-func Check(file, tmplPath, againstPath string, preferSSH bool) {
+func Check(file, tmplPath, againstPath string, preferSSH bool, cliVars map[string]string) {
 	rules := loadRulesForRender(file, preferSSH)
-	rendered := renderTemplate(tmplPath, rules)
+	rendered := renderTemplate(tmplPath, rules, cliVars)
 
 	existing, err := os.ReadFile(againstPath) // #nosec G304 -- user-supplied path, intentional
 	if err != nil {
@@ -45,9 +45,9 @@ func Check(file, tmplPath, againstPath string, preferSSH bool) {
 
 // Get extracts a single value from a blueprint and prints it to stdout.
 // action is e.g. "mise", key is e.g. "ruby".
-func Get(file, action, key string, preferSSH bool) {
+func Get(file, action, key string, preferSSH bool, cliVars map[string]string) {
 	rules := loadRulesForRender(file, preferSSH)
-	data := BuildTemplateData(rules)
+	data := BuildTemplateData(rules, cliVars)
 	val, err := data.Get(action, key)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -80,14 +80,14 @@ func loadRulesForRender(file string, preferSSH bool) []parser.Rule {
 }
 
 // renderTemplate renders tmplPath using data from rules, exiting on error.
-func renderTemplate(tmplPath string, rules []parser.Rule) string {
+func renderTemplate(tmplPath string, rules []parser.Rule, cliVars map[string]string) string {
 	tmplContent, err := os.ReadFile(tmplPath) // #nosec G304 -- user-supplied path, intentional
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: cannot read template %s: %v\n", tmplPath, err)
 		os.Exit(1)
 	}
 
-	data := BuildTemplateData(rules)
+	data := BuildTemplateData(rules, cliVars)
 
 	// option: missingkey=error makes unknown template calls fail loudly
 	tmpl, err := template.New("blueprint").

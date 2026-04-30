@@ -2,7 +2,7 @@
 # Regenerate: blueprint render setup.bp --template Dockerfile.tmpl --output Dockerfile
 # Check drift: blueprint check setup.bp --template Dockerfile.tmpl --against Dockerfile
 
-FROM python:{{ mise "python" }}-slim
+FROM {{ var "REGISTRY" }}/python:{{ mise "python" }}-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -25,6 +25,6 @@ RUN uv sync --frozen --no-install-project
 COPY . .
 RUN uv sync --frozen
 
-EXPOSE 8000
+EXPOSE {{ var "PORT" }}
 
-CMD ["uv", "run", "python", "-m", "myapp"]
+CMD ["uv", "run", "python", "-m", "{{ var "APP_NAME" }}"]
