@@ -156,6 +156,65 @@ The exported script is fully standalone: it bootstraps prerequisites (homebrew, 
 
 Actions that cannot be exported (like `decrypt`) are shown as skipped with guidance on how to run them via blueprint directly.
 
+### Template Rendering & Drift Detection
+
+Use your blueprint as a single source of truth for generated files — Dockerfiles, CI configs, `.tool-versions`, Makefiles — and catch drift before it causes problems.
+
+**Render a template:**
+
+```bash
+# Dockerfile.tmpl
+blueprint render setup.bp --template Dockerfile.tmpl
+blueprint render setup.bp --template Dockerfile.tmpl --output Dockerfile
+blueprint render setup.bp --template Dockerfile.local.tmpl --output Dockerfile.local
+```
+
+**Example `Dockerfile.tmpl`:**
+
+```dockerfile
+FROM ruby:{{ mise "ruby" }}-slim
+
+RUN apt-get update && apt-get install -y \
+    {{ packages }} \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY . .
+```
+
+**Check for drift in CI** (exits `1` with a diff if the file is out of date):
+
+```yaml
+- name: Check Dockerfile is up to date
+  run: blueprint check setup.bp --template Dockerfile.tmpl --against Dockerfile
+```
+
+**Query a single value** (useful in Makefiles and shell scripts):
+
+```bash
+blueprint get setup.bp mise ruby       # → 3.3.0
+blueprint get setup.bp asdf nodejs     # → 21.4.0
+blueprint get setup.bp homebrew cask   # → docker rectangle
+
+# Use in a Makefile
+RUBY_VERSION := $(shell blueprint get setup.bp mise ruby)
+docker build --build-arg RUBY_VERSION=$(RUBY_VERSION) .
+```
+
+**Available template functions:**
+
+| Function | Returns |
+|----------|---------|
+| `{{ mise "ruby" }}` | Version pinned in `mise:` rule |
+| `{{ asdf "nodejs" }}` | Version pinned in `asdf:` rule |
+| `{{ packages }}` | All `install:` packages, space-separated |
+| `{{ packages "snap" }}` | Packages filtered by package manager |
+| `{{ homebrewFormulas }}` | All homebrew formulas, space-separated |
+| `{{ homebrewCasks }}` | All homebrew casks, space-separated |
+| `{{ cloneURL "myapp" }}` | Clone URL for a matching `clone:` rule |
+
+Missing keys fail loudly — a `Dockerfile` with `FROM ruby:-slim` is worse than a render error.
+
 ### Modular Blueprints
 
 Split configuration across files with `include`:
@@ -232,6 +291,7 @@ blueprint-windows-amd64.exe apply setup.bp
 
 - [`docs/`](docs/) -- full documentation for every action
 - [`docs/export.md`](docs/export.md) -- generate standalone shell scripts from blueprints
+- [`docs/render.md`](docs/render.md) -- render templates and detect drift with `render`, `check`, and `get`
 - [`docs/doctor.md`](docs/doctor.md) -- inspect and repair `~/.blueprint/status.json`
 - [`docs/validate.md`](docs/validate.md) -- parse and semantic-check a blueprint without applying
 - [`docs/architecture.md`](docs/architecture.md) -- project structure, engine internals, handler interfaces
