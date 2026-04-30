@@ -13,7 +13,7 @@ install git curl build-essential libpq-dev libssl-dev ca-certificates on: [linux
 # Variables — required vars must be passed via --var at render time
 var APP_NAME
 var PORT 8000
-var REGISTRY ghcr.io/user
+var REGISTRY ghcr.io
 
 # Python via mise — single source of truth for the version used everywhere
 mise python@3.12.3
