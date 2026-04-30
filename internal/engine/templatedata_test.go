@@ -1,0 +1,222 @@
+package engine
+
+import (
+	"bytes"
+	"strings"
+	"testing"
+	"text/template"
+
+	"github.com/elpic/blueprint/internal/parser"
+)
+
+func testRules() []parser.Rule {
+	return []parser.Rule{
+		{
+			Action:       "mise",
+			MisePackages: []string{"ruby@3.3.0", "node@20.11.0"},
+		},
+		{
+			Action:       "asdf",
+			AsdfPackages: []string{"nodejs@21.4.0", "python@3.11.0"},
+		},
+		{
+			Action: "install",
+			Packages: []parser.Package{
+				{Name: "git"},
+				{Name: "curl"},
+				{Name: "code", PackageManager: "snap"},
+			},
+		},
+		{
+			Action:           "homebrew",
+			HomebrewPackages: []string{"wget", "jq"},
+			HomebrewCasks:    []string{"docker", "rectangle"},
+		},
+		{
+			Action:    "clone",
+			CloneURL:  "https://github.com/user/myapp",
+			ClonePath: "~/projects/myapp",
+		},
+	}
+}
+
+func TestMiseVersion(t *testing.T) {
+	d := BuildTemplateData(testRules())
+	v, err := d.Get("mise", "ruby")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != "3.3.0" {
+		t.Errorf("expected 3.3.0, got %q", v)
+	}
+}
+
+func TestMiseVersion_CaseInsensitive(t *testing.T) {
+	d := BuildTemplateData(testRules())
+	v, err := d.Get("mise", "Ruby")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != "3.3.0" {
+		t.Errorf("expected 3.3.0, got %q", v)
+	}
+}
+
+func TestMiseVersion_NotFound(t *testing.T) {
+	d := BuildTemplateData(testRules())
+	_, err := d.Get("mise", "python")
+	if err == nil {
+		t.Error("expected error for missing mise tool")
+	}
+}
+
+func TestAsdfVersion(t *testing.T) {
+	d := BuildTemplateData(testRules())
+	v, err := d.Get("asdf", "nodejs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != "21.4.0" {
+		t.Errorf("expected 21.4.0, got %q", v)
+	}
+}
+
+func TestPackages_All(t *testing.T) {
+	d := BuildTemplateData(testRules())
+	v, err := d.Get("packages", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(v, "git") || !strings.Contains(v, "curl") || !strings.Contains(v, "code") {
+		t.Errorf("expected all packages, got %q", v)
+	}
+}
+
+func TestPackages_FilteredBySnap(t *testing.T) {
+	d := BuildTemplateData(testRules())
+	// packages filter uses Get("packages", "snap") but packages() is variadic
+	// so we call via FuncMap
+	fm := d.FuncMap()
+	pkgFn := fm["packages"].(func(...string) string)
+	v := pkgFn("snap")
+	if v != "code" {
+		t.Errorf("expected only snap package 'code', got %q", v)
+	}
+}
+
+func TestHomebrewFormulas(t *testing.T) {
+	d := BuildTemplateData(testRules())
+	v, err := d.Get("homebrew", "formula")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(v, "wget") || !strings.Contains(v, "jq") {
+		t.Errorf("expected homebrew formulas, got %q", v)
+	}
+}
+
+func TestHomebrewCasks(t *testing.T) {
+	d := BuildTemplateData(testRules())
+	v, err := d.Get("homebrew", "cask")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(v, "docker") || !strings.Contains(v, "rectangle") {
+		t.Errorf("expected homebrew casks, got %q", v)
+	}
+}
+
+func TestCloneURL(t *testing.T) {
+	d := BuildTemplateData(testRules())
+	v, err := d.Get("clone", "myapp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != "https://github.com/user/myapp" {
+		t.Errorf("expected clone URL, got %q", v)
+	}
+}
+
+func TestCloneURL_NotFound(t *testing.T) {
+	d := BuildTemplateData(testRules())
+	_, err := d.Get("clone", "nonexistent")
+	if err == nil {
+		t.Error("expected error for missing clone rule")
+	}
+}
+
+func TestUnknownAction(t *testing.T) {
+	d := BuildTemplateData(testRules())
+	_, err := d.Get("bogus", "key")
+	if err == nil {
+		t.Error("expected error for unknown action")
+	}
+}
+
+func TestFuncMap_TemplateRender(t *testing.T) {
+	d := BuildTemplateData(testRules())
+	src := `FROM ruby:{{ mise "ruby" }}-slim
+RUN apt-get install -y {{ packages }}`
+
+	tmpl, err := template.New("t").Funcs(d.FuncMap()).Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, nil); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "ruby:3.3.0-slim") {
+		t.Errorf("expected ruby version in FROM line, got:\n%s", out)
+	}
+	if !strings.Contains(out, "git") {
+		t.Errorf("expected packages in RUN line, got:\n%s", out)
+	}
+}
+
+func TestFuncMap_MissingKeyFails(t *testing.T) {
+	d := BuildTemplateData(testRules())
+	src := `{{ mise "nonexistent" }}`
+	tmpl, err := template.New("t").Option("missingkey=error").Funcs(d.FuncMap()).Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	err = tmpl.Execute(&buf, nil)
+	if err == nil {
+		t.Error("expected error for missing mise tool in template")
+	}
+}
+
+func TestPrintDiff(t *testing.T) {
+	old := "FROM ruby:3.2-slim\nRUN apt-get install git"
+	new := "FROM ruby:3.3-slim\nRUN apt-get install git"
+	diff := printDiff(old, new, "Dockerfile")
+	if !strings.Contains(diff, "-FROM ruby:3.2-slim") {
+		t.Error("expected removal line in diff")
+	}
+	if !strings.Contains(diff, "+FROM ruby:3.3-slim") {
+		t.Error("expected addition line in diff")
+	}
+}
+
+func TestSplitToolVersion(t *testing.T) {
+	tests := []struct {
+		input   string
+		name    string
+		version string
+		ok      bool
+	}{
+		{"ruby@3.3.0", "ruby", "3.3.0", true},
+		{"node@20.11.0", "node", "20.11.0", true},
+		{"nover", "", "", false},
+	}
+	for _, tt := range tests {
+		name, ver, ok := splitToolVersion(tt.input)
+		if ok != tt.ok || name != tt.name || ver != tt.version {
+			t.Errorf("splitToolVersion(%q) = (%q, %q, %v), want (%q, %q, %v)",
+				tt.input, name, ver, ok, tt.name, tt.version, tt.ok)
+		}
+	}
+}
