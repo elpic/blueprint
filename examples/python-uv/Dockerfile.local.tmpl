@@ -1,0 +1,24 @@
+# Generated from setup.bp — do not edit directly.
+# Regenerate: blueprint render setup.bp --template Dockerfile.local.tmpl --output Dockerfile.local
+# Check drift: blueprint check setup.bp --template Dockerfile.local.tmpl --against Dockerfile.local
+
+FROM python:{{ mise "python" }}-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    {{ packages }} \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+# Install dependencies only (code is volume-mounted at runtime)
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project
+
+# Dev entrypoint — override with docker-compose command
+CMD ["uv", "run", "python", "-m", "myapp"]

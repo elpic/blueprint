@@ -1,0 +1,30 @@
+# Generated from setup.bp — do not edit directly.
+# Regenerate: blueprint render setup.bp --template Dockerfile.tmpl --output Dockerfile
+# Check drift: blueprint check setup.bp --template Dockerfile.tmpl --against Dockerfile
+
+FROM python:{{ mise "python" }}-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_NO_CACHE=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    {{ packages }} \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+# Install dependencies first (layer cache friendly)
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project
+
+# Copy application code
+COPY . .
+RUN uv sync --frozen
+
+EXPOSE 8000
+
+CMD ["uv", "run", "python", "-m", "myapp"]

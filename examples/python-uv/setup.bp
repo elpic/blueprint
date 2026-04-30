@@ -1,0 +1,23 @@
+# Python project setup with uv
+#
+# Usage:
+#   blueprint apply setup.bp
+#   blueprint render setup.bp --template Dockerfile.tmpl --output Dockerfile
+#   blueprint render setup.bp --template Dockerfile.local.tmpl --output Dockerfile.local
+#   blueprint check setup.bp --template Dockerfile.tmpl --against Dockerfile
+
+# System dependencies
+install git curl build-essential libpq-dev libssl-dev ca-certificates on: [linux]
+install git curl on: [mac]
+
+# Python via mise — single source of truth for the version used everywhere
+mise python@3.12.3
+
+# uv — fast Python package manager (replaces pip + virtualenv)
+run curl -LsSf https://astral.sh/uv/install.sh | sh unless: which uv
+
+# Project repository
+clone https://github.com/user/myapp to: ~/projects/myapp
+
+# Dotfiles (optional, for dev machines)
+dotfiles https://github.com/user/dotfiles on: [mac]
