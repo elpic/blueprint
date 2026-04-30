@@ -113,7 +113,7 @@ func writeOutput(content, output string) {
 		fmt.Print(content)
 		return
 	}
-	if err := os.WriteFile(output, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(output, []byte(content), 0o644); err != nil { // #nosec G306 -- rendered template files (Dockerfiles, CI configs) must be world-readable
 		fmt.Fprintf(os.Stderr, "error: cannot write %s: %v\n", output, err)
 		os.Exit(1)
 	}
