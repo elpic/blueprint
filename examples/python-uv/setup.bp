@@ -1,14 +1,14 @@
 # Python project setup with uv
 #
-# Usage:
-#   blueprint apply setup.bp
-#   blueprint render setup.bp --template Dockerfile.tmpl --output Dockerfile
-#   blueprint render setup.bp --template Dockerfile.local.tmpl --output Dockerfile.local
-#   blueprint check setup.bp --template Dockerfile.tmpl --against Dockerfile
+# Usage (from repo root):
+#   go run ./cmd/blueprint render examples/python-uv/setup.bp --template examples/python-uv/Dockerfile.tmpl
+#   go run ./cmd/blueprint render examples/python-uv/setup.bp --template examples/python-uv/Dockerfile.tmpl --output examples/python-uv/Dockerfile
+#   go run ./cmd/blueprint render examples/python-uv/setup.bp --template examples/python-uv/Dockerfile.local.tmpl --output examples/python-uv/Dockerfile.local
+#   go run ./cmd/blueprint check examples/python-uv/setup.bp --template examples/python-uv/Dockerfile.tmpl --against examples/python-uv/Dockerfile
+#   go run ./cmd/blueprint get examples/python-uv/setup.bp mise python
 
 # System dependencies
 install git curl build-essential libpq-dev libssl-dev ca-certificates on: [linux]
-install git curl on: [mac]
 
 # Python via mise — single source of truth for the version used everywhere
 mise python@3.12.3
