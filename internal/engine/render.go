@@ -233,7 +233,7 @@ func loadRulesForRender(file string, preferSSH bool) []parser.Rule {
 func resolveTemplatePath(tmplPath string, preferSSH bool) (local, root string, cleanup func(), err error) {
 	cleanup = func() {}
 
-	expanded := tmplPath
+	var expanded string
 	if preferSSH {
 		expanded = gitpkg.ExpandShorthandSSH(tmplPath)
 	} else {
