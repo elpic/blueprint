@@ -21,6 +21,14 @@ import (
 func Render(file, tmplPath, output string, preferSSH bool, cliVars map[string]string) {
 	rules := loadRulesForRender(file, preferSSH)
 
+	localTmpl, tmplRoot, cleanup, err := resolveTemplatePath(tmplPath, preferSSH)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	defer cleanup()
+	tmplPath = localTmpl
+
 	templates, err := collectTemplates(tmplPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -41,7 +49,7 @@ func Render(file, tmplPath, output string, preferSSH bool, cliVars map[string]st
 		rendered[t] = mustRenderTemplate(t, rules, cliVars)
 	}
 	for _, t := range templates {
-		out := resolveOutput(t, tmplPath, output)
+		out := resolveOutput(t, tmplRoot, output)
 		if err := os.MkdirAll(filepath.Dir(out), 0o750); err != nil { // #nosec G301 -- output directories must be group-readable
 			fmt.Fprintf(os.Stderr, "error: cannot create directory for %s: %v\n", out, err)
 			os.Exit(1)
@@ -77,6 +85,14 @@ func resolveOutput(tmplPath, tmplRoot, outputRoot string) string {
 func Check(file, tmplPath, against string, preferSSH bool, cliVars map[string]string) {
 	rules := loadRulesForRender(file, preferSSH)
 
+	localTmpl, tmplRoot, cleanup, err := resolveTemplatePath(tmplPath, preferSSH)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	defer cleanup()
+	tmplPath = localTmpl
+
 	templates, err := collectTemplates(tmplPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -99,7 +115,7 @@ func Check(file, tmplPath, against string, preferSSH bool, cliVars map[string]st
 		// root (same logic as render --output). Without --against, fall back to
 		// the file next to each template.
 		for _, t := range templates {
-			pairs = append(pairs, pair{t, resolveOutput(t, tmplPath, against)})
+			pairs = append(pairs, pair{t, resolveOutput(t, tmplRoot, against)})
 		}
 	}
 
@@ -206,6 +222,47 @@ func loadRulesForRender(file string, preferSSH bool) []parser.Rule {
 		os.Exit(1)
 	}
 	return rules
+}
+
+// resolveTemplatePath resolves --template to a local filesystem path.
+// If tmplPath is a git URL or @provider: shorthand, the repo is cloned/updated
+// to the blueprint cache and the path within the repo is returned.
+// Returns (localPath, rootForRelativeCalc, cleanup, error).
+// For local paths: localPath == tmplPath, rootForRelativeCalc == tmplPath.
+// For remote paths: localPath is the directory inside the clone, rootForRelativeCalc == localPath.
+func resolveTemplatePath(tmplPath string, preferSSH bool) (local, root string, cleanup func(), err error) {
+	cleanup = func() {}
+
+	expanded := tmplPath
+	if preferSSH {
+		expanded = gitpkg.ExpandShorthandSSH(tmplPath)
+	} else {
+		expanded = gitpkg.ExpandShorthand(tmplPath)
+	}
+
+	if !gitpkg.IsGitURL(expanded) {
+		return tmplPath, tmplPath, cleanup, nil
+	}
+
+	params := gitpkg.ParseGitURL(expanded)
+	localRepo := blueprintRepoPath(expanded)
+
+	if _, _, _, cloneErr := gitpkg.CloneOrUpdateRepository(params.URL, localRepo, params.Branch); cloneErr != nil {
+		return "", "", cleanup, fmt.Errorf("error cloning template repository: %w", cloneErr)
+	}
+
+	// params.Path defaults to "setup.bp" for blueprint files, but for templates
+	// there is no default — an empty path means the repo root.
+	tmplDir := localRepo
+	if params.Path != "" && params.Path != "setup.bp" {
+		tmplDir = filepath.Join(localRepo, filepath.FromSlash(params.Path))
+	}
+
+	if _, statErr := os.Stat(tmplDir); statErr != nil {
+		return "", "", cleanup, fmt.Errorf("template path %q not found in repository", params.Path)
+	}
+
+	return tmplDir, tmplDir, cleanup, nil
 }
 
 // mustRenderTemplate renders a single template file, exiting on any error.
