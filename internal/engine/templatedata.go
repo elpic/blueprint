@@ -49,7 +49,14 @@ func (d *TemplateData) Get(action, key string) (string, error) {
 	case "asdf":
 		return d.asdfVersion(key)
 	case "packages":
-		return d.packages(key), nil
+		// key may be "pm/stage" or just "pm" or ""
+		parts := strings.SplitN(key, "/", 2)
+		pm := parts[0]
+		stage := ""
+		if len(parts) > 1 {
+			stage = parts[1]
+		}
+		return d.packages(pm, stage), nil
 	case "homebrew":
 		switch key {
 		case "formula", "formulas":
@@ -108,12 +115,20 @@ func (d *TemplateData) asdfVersion(tool string) (string, error) {
 }
 
 // packages returns a space-separated list of package names.
-// An optional packageManager argument filters by package manager (e.g. "snap").
-// Calling with no argument (or empty string) returns all packages.
-func (d *TemplateData) packages(pm ...string) string {
-	filter := ""
-	if len(pm) > 0 {
-		filter = pm[0]
+// Accepts up to two optional arguments:
+//
+//	packages()              → all packages
+//	packages("snap")        → filtered by package manager
+//	packages("", "build")   → filtered by stage
+//	packages("snap", "build") → filtered by both
+func (d *TemplateData) packages(filters ...string) string {
+	pmFilter := ""
+	stageFilter := ""
+	if len(filters) > 0 {
+		pmFilter = filters[0]
+	}
+	if len(filters) > 1 {
+		stageFilter = filters[1]
 	}
 	var names []string
 	for _, r := range d.rules {
@@ -121,9 +136,13 @@ func (d *TemplateData) packages(pm ...string) string {
 			continue
 		}
 		for _, pkg := range r.Packages {
-			if filter == "" || strings.EqualFold(pkg.PackageManager, filter) {
-				names = append(names, pkg.Name)
+			if pmFilter != "" && !strings.EqualFold(pkg.PackageManager, pmFilter) {
+				continue
 			}
+			if stageFilter != "" && !strings.EqualFold(pkg.Stage, stageFilter) {
+				continue
+			}
+			names = append(names, pkg.Name)
 		}
 	}
 	return strings.Join(names, " ")

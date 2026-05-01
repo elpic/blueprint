@@ -13,6 +13,7 @@ type Package struct {
 	Name           string
 	Version        string
 	PackageManager string // e.g., "apt", "snap", defaults to system default
+	Stage          string // e.g., "build", "runtime" — used by container templates
 }
 
 type Rule struct {
@@ -330,10 +331,11 @@ func loadGitInclude(rawURL string, loadedFiles map[string]bool) ([]Rule, error) 
 func ParseInstallRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(line, "install "))
 	packageManager := f.word("package-manager:")
+	stage := f.word("stage:")
 	packageNames := f.tokens
 	pkgs := make([]Package, len(packageNames))
 	for i, pkg := range packageNames {
-		pkgs[i] = Package{Name: pkg, Version: "latest", PackageManager: packageManager}
+		pkgs[i] = Package{Name: pkg, Version: "latest", PackageManager: packageManager, Stage: stage}
 	}
 	return &Rule{
 		ID:       f.word("id:"),

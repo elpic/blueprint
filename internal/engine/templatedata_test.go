@@ -282,6 +282,57 @@ func TestVar_InTemplate(t *testing.T) {
 	}
 }
 
+func testRulesWithStages() []parser.Rule {
+	return []parser.Rule{
+		{
+			Action: "install",
+			Packages: []parser.Package{
+				{Name: "build-essential", Stage: "build"},
+				{Name: "libpq-dev", Stage: "build"},
+				{Name: "libpq5", Stage: "runtime"},
+				{Name: "ca-certificates", Stage: "runtime"},
+				{Name: "git"}, // no stage — returned by packages() with no filter
+			},
+		},
+	}
+}
+
+func TestPackages_StageFilter_Build(t *testing.T) {
+	d := BuildTemplateData(testRulesWithStages(), nil)
+	fm := d.FuncMap()
+	pkgFn := fm["packages"].(func(...string) string)
+	v := pkgFn("", "build")
+	if !strings.Contains(v, "build-essential") || !strings.Contains(v, "libpq-dev") {
+		t.Errorf("expected build packages, got %q", v)
+	}
+	if strings.Contains(v, "libpq5") || strings.Contains(v, "ca-certificates") {
+		t.Errorf("should not include runtime packages, got %q", v)
+	}
+}
+
+func TestPackages_StageFilter_Runtime(t *testing.T) {
+	d := BuildTemplateData(testRulesWithStages(), nil)
+	fm := d.FuncMap()
+	pkgFn := fm["packages"].(func(...string) string)
+	v := pkgFn("", "runtime")
+	if !strings.Contains(v, "libpq5") || !strings.Contains(v, "ca-certificates") {
+		t.Errorf("expected runtime packages, got %q", v)
+	}
+	if strings.Contains(v, "build-essential") {
+		t.Errorf("should not include build packages, got %q", v)
+	}
+}
+
+func TestPackages_NoStageFilter_ReturnsAll(t *testing.T) {
+	d := BuildTemplateData(testRulesWithStages(), nil)
+	fm := d.FuncMap()
+	pkgFn := fm["packages"].(func(...string) string)
+	v := pkgFn()
+	if !strings.Contains(v, "build-essential") || !strings.Contains(v, "libpq5") || !strings.Contains(v, "git") {
+		t.Errorf("expected all packages, got %q", v)
+	}
+}
+
 func TestVarDefault_UsesFallback(t *testing.T) {
 	d := BuildTemplateData(testRules(), nil)
 	v := d.varDefault("REGISTRY", "docker.io")
