@@ -158,62 +158,80 @@ Actions that cannot be exported (like `decrypt`) are shown as skipped with guida
 
 ### Template Rendering & Drift Detection
 
-Use your blueprint as a single source of truth for generated files — Dockerfiles, CI configs, `.tool-versions`, Makefiles — and catch drift before it causes problems.
+Use your blueprint as a single source of truth for generated files — Dockerfiles, CI configs, Makefiles, shell scripts — and catch drift before it causes problems.
 
-**Render a template:**
-
+**Render a single template:**
 ```bash
-# Dockerfile.tmpl
-blueprint render setup.bp --template Dockerfile.tmpl
 blueprint render setup.bp --template Dockerfile.tmpl --output Dockerfile
-blueprint render setup.bp --template Dockerfile.local.tmpl --output Dockerfile.local
+```
+
+**Render an entire directory at once:**
+```bash
+blueprint render setup.bp --template ./templates --output .
+```
+
+**Render from a shared remote template library:**
+```bash
+blueprint render setup.bp \
+  --template @github:org/templates@main:containers/python \
+  --output . \
+  --var APP_NAME=myapp
 ```
 
 **Example `Dockerfile.tmpl`:**
-
 ```dockerfile
-FROM ruby:{{ mise "ruby" }}-slim
+FROM python:{{ mise "python" }}-slim
 
-RUN apt-get update && apt-get install -y \
-    {{ packages }} \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get install -y --no-install-recommends \
+    {{ packages "" "runtime" }}
 
-WORKDIR /app
-COPY . .
+EXPOSE {{ default "PORT" "8000" }}
+CMD {{ default "CMD" "python -m myapp" | toArgs }}
 ```
 
-**Check for drift in CI** (exits `1` with a diff if the file is out of date):
-
+**Check for drift in CI** (exits `1` with a diff if any file is out of date):
 ```yaml
-- name: Check Dockerfile is up to date
-  run: blueprint check setup.bp --template Dockerfile.tmpl --against Dockerfile
+- name: Check Dockerfiles are up to date
+  run: |
+    blueprint check setup.bp \
+      --template @github:org/templates@main:containers/python \
+      --against . \
+      --var APP_NAME=myapp
+```
+
+**Local overrides** — drop a `.tmpl` file next to your `setup.bp` to shadow a remote template. Everything else still comes from the shared library:
+```bash
+# entrypoint.sh.tmpl exists locally → used instead of the remote version
+blueprint render setup.bp --template @github:org/templates@main:containers/python --output .
+# rendered  Dockerfile
+# rendered  entrypoint.sh (local override)
 ```
 
 **Query a single value** (useful in Makefiles and shell scripts):
-
 ```bash
-blueprint get setup.bp mise ruby       # → 3.3.0
-blueprint get setup.bp asdf nodejs     # → 21.4.0
-blueprint get setup.bp homebrew cask   # → docker rectangle
+blueprint get setup.bp mise python     # → 3.13
+blueprint get setup.bp var APP_NAME    # → myapp
 
-# Use in a Makefile
-RUBY_VERSION := $(shell blueprint get setup.bp mise ruby)
-docker build --build-arg RUBY_VERSION=$(RUBY_VERSION) .
+PYTHON_VERSION := $(shell blueprint get setup.bp mise python)
+docker build --build-arg PYTHON_VERSION=$(PYTHON_VERSION) .
 ```
 
 **Available template functions:**
 
 | Function | Returns |
 |----------|---------|
-| `{{ mise "ruby" }}` | Version pinned in `mise:` rule |
+| `{{ mise "python" }}` | Version pinned in `mise:` rule |
 | `{{ asdf "nodejs" }}` | Version pinned in `asdf:` rule |
 | `{{ packages }}` | All `install:` packages, space-separated |
-| `{{ packages "snap" }}` | Packages filtered by package manager |
-| `{{ homebrewFormulas }}` | All homebrew formulas, space-separated |
-| `{{ homebrewCasks }}` | All homebrew casks, space-separated |
-| `{{ cloneURL "myapp" }}` | Clone URL for a matching `clone:` rule |
+| `{{ packages "" "build" }}` | Build-stage packages only |
+| `{{ packages "" "runtime" }}` | Runtime-stage packages only |
+| `{{ var "KEY" }}` | Required variable — errors if not set |
+| `{{ default "KEY" "fallback" }}` | Optional variable with fallback |
+| `{{ toArgs "cmd arg" }}` | String → JSON exec-form array |
+| `{{ homebrewFormulas }}` | All homebrew formulas |
+| `{{ cloneURL "name" }}` | Clone URL for a matching `clone:` rule |
 
-Missing keys fail loudly — a `Dockerfile` with `FROM ruby:-slim` is worse than a render error.
+See [`docs/render.md`](docs/render.md) for the full reference.
 
 ### Modular Blueprints
 
