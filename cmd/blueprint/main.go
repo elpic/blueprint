@@ -272,13 +272,12 @@ func main() {
 		engine.Render(file, tmplPath, output, preferSSH, cliVars)
 	case "check":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint check <file.bp> --template <file.tmpl|dir> [--against <file>] [--output <dir>] [--var KEY=VALUE] [--prefer-ssh]")
+			fmt.Println("Usage: blueprint check <file.bp> --template <file.tmpl|dir> --against <file|dir> [--var KEY=VALUE] [--prefer-ssh]")
 			os.Exit(1)
 		}
 		file := os.Args[2]
 		tmplPath := ""
 		against := ""
-		outputRoot := ""
 		_, _, _, _, preferSSH, _ := parseFlags(os.Args[3:])
 		for i := 3; i < len(os.Args); i++ {
 			switch os.Args[i] {
@@ -292,11 +291,6 @@ func main() {
 					against = os.Args[i+1]
 					i++
 				}
-			case "--output":
-				if i+1 < len(os.Args) {
-					outputRoot = os.Args[i+1]
-					i++
-				}
 			}
 		}
 		if tmplPath == "" {
@@ -304,7 +298,7 @@ func main() {
 			os.Exit(1)
 		}
 		cliVars := parseVarFlags(os.Args[3:])
-		engine.Check(file, tmplPath, against, outputRoot, preferSSH, cliVars)
+		engine.Check(file, tmplPath, against, preferSSH, cliVars)
 	case "get":
 		if len(os.Args) < 5 {
 			fmt.Println("Usage: blueprint get <file.bp> <action> <key> [--var KEY=VALUE]")

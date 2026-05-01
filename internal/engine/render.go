@@ -71,10 +71,10 @@ func resolveOutput(tmplPath, tmplRoot, outputRoot string) string {
 
 // Check parses a blueprint, renders tmplPath (file or directory), and compares
 // each rendered result against the corresponding committed file.
-// againstPath is used in single-file mode. outputRoot, when set, is used as the
-// root for resolving targets in directory mode (mirrors render --output behaviour).
+// against is a file path in single-file mode, or a directory root in directory mode.
+// In directory mode with no --against, targets are resolved next to each template.
 // Exits 0 when all are identical, 1 when any differ.
-func Check(file, tmplPath, againstPath, outputRoot string, preferSSH bool, cliVars map[string]string) {
+func Check(file, tmplPath, against string, preferSSH bool, cliVars map[string]string) {
 	rules := loadRulesForRender(file, preferSSH)
 
 	templates, err := collectTemplates(tmplPath)
@@ -89,16 +89,17 @@ func Check(file, tmplPath, againstPath, outputRoot string, preferSSH bool, cliVa
 
 	if !isDir(tmplPath) {
 		// Single-file mode — --against is required.
-		if againstPath == "" {
+		if against == "" {
 			fmt.Fprintln(os.Stderr, "error: --against <file> is required when --template is a single file")
 			os.Exit(1)
 		}
-		pairs = []pair{{templates[0], againstPath}}
+		pairs = []pair{{templates[0], against}}
 	} else {
-		// Directory mode — resolve target using outputRoot when provided,
-		// otherwise fall back to the file next to the template.
+		// Directory mode — when --against is a directory, use it as the output
+		// root (same logic as render --output). Without --against, fall back to
+		// the file next to each template.
 		for _, t := range templates {
-			pairs = append(pairs, pair{t, resolveOutput(t, tmplPath, outputRoot)})
+			pairs = append(pairs, pair{t, resolveOutput(t, tmplPath, against)})
 		}
 	}
 
