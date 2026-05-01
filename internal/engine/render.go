@@ -42,7 +42,7 @@ func Render(file, tmplPath, output string, preferSSH bool, cliVars map[string]st
 	}
 	for _, t := range templates {
 		out := resolveOutput(t, tmplPath, output)
-		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(out), 0o750); err != nil { // #nosec G301 -- output directories must be group-readable
 			fmt.Fprintf(os.Stderr, "error: cannot create directory for %s: %v\n", out, err)
 			os.Exit(1)
 		}
