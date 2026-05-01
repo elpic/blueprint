@@ -3,7 +3,9 @@ package engine
 import (
 	"bytes"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/template"
 
@@ -12,39 +14,95 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
-// Render parses a blueprint, renders tmplPath against it, and writes the
-// result to output (stdout when output is "").
+// Render parses a blueprint and renders tmplPath (file or directory) against it.
+// When tmplPath is a directory all *.tmpl files are rendered recursively;
+// files whose basename starts with "_" are skipped.
+// output is used only for single-file mode ("" → stdout, path → file).
 func Render(file, tmplPath, output string, preferSSH bool, cliVars map[string]string) {
 	rules := loadRulesForRender(file, preferSSH)
-	result := renderTemplate(tmplPath, rules, cliVars)
-	writeOutput(result, output)
-}
 
-// Check parses a blueprint, renders tmplPath, and compares the result with the
-// content of againstPath. Exits 0 when identical, 1 when different.
-func Check(file, tmplPath, againstPath string, preferSSH bool, cliVars map[string]string) {
-	rules := loadRulesForRender(file, preferSSH)
-	rendered := renderTemplate(tmplPath, rules, cliVars)
-
-	existing, err := os.ReadFile(againstPath) // #nosec G304 -- user-supplied path, intentional
+	templates, err := collectTemplates(tmplPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: cannot read %s: %v\n", againstPath, err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 
-	if bytes.Equal([]byte(rendered), existing) {
-		fmt.Printf("%s is up to date.\n", againstPath)
-		os.Exit(0)
+	if len(templates) == 1 && !isDir(tmplPath) {
+		// Single-file mode — respect --output / stdout
+		result := mustRenderTemplate(templates[0], rules, cliVars)
+		writeOutput(result, output)
+		return
 	}
 
-	fmt.Fprintf(os.Stderr, "%s\n", ui.FormatError(fmt.Sprintf("%s is out of date.", againstPath)))
-	fmt.Fprintln(os.Stderr, printDiff(string(existing), rendered, againstPath))
-	fmt.Fprintf(os.Stderr, "\nRun to fix:\n  blueprint render %s --template %s --output %s\n", file, tmplPath, againstPath)
-	os.Exit(1)
+	// Directory (or explicit multi) mode — validate all templates first,
+	// then write; fail before touching any file if any template errors.
+	rendered := make(map[string]string, len(templates))
+	for _, t := range templates {
+		rendered[t] = mustRenderTemplate(t, rules, cliVars)
+	}
+	for _, t := range templates {
+		out := strings.TrimSuffix(t, ".tmpl")
+		if err := os.WriteFile(out, []byte(rendered[t]), 0o644); err != nil { // #nosec G306 -- rendered template files must be world-readable
+			fmt.Fprintf(os.Stderr, "error: cannot write %s: %v\n", out, err)
+			os.Exit(1)
+		}
+		fmt.Printf("rendered  %s\n", out)
+	}
+}
+
+// Check parses a blueprint, renders tmplPath (file or directory), and compares
+// each rendered result against the corresponding committed file.
+// Exits 0 when all are identical, 1 when any differ.
+func Check(file, tmplPath, againstPath string, preferSSH bool, cliVars map[string]string) {
+	rules := loadRulesForRender(file, preferSSH)
+
+	templates, err := collectTemplates(tmplPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Build the list of (template → target) pairs.
+	type pair struct{ tmpl, target string }
+	var pairs []pair
+
+	if !isDir(tmplPath) {
+		// Single-file mode — --against is required.
+		if againstPath == "" {
+			fmt.Fprintln(os.Stderr, "error: --against <file> is required when --template is a single file")
+			os.Exit(1)
+		}
+		pairs = []pair{{templates[0], againstPath}}
+	} else {
+		// Directory mode — target is template path with .tmpl stripped.
+		for _, t := range templates {
+			pairs = append(pairs, pair{t, strings.TrimSuffix(t, ".tmpl")})
+		}
+	}
+
+	drifted := false
+	for _, p := range pairs {
+		rendered := mustRenderTemplate(p.tmpl, rules, cliVars)
+		existing, err := os.ReadFile(p.target) // #nosec G304 -- user-supplied path, intentional
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: cannot read %s: %v\n", p.target, err)
+			os.Exit(1)
+		}
+		if bytes.Equal([]byte(rendered), existing) {
+			fmt.Printf("ok        %s\n", p.target)
+			continue
+		}
+		drifted = true
+		fmt.Fprintf(os.Stderr, "%s\n", ui.FormatError(fmt.Sprintf("%s is out of date.", p.target)))
+		fmt.Fprintln(os.Stderr, printDiff(string(existing), rendered, p.target))
+		fmt.Fprintf(os.Stderr, "Run to fix:\n  blueprint render %s --template %s --output %s\n\n", file, p.tmpl, p.target)
+	}
+	if drifted {
+		os.Exit(1)
+	}
 }
 
 // Get extracts a single value from a blueprint and prints it to stdout.
-// action is e.g. "mise", key is e.g. "ruby".
 func Get(file, action, key string, preferSSH bool, cliVars map[string]string) {
 	rules := loadRulesForRender(file, preferSSH)
 	data := BuildTemplateData(rules, cliVars)
@@ -54,6 +112,54 @@ func Get(file, action, key string, preferSSH bool, cliVars map[string]string) {
 		os.Exit(1)
 	}
 	fmt.Println(val)
+}
+
+// collectTemplates returns all *.tmpl files under path.
+// If path is a file it returns [path].
+// If path is a directory it walks recursively, skipping files whose
+// basename starts with "_".
+func collectTemplates(path string) ([]string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("cannot access %s: %w", path, err)
+	}
+	if !info.IsDir() {
+		if !strings.HasSuffix(path, ".tmpl") {
+			return nil, fmt.Errorf("%s is not a .tmpl file", path)
+		}
+		return []string{path}, nil
+	}
+
+	var templates []string
+	err = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		base := filepath.Base(p)
+		if strings.HasPrefix(base, "_") {
+			return nil // skip partials
+		}
+		if strings.HasSuffix(base, ".tmpl") {
+			templates = append(templates, p)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error walking %s: %w", path, err)
+	}
+	if len(templates) == 0 {
+		return nil, fmt.Errorf("no *.tmpl files found in %s", path)
+	}
+	return templates, nil
+}
+
+// isDir reports whether path is a directory.
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // loadRulesForRender resolves and parses a blueprint, exiting on any error.
@@ -79,8 +185,8 @@ func loadRulesForRender(file string, preferSSH bool) []parser.Rule {
 	return rules
 }
 
-// renderTemplate renders tmplPath using data from rules, exiting on error.
-func renderTemplate(tmplPath string, rules []parser.Rule, cliVars map[string]string) string {
+// mustRenderTemplate renders a single template file, exiting on any error.
+func mustRenderTemplate(tmplPath string, rules []parser.Rule, cliVars map[string]string) string {
 	tmplContent, err := os.ReadFile(tmplPath) // #nosec G304 -- user-supplied path, intentional
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: cannot read template %s: %v\n", tmplPath, err)
@@ -89,8 +195,7 @@ func renderTemplate(tmplPath string, rules []parser.Rule, cliVars map[string]str
 
 	data := BuildTemplateData(rules, cliVars)
 
-	// option: missingkey=error makes unknown template calls fail loudly
-	tmpl, err := template.New("blueprint").
+	tmpl, err := template.New(filepath.Base(tmplPath)).
 		Option("missingkey=error").
 		Funcs(data.FuncMap()).
 		Parse(string(tmplContent))
@@ -101,7 +206,7 @@ func renderTemplate(tmplPath string, rules []parser.Rule, cliVars map[string]str
 
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, nil); err != nil {
-		fmt.Fprintf(os.Stderr, "error: template render error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %s: %v\n", tmplPath, err)
 		os.Exit(1)
 	}
 	return buf.String()
@@ -113,7 +218,7 @@ func writeOutput(content, output string) {
 		fmt.Print(content)
 		return
 	}
-	if err := os.WriteFile(output, []byte(content), 0o644); err != nil { // #nosec G306 -- rendered template files (Dockerfiles, CI configs) must be world-readable
+	if err := os.WriteFile(output, []byte(content), 0o644); err != nil { // #nosec G306 -- rendered template files must be world-readable
 		fmt.Fprintf(os.Stderr, "error: cannot write %s: %v\n", output, err)
 		os.Exit(1)
 	}

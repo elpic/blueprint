@@ -243,7 +243,7 @@ func main() {
 		engine.Validate(os.Args[2], preferSSH)
 	case "render":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint render <file.bp> --template <file.tmpl> [--output <path>] [--var KEY=VALUE] [--prefer-ssh]")
+			fmt.Println("Usage: blueprint render <file.bp> --template <file.tmpl|dir> [--output <path>] [--var KEY=VALUE] [--prefer-ssh]")
 			os.Exit(1)
 		}
 		file := os.Args[2]
@@ -265,14 +265,14 @@ func main() {
 			}
 		}
 		if tmplPath == "" {
-			fmt.Fprintln(os.Stderr, "error: --template <file.tmpl> is required")
+			fmt.Fprintln(os.Stderr, "error: --template <file.tmpl|dir> is required")
 			os.Exit(1)
 		}
 		cliVars := parseVarFlags(os.Args[3:])
 		engine.Render(file, tmplPath, output, preferSSH, cliVars)
 	case "check":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint check <file.bp> --template <file.tmpl> --against <file> [--var KEY=VALUE] [--prefer-ssh]")
+			fmt.Println("Usage: blueprint check <file.bp> --template <file.tmpl|dir> [--against <file>] [--var KEY=VALUE] [--prefer-ssh]")
 			os.Exit(1)
 		}
 		file := os.Args[2]
@@ -294,11 +294,7 @@ func main() {
 			}
 		}
 		if tmplPath == "" {
-			fmt.Fprintln(os.Stderr, "error: --template <file.tmpl> is required")
-			os.Exit(1)
-		}
-		if against == "" {
-			fmt.Fprintln(os.Stderr, "error: --against <file> is required")
+			fmt.Fprintln(os.Stderr, "error: --template <file.tmpl|dir> is required")
 			os.Exit(1)
 		}
 		cliVars := parseVarFlags(os.Args[3:])
