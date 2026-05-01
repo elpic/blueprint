@@ -36,6 +36,7 @@ func (d *TemplateData) FuncMap() template.FuncMap {
 		"homebrewCasks":    d.homebrewCasks,
 		"cloneURL":         d.cloneURL,
 		"var":              d.varValue,
+		"default":          d.varDefault,
 	}
 }
 
@@ -63,7 +64,7 @@ func (d *TemplateData) Get(action, key string) (string, error) {
 	case "var":
 		return d.varValue(key)
 	default:
-		return "", fmt.Errorf("unknown action %q: supported actions are mise, asdf, packages, homebrew, clone, var", action)
+		return "", fmt.Errorf("unknown action %q: supported actions are mise, asdf, packages, homebrew, clone, var, default", action)
 	}
 }
 
@@ -164,6 +165,23 @@ func (d *TemplateData) cloneURL(name string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("clone rule matching %q not found in blueprint", name)
+}
+
+// varDefault resolves a variable by name, returning fallback if not set.
+// Precedence: CLI --var > blueprint var rule > fallback (never errors).
+func (d *TemplateData) varDefault(name, fallback string) string {
+	if v, ok := d.cliVars[name]; ok {
+		return v
+	}
+	for _, r := range d.rules {
+		if r.Action != "var" || r.VarName != name {
+			continue
+		}
+		if !r.VarRequired {
+			return r.VarDefault
+		}
+	}
+	return fallback
 }
 
 // varValue resolves a variable by name. Precedence:

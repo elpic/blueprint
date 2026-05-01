@@ -282,6 +282,58 @@ func TestVar_InTemplate(t *testing.T) {
 	}
 }
 
+func TestVarDefault_UsesFallback(t *testing.T) {
+	d := BuildTemplateData(testRules(), nil)
+	v := d.varDefault("REGISTRY", "docker.io")
+	if v != "docker.io" {
+		t.Errorf("expected fallback docker.io, got %q", v)
+	}
+}
+
+func TestVarDefault_UsesBlueprintDefault(t *testing.T) {
+	rules := append(testRules(), parser.Rule{
+		Action:      "var",
+		VarName:     "REGISTRY",
+		VarDefault:  "ghcr.io",
+		VarRequired: false,
+	})
+	d := BuildTemplateData(rules, nil)
+	v := d.varDefault("REGISTRY", "docker.io")
+	if v != "ghcr.io" {
+		t.Errorf("expected blueprint default ghcr.io, got %q", v)
+	}
+}
+
+func TestVarDefault_CLIWins(t *testing.T) {
+	rules := append(testRules(), parser.Rule{
+		Action:      "var",
+		VarName:     "REGISTRY",
+		VarDefault:  "ghcr.io",
+		VarRequired: false,
+	})
+	d := BuildTemplateData(rules, map[string]string{"REGISTRY": "myorg.azurecr.io"})
+	v := d.varDefault("REGISTRY", "docker.io")
+	if v != "myorg.azurecr.io" {
+		t.Errorf("expected CLI value myorg.azurecr.io, got %q", v)
+	}
+}
+
+func TestVarDefault_InTemplate(t *testing.T) {
+	d := BuildTemplateData(testRules(), nil)
+	src := `FROM {{ default "REGISTRY" "docker.io" }}/python:3.12-slim`
+	tmpl, err := template.New("t").Funcs(d.FuncMap()).Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, nil); err != nil {
+		t.Fatal(err)
+	}
+	if buf.String() != "FROM docker.io/python:3.12-slim" {
+		t.Errorf("unexpected output: %s", buf.String())
+	}
+}
+
 func TestParseVarRule_WithDefault(t *testing.T) {
 	// Ensure the parser correctly populates var rules
 	rules := []parser.Rule{
