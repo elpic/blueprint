@@ -71,8 +71,10 @@ func resolveOutput(tmplPath, tmplRoot, outputRoot string) string {
 
 // Check parses a blueprint, renders tmplPath (file or directory), and compares
 // each rendered result against the corresponding committed file.
+// againstPath is used in single-file mode. outputRoot, when set, is used as the
+// root for resolving targets in directory mode (mirrors render --output behaviour).
 // Exits 0 when all are identical, 1 when any differ.
-func Check(file, tmplPath, againstPath string, preferSSH bool, cliVars map[string]string) {
+func Check(file, tmplPath, againstPath, outputRoot string, preferSSH bool, cliVars map[string]string) {
 	rules := loadRulesForRender(file, preferSSH)
 
 	templates, err := collectTemplates(tmplPath)
@@ -93,9 +95,10 @@ func Check(file, tmplPath, againstPath string, preferSSH bool, cliVars map[strin
 		}
 		pairs = []pair{{templates[0], againstPath}}
 	} else {
-		// Directory mode — target is template path with .tmpl stripped.
+		// Directory mode — resolve target using outputRoot when provided,
+		// otherwise fall back to the file next to the template.
 		for _, t := range templates {
-			pairs = append(pairs, pair{t, strings.TrimSuffix(t, ".tmpl")})
+			pairs = append(pairs, pair{t, resolveOutput(t, tmplPath, outputRoot)})
 		}
 	}
 
