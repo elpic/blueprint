@@ -44,12 +44,18 @@ func Render(file, tmplPath, output string, preferSSH bool, cliVars map[string]st
 
 	// Directory (or explicit multi) mode — validate all templates first,
 	// then write; fail before touching any file if any template errors.
+	// A local override (.tmpl file next to --output) shadows the remote template.
 	rendered := make(map[string]string, len(templates))
 	for _, t := range templates {
-		rendered[t] = mustRenderTemplate(t, rules, cliVars)
+		if override := localOverride(t, tmplRoot, output); override != "" {
+			rendered[t] = mustRenderTemplate(override, rules, cliVars)
+		} else {
+			rendered[t] = mustRenderTemplate(t, rules, cliVars)
+		}
 	}
 	for _, t := range templates {
 		out := resolveOutput(t, tmplRoot, output)
+		override := localOverride(t, tmplRoot, output)
 		if err := os.MkdirAll(filepath.Dir(out), 0o750); err != nil { // #nosec G301 -- output directories must be group-readable
 			fmt.Fprintf(os.Stderr, "error: cannot create directory for %s: %v\n", out, err)
 			os.Exit(1)
@@ -58,8 +64,32 @@ func Render(file, tmplPath, output string, preferSSH bool, cliVars map[string]st
 			fmt.Fprintf(os.Stderr, "error: cannot write %s: %v\n", out, err)
 			os.Exit(1)
 		}
-		fmt.Printf("rendered  %s\n", out)
+		if override != "" {
+			fmt.Printf("rendered  %s (local override)\n", out)
+		} else {
+			fmt.Printf("rendered  %s\n", out)
+		}
 	}
+}
+
+// localOverride returns the path to a local .tmpl file that overrides the given
+// remote template, or "" if no override exists.
+// The override is looked up by taking the template's relative path from tmplRoot,
+// appending .tmpl, and checking if it exists relative to the output root (or cwd).
+func localOverride(tmplPath, tmplRoot, outputRoot string) string {
+	rel, err := filepath.Rel(tmplRoot, tmplPath)
+	if err != nil {
+		return ""
+	}
+	base := outputRoot
+	if base == "" {
+		base = "."
+	}
+	candidate := filepath.Join(base, rel)
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate
+	}
+	return ""
 }
 
 // resolveOutput computes the output path for a template in directory mode.
