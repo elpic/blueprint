@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"text/template"
@@ -37,6 +38,7 @@ func (d *TemplateData) FuncMap() template.FuncMap {
 		"cloneURL":         d.cloneURL,
 		"var":              d.varValue,
 		"default":          d.varDefault,
+		"toArgs":           toArgs,
 	}
 }
 
@@ -223,6 +225,15 @@ func (d *TemplateData) varValue(name string) (string, error) {
 		return r.VarDefault, nil
 	}
 	return "", fmt.Errorf("variable %q is not defined in the blueprint\nhint: add \"var %s <default>\" to your blueprint or pass --var %s=<value>", name, name, name)
+}
+
+// toArgs converts a whitespace-separated command string into a JSON exec-form
+// array suitable for use in a Dockerfile CMD or ENTRYPOINT instruction.
+// Example: toArgs("python -m myapp") → ["python", "-m", "myapp"]
+func toArgs(cmd string) string {
+	parts := strings.Fields(cmd)
+	b, _ := json.Marshal(parts)
+	return string(b)
 }
 
 // splitToolVersion splits "tool@version" into (tool, version, true).
