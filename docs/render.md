@@ -102,28 +102,70 @@ Run to fix:
 
 ### `blueprint get`
 
-Returns the value of a single field from the blueprint. Useful in Makefiles and shell scripts without needing a template.
+Returns the value of a single field from the blueprint. Useful in Makefiles, shell scripts, and CI pipelines without needing a full template.
 
 ```
 blueprint get <file.bp> <action> <key>
 ```
 
+**Versions:**
 ```bash
 blueprint get setup.bp mise python      # → 3.13
 blueprint get setup.bp mise ruby        # → 3.3.0
 blueprint get setup.bp asdf nodejs      # → 21.4.0
+```
+
+**Packages:**
+```bash
+blueprint get setup.bp packages              # → git curl libpq5 (all packages)
+blueprint get setup.bp packages apt          # → git curl (filtered by package manager)
+blueprint get setup.bp packages /build       # → libpq-dev (build-stage only)
+blueprint get setup.bp packages /runtime     # → libpq5 (runtime-stage only)
+blueprint get setup.bp packages apt/runtime  # → libpq5 (by pm and stage)
+```
+
+**Variables:**
+```bash
+blueprint get setup.bp var APP_NAME          # → myapp (required var — errors if not set)
+blueprint get setup.bp default PORT          # → 8000 (optional var — empty string if not set)
+blueprint get setup.bp default PORT/9000     # → 9000 (optional var with explicit fallback)
+```
+
+**Homebrew:**
+```bash
 blueprint get setup.bp homebrew formula # → wget jq
 blueprint get setup.bp homebrew cask    # → docker rectangle
-blueprint get setup.bp packages         # → git curl vim
-blueprint get setup.bp var APP_NAME     # → myapp
+```
+
+**Clone URLs:**
+```bash
+blueprint get setup.bp clone myapp      # → https://github.com/user/myapp
 ```
 
 **Makefile example:**
 ```makefile
 PYTHON_VERSION := $(shell blueprint get setup.bp mise python)
+APP_NAME       := $(shell blueprint get setup.bp var APP_NAME)
+PORT           := $(shell blueprint get setup.bp default PORT/8000)
 
 build:
-	docker build --build-arg PYTHON_VERSION=$(PYTHON_VERSION) .
+	docker build \
+	  --build-arg PYTHON_VERSION=$(PYTHON_VERSION) \
+	  --build-arg APP_NAME=$(APP_NAME) \
+	  -t $(APP_NAME) .
+
+run:
+	docker run -p $(PORT):$(PORT) $(APP_NAME)
+```
+
+**Shell script example:**
+```bash
+#!/bin/sh
+PYTHON=$(blueprint get setup.bp mise python)
+APP=$(blueprint get setup.bp var APP_NAME)
+
+echo "Building $APP with Python $PYTHON"
+docker build --build-arg PYTHON_VERSION="$PYTHON" -t "$APP" .
 ```
 
 ---

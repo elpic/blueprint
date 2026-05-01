@@ -72,6 +72,14 @@ func (d *TemplateData) Get(action, key string) (string, error) {
 		return d.cloneURL(key)
 	case "var":
 		return d.varValue(key)
+	case "default":
+		// key format: "NAME/fallback" or just "NAME" (fallback defaults to "")
+		parts := strings.SplitN(key, "/", 2)
+		fallback := ""
+		if len(parts) > 1 {
+			fallback = parts[1]
+		}
+		return d.varDefault(parts[0], fallback), nil
 	default:
 		return "", fmt.Errorf("unknown action %q: supported actions are mise, asdf, packages, homebrew, clone, var, default", action)
 	}
