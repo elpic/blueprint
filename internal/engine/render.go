@@ -41,13 +41,32 @@ func Render(file, tmplPath, output string, preferSSH bool, cliVars map[string]st
 		rendered[t] = mustRenderTemplate(t, rules, cliVars)
 	}
 	for _, t := range templates {
-		out := strings.TrimSuffix(t, ".tmpl")
+		out := resolveOutput(t, tmplPath, output)
+		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "error: cannot create directory for %s: %v\n", out, err)
+			os.Exit(1)
+		}
 		if err := os.WriteFile(out, []byte(rendered[t]), 0o644); err != nil { // #nosec G306 -- rendered template files must be world-readable
 			fmt.Fprintf(os.Stderr, "error: cannot write %s: %v\n", out, err)
 			os.Exit(1)
 		}
 		fmt.Printf("rendered  %s\n", out)
 	}
+}
+
+// resolveOutput computes the output path for a template in directory mode.
+// When outputRoot is set, the template's path relative to tmplRoot is preserved
+// and rooted at outputRoot. Without outputRoot, output is written next to the template.
+func resolveOutput(tmplPath, tmplRoot, outputRoot string) string {
+	name := strings.TrimSuffix(tmplPath, ".tmpl")
+	if outputRoot == "" {
+		return name
+	}
+	rel, err := filepath.Rel(tmplRoot, name)
+	if err != nil {
+		return name
+	}
+	return filepath.Join(outputRoot, rel)
 }
 
 // Check parses a blueprint, renders tmplPath (file or directory), and compares
