@@ -102,6 +102,11 @@ type Rule struct {
 	VarName     string // Variable name
 	VarDefault  string // Default value (empty string means required)
 	VarRequired bool   // True when no default was provided
+
+	// Render-specific fields
+	RenderTemplate string   // Template file or directory (local path or @github: shorthand)
+	RenderOutput   string   // Output destination (defaults to ".")
+	RenderVars     []string // KEY=VALUE variable overrides
 }
 
 type parseEntry struct {
@@ -131,6 +136,7 @@ var parsers = []parseEntry{
 	{"shell ", ParseShellRule},
 	{"authorized_keys ", ParseAuthorizedKeysRule},
 	{"var ", ParseVarRule},
+	{"render ", ParseRenderRule},
 }
 
 // Parse parses content without include support
@@ -727,6 +733,31 @@ func ParseAuthorizedKeysRule(line string) (*Rule, error) {
 
 // ParseVarRule parses "var NAME [default]" lines.
 // If no default is provided the variable is required at render time.
+// ParseRenderRule parses a render action line.
+// Syntax: render <template> [output: <path>] [var: KEY=VALUE ...]
+// template may be a local path or @github: shorthand.
+// output defaults to "." (current directory).
+func ParseRenderRule(line string) (*Rule, error) {
+	rest := strings.TrimPrefix(line, "render ")
+	f := parseFields(rest)
+	if len(f.tokens) == 0 {
+		return nil, lineError(line, "render requires a template path")
+	}
+	output := f.word("output:")
+	if output == "" {
+		output = "."
+	}
+	return &Rule{
+		ID:             fmt.Sprintf("render-%s", f.tokens[0]),
+		Action:         "render",
+		RenderTemplate: f.tokens[0],
+		RenderOutput:   output,
+		RenderVars:     f.list("var:"),
+		OSList:         f.osFilter,
+		After:          f.list("after:"),
+	}, nil
+}
+
 func ParseVarRule(line string) (*Rule, error) {
 	rest := strings.TrimPrefix(line, "var ")
 	tokens := strings.Fields(rest)

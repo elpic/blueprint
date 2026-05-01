@@ -7,10 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"text/template"
 
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/renderer"
 	"github.com/elpic/blueprint/internal/ui"
 )
 
@@ -20,91 +20,16 @@ import (
 // output is used only for single-file mode ("" → stdout, path → file).
 func Render(file, tmplPath, output string, preferSSH bool, cliVars map[string]string) {
 	rules := loadRulesForRender(file, preferSSH)
-
-	localTmpl, tmplRoot, cleanup, err := resolveTemplatePath(tmplPath, preferSSH)
-	if err != nil {
+	if err := renderer.RenderWithRules(rules, tmplPath, output, preferSSH, cliVars); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-	defer cleanup()
-	tmplPath = localTmpl
-
-	templates, err := collectTemplates(tmplPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-
-	if len(templates) == 1 && !isDir(tmplPath) {
-		// Single-file mode — respect --output / stdout
-		result := mustRenderTemplate(templates[0], rules, cliVars)
-		writeOutput(result, output)
-		return
-	}
-
-	// Directory (or explicit multi) mode — validate all templates first,
-	// then write; fail before touching any file if any template errors.
-	// A local override (.tmpl file next to --output) shadows the remote template.
-	rendered := make(map[string]string, len(templates))
-	for _, t := range templates {
-		if override := localOverride(t, tmplRoot, output); override != "" {
-			rendered[t] = mustRenderTemplate(override, rules, cliVars)
-		} else {
-			rendered[t] = mustRenderTemplate(t, rules, cliVars)
-		}
-	}
-	for _, t := range templates {
-		out := resolveOutput(t, tmplRoot, output)
-		override := localOverride(t, tmplRoot, output)
-		if err := os.MkdirAll(filepath.Dir(out), 0o750); err != nil { // #nosec G301 -- output directories must be group-readable
-			fmt.Fprintf(os.Stderr, "error: cannot create directory for %s: %v\n", out, err)
-			os.Exit(1)
-		}
-		if err := os.WriteFile(out, []byte(rendered[t]), 0o644); err != nil { // #nosec G306 -- rendered template files must be world-readable
-			fmt.Fprintf(os.Stderr, "error: cannot write %s: %v\n", out, err)
-			os.Exit(1)
-		}
-		if override != "" {
-			fmt.Printf("rendered  %s (local override)\n", out)
-		} else {
-			fmt.Printf("rendered  %s\n", out)
-		}
-	}
 }
 
-// localOverride returns the path to a local .tmpl file that overrides the given
-// remote template, or "" if no override exists.
-// The override is looked up by taking the template's relative path from tmplRoot,
-// appending .tmpl, and checking if it exists relative to the output root (or cwd).
-func localOverride(tmplPath, tmplRoot, outputRoot string) string {
-	rel, err := filepath.Rel(tmplRoot, tmplPath)
-	if err != nil {
-		return ""
-	}
-	base := outputRoot
-	if base == "" {
-		base = "."
-	}
-	candidate := filepath.Join(base, rel)
-	if _, err := os.Stat(candidate); err == nil {
-		return candidate
-	}
-	return ""
-}
-
-// resolveOutput computes the output path for a template in directory mode.
-// When outputRoot is set, the template's path relative to tmplRoot is preserved
-// and rooted at outputRoot. Without outputRoot, output is written next to the template.
-func resolveOutput(tmplPath, tmplRoot, outputRoot string) string {
-	name := strings.TrimSuffix(tmplPath, ".tmpl")
-	if outputRoot == "" {
-		return name
-	}
-	rel, err := filepath.Rel(tmplRoot, name)
-	if err != nil {
-		return name
-	}
-	return filepath.Join(outputRoot, rel)
+// RenderWithRules renders tmplPath using pre-parsed rules. Used by the render
+// blueprint action so the rules don't need to be re-parsed from a file.
+func RenderWithRules(rules []parser.Rule, tmplPath, output string, preferSSH bool, cliVars map[string]string) error {
+	return renderer.RenderWithRules(rules, tmplPath, output, preferSSH, cliVars)
 }
 
 // Check parses a blueprint, renders tmplPath (file or directory), and compares
@@ -115,7 +40,7 @@ func resolveOutput(tmplPath, tmplRoot, outputRoot string) string {
 func Check(file, tmplPath, against string, preferSSH bool, cliVars map[string]string) {
 	rules := loadRulesForRender(file, preferSSH)
 
-	localTmpl, tmplRoot, cleanup, err := resolveTemplatePath(tmplPath, preferSSH)
+	localTmpl, tmplRoot, cleanup, err := renderer.ResolveTemplatePath(tmplPath, preferSSH)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -141,11 +66,8 @@ func Check(file, tmplPath, against string, preferSSH bool, cliVars map[string]st
 		}
 		pairs = []pair{{templates[0], against}}
 	} else {
-		// Directory mode — when --against is a directory, use it as the output
-		// root (same logic as render --output). Without --against, fall back to
-		// the file next to each template.
 		for _, t := range templates {
-			pairs = append(pairs, pair{t, resolveOutput(t, tmplRoot, against)})
+			pairs = append(pairs, pair{t, renderer.ResolveOutput(t, tmplRoot, against)})
 		}
 	}
 
@@ -174,7 +96,7 @@ func Check(file, tmplPath, against string, preferSSH bool, cliVars map[string]st
 // Get extracts a single value from a blueprint and prints it to stdout.
 func Get(file, action, key string, preferSSH bool, cliVars map[string]string) {
 	rules := loadRulesForRender(file, preferSSH)
-	data := BuildTemplateData(rules, cliVars)
+	data := renderer.BuildTemplateData(rules, cliVars)
 	val, err := data.Get(action, key)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -254,85 +176,14 @@ func loadRulesForRender(file string, preferSSH bool) []parser.Rule {
 	return rules
 }
 
-// resolveTemplatePath resolves --template to a local filesystem path.
-// If tmplPath is a git URL or @provider: shorthand, the repo is cloned/updated
-// to the blueprint cache and the path within the repo is returned.
-// Returns (localPath, rootForRelativeCalc, cleanup, error).
-// For local paths: localPath == tmplPath, rootForRelativeCalc == tmplPath.
-// For remote paths: localPath is the directory inside the clone, rootForRelativeCalc == localPath.
-func resolveTemplatePath(tmplPath string, preferSSH bool) (local, root string, cleanup func(), err error) {
-	cleanup = func() {}
-
-	var expanded string
-	if preferSSH {
-		expanded = gitpkg.ExpandShorthandSSH(tmplPath)
-	} else {
-		expanded = gitpkg.ExpandShorthand(tmplPath)
-	}
-
-	if !gitpkg.IsGitURL(expanded) {
-		return tmplPath, tmplPath, cleanup, nil
-	}
-
-	params := gitpkg.ParseGitURL(expanded)
-	localRepo := blueprintRepoPath(expanded)
-
-	if _, _, _, cloneErr := gitpkg.CloneOrUpdateRepository(params.URL, localRepo, params.Branch); cloneErr != nil {
-		return "", "", cleanup, fmt.Errorf("error cloning template repository: %w", cloneErr)
-	}
-
-	// params.Path defaults to "setup.bp" for blueprint files, but for templates
-	// there is no default — an empty path means the repo root.
-	tmplDir := localRepo
-	if params.Path != "" && params.Path != "setup.bp" {
-		tmplDir = filepath.Join(localRepo, filepath.FromSlash(params.Path))
-	}
-
-	if _, statErr := os.Stat(tmplDir); statErr != nil {
-		return "", "", cleanup, fmt.Errorf("template path %q not found in repository", params.Path)
-	}
-
-	return tmplDir, tmplDir, cleanup, nil
-}
-
 // mustRenderTemplate renders a single template file, exiting on any error.
 func mustRenderTemplate(tmplPath string, rules []parser.Rule, cliVars map[string]string) string {
-	tmplContent, err := os.ReadFile(tmplPath) // #nosec G304 -- user-supplied path, intentional
+	result, err := renderer.RenderTemplate(tmplPath, rules, cliVars)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: cannot read template %s: %v\n", tmplPath, err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-
-	data := BuildTemplateData(rules, cliVars)
-
-	tmpl, err := template.New(filepath.Base(tmplPath)).
-		Option("missingkey=error").
-		Funcs(data.FuncMap()).
-		Parse(string(tmplContent))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: template parse error in %s: %v\n", tmplPath, err)
-		os.Exit(1)
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, nil); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %s: %v\n", tmplPath, err)
-		os.Exit(1)
-	}
-	return buf.String()
-}
-
-// writeOutput writes content to a file or stdout.
-func writeOutput(content, output string) {
-	if output == "" {
-		fmt.Print(content)
-		return
-	}
-	if err := os.WriteFile(output, []byte(content), 0o644); err != nil { // #nosec G306 -- rendered template files must be world-readable
-		fmt.Fprintf(os.Stderr, "error: cannot write %s: %v\n", output, err)
-		os.Exit(1)
-	}
-	fmt.Printf("Written to %s\n", output)
+	return result
 }
 
 // printDiff produces a simple unified-style diff between old and new strings.
