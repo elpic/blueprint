@@ -5,17 +5,104 @@ package renderer
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"text/template"
 
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
 )
+
+// TemplateFuncEntry pairs a template function name with a factory that binds
+// the function to a specific *TemplateData instance.
+type TemplateFuncEntry struct {
+	Name    string
+	Factory func(d *TemplateData) interface{}
+}
+
+var (
+	templateFuncMu        sync.RWMutex
+	templateFuncProviders []TemplateFuncEntry
+
+	getHandlerMu sync.RWMutex
+	getHandlers  = map[string]func(d *TemplateData, key string) (string, error){}
+)
+
+// RegisterTemplateFuncs appends entries to the global template-function registry.
+// Panics on duplicate names to catch wiring bugs at startup.
+func RegisterTemplateFuncs(entries []TemplateFuncEntry) {
+	templateFuncMu.Lock()
+	defer templateFuncMu.Unlock()
+	for _, e := range entries {
+		for _, existing := range templateFuncProviders {
+			if existing.Name == e.Name {
+				panic("renderer: duplicate template func: " + e.Name)
+			}
+		}
+		templateFuncProviders = append(templateFuncProviders, e)
+	}
+}
+
+// RegisterGetHandler registers a handler for blueprint get queries.
+// Panics on duplicate action names.
+func RegisterGetHandler(action string, handler func(d *TemplateData, key string) (string, error)) {
+	getHandlerMu.Lock()
+	defer getHandlerMu.Unlock()
+	if _, exists := getHandlers[action]; exists {
+		panic("renderer: duplicate get handler: " + action)
+	}
+	getHandlers[action] = handler
+}
+
+// TemplateData holds all values extractable from a parsed blueprint for use
+// in templates and blueprint get queries.
+type TemplateData struct {
+	rules   []parser.Rule
+	cliVars map[string]string
+}
+
+// BuildTemplateData constructs a TemplateData from a slice of rules.
+func BuildTemplateData(rules []parser.Rule, cliVars map[string]string) *TemplateData {
+	if cliVars == nil {
+		cliVars = map[string]string{}
+	}
+	return &TemplateData{rules: rules, cliVars: cliVars}
+}
+
+// FuncMap returns the template function map built from all registered providers.
+func (d *TemplateData) FuncMap() template.FuncMap {
+	templateFuncMu.RLock()
+	defer templateFuncMu.RUnlock()
+	m := make(template.FuncMap, len(templateFuncProviders))
+	for _, e := range templateFuncProviders {
+		m[e.Name] = e.Factory(d)
+	}
+	return m
+}
+
+// Get returns the value for a (action, key) query. Used by blueprint get.
+func (d *TemplateData) Get(action, key string) (string, error) {
+	getHandlerMu.RLock()
+	handler, ok := getHandlers[action]
+	getHandlerMu.RUnlock()
+
+	if !ok {
+		getHandlerMu.RLock()
+		names := make([]string, 0, len(getHandlers))
+		for k := range getHandlers {
+			names = append(names, k)
+		}
+		getHandlerMu.RUnlock()
+		sort.Strings(names)
+		return "", fmt.Errorf("unknown action %q: supported actions are %s", action, strings.Join(names, ", "))
+	}
+	return handler(d, key)
+}
 
 // RenderWithRules renders tmplPath (file or directory) against the given rules.
 // cliVars are KEY=VALUE overrides that take precedence over blueprint var rules.
@@ -232,216 +319,4 @@ func blueprintRepoPath(rawURL string) string {
 	normalized = strings.TrimPrefix(normalized, "git://")
 	normalized = strings.TrimSuffix(normalized, ".git")
 	return filepath.Join(homeDir, ".blueprint", "repos", normalized)
-}
-
-// TemplateData holds all values extractable from a parsed blueprint for use
-// in templates and blueprint get queries.
-type TemplateData struct {
-	rules   []parser.Rule
-	cliVars map[string]string
-}
-
-// BuildTemplateData constructs a TemplateData from a slice of rules.
-func BuildTemplateData(rules []parser.Rule, cliVars map[string]string) *TemplateData {
-	if cliVars == nil {
-		cliVars = map[string]string{}
-	}
-	return &TemplateData{rules: rules, cliVars: cliVars}
-}
-
-// FuncMap returns the template function map.
-func (d *TemplateData) FuncMap() template.FuncMap {
-	return template.FuncMap{
-		"mise":             d.miseVersion,
-		"asdf":             d.asdfVersion,
-		"packages":         d.packages,
-		"homebrewFormulas": d.homebrewFormulas,
-		"homebrewCasks":    d.homebrewCasks,
-		"cloneURL":         d.cloneURL,
-		"var":              d.varValue,
-		"default":          d.varDefault,
-		"toArgs":           toArgs,
-	}
-}
-
-// Get returns the value for a (action, key) query. Used by blueprint get.
-func (d *TemplateData) Get(action, key string) (string, error) {
-	switch action {
-	case "mise":
-		return d.miseVersion(key)
-	case "asdf":
-		return d.asdfVersion(key)
-	case "packages":
-		parts := strings.SplitN(key, "/", 2)
-		pm := parts[0]
-		stage := ""
-		if len(parts) > 1 {
-			stage = parts[1]
-		}
-		return d.packages(pm, stage), nil
-	case "homebrew":
-		switch key {
-		case "formula", "formulas":
-			return d.homebrewFormulas(), nil
-		case "cask", "casks":
-			return d.homebrewCasks(), nil
-		default:
-			return "", fmt.Errorf("unknown homebrew key %q: use \"formula\" or \"cask\"", key)
-		}
-	case "clone":
-		return d.cloneURL(key)
-	case "var":
-		return d.varValue(key)
-	case "default":
-		parts := strings.SplitN(key, "/", 2)
-		fallback := ""
-		if len(parts) > 1 {
-			fallback = parts[1]
-		}
-		return d.varDefault(parts[0], fallback), nil
-	default:
-		return "", fmt.Errorf("unknown action %q: supported actions are mise, asdf, packages, homebrew, clone, var, default", action)
-	}
-}
-
-func (d *TemplateData) miseVersion(tool string) (string, error) {
-	for _, r := range d.rules {
-		if r.Action != "mise" {
-			continue
-		}
-		for _, pkg := range r.MisePackages {
-			name, version, ok := splitToolVersion(pkg)
-			if !ok {
-				continue
-			}
-			if strings.EqualFold(name, tool) {
-				return version, nil
-			}
-		}
-	}
-	return "", fmt.Errorf("mise tool %q not found in blueprint", tool)
-}
-
-func (d *TemplateData) asdfVersion(tool string) (string, error) {
-	for _, r := range d.rules {
-		if r.Action != "asdf" {
-			continue
-		}
-		for _, pkg := range r.AsdfPackages {
-			name, version, ok := splitToolVersion(pkg)
-			if !ok {
-				continue
-			}
-			if strings.EqualFold(name, tool) {
-				return version, nil
-			}
-		}
-	}
-	return "", fmt.Errorf("asdf tool %q not found in blueprint", tool)
-}
-
-func (d *TemplateData) packages(filters ...string) string {
-	pmFilter := ""
-	stageFilter := ""
-	if len(filters) > 0 {
-		pmFilter = filters[0]
-	}
-	if len(filters) > 1 {
-		stageFilter = filters[1]
-	}
-	var names []string
-	for _, r := range d.rules {
-		if r.Action != "install" {
-			continue
-		}
-		for _, pkg := range r.Packages {
-			if pmFilter != "" && !strings.EqualFold(pkg.PackageManager, pmFilter) {
-				continue
-			}
-			if stageFilter != "" && !strings.EqualFold(pkg.Stage, stageFilter) {
-				continue
-			}
-			names = append(names, pkg.Name)
-		}
-	}
-	return strings.Join(names, " ")
-}
-
-func (d *TemplateData) homebrewFormulas() string {
-	var names []string
-	for _, r := range d.rules {
-		if r.Action != "homebrew" {
-			continue
-		}
-		names = append(names, r.HomebrewPackages...)
-	}
-	return strings.Join(names, " ")
-}
-
-func (d *TemplateData) homebrewCasks() string {
-	var names []string
-	for _, r := range d.rules {
-		if r.Action != "homebrew" {
-			continue
-		}
-		names = append(names, r.HomebrewCasks...)
-	}
-	return strings.Join(names, " ")
-}
-
-func (d *TemplateData) cloneURL(name string) (string, error) {
-	for _, r := range d.rules {
-		if r.Action != "clone" {
-			continue
-		}
-		if strings.Contains(r.ClonePath, name) || strings.Contains(r.CloneURL, name) {
-			return r.CloneURL, nil
-		}
-	}
-	return "", fmt.Errorf("clone rule matching %q not found in blueprint", name)
-}
-
-func (d *TemplateData) varDefault(name, fallback string) string {
-	if v, ok := d.cliVars[name]; ok {
-		return v
-	}
-	for _, r := range d.rules {
-		if r.Action != "var" || r.VarName != name {
-			continue
-		}
-		if !r.VarRequired {
-			return r.VarDefault
-		}
-	}
-	return fallback
-}
-
-func (d *TemplateData) varValue(name string) (string, error) {
-	if v, ok := d.cliVars[name]; ok {
-		return v, nil
-	}
-	for _, r := range d.rules {
-		if r.Action != "var" || r.VarName != name {
-			continue
-		}
-		if r.VarRequired {
-			return "", fmt.Errorf("variable %q is required but was not set\nhint: pass it with --var %s=<value>", name, name)
-		}
-		return r.VarDefault, nil
-	}
-	return "", fmt.Errorf("variable %q is not defined in the blueprint\nhint: add \"var %s <default>\" to your blueprint or pass --var %s=<value>", name, name, name)
-}
-
-func toArgs(cmd string) string {
-	parts := strings.Fields(cmd)
-	b, _ := json.Marshal(parts)
-	return string(b)
-}
-
-func splitToolVersion(s string) (string, string, bool) {
-	idx := strings.Index(s, "@")
-	if idx < 0 {
-		return "", "", false
-	}
-	return s[:idx], s[idx+1:], true
 }
