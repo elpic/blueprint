@@ -108,6 +108,12 @@ func parsePositiveInt(s, flagName string) (int, bool) {
 }
 
 func main() {
+	// When invoked via `go run`, os.Args[0] is a temp binary like /tmp/go-build.../exe/blueprint.
+	// Detect this and set the hint name so "Run to fix" suggestions are copy-pasteable.
+	if strings.Contains(os.Args[0], "go-build") {
+		engine.ExecutableName = "go run ./cmd/blueprint"
+	}
+
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: blueprint <plan|apply|encrypt|export|status|history|ps|slow|diff|doctor|validate|version> [<file|run_number>]")
 		os.Exit(1)

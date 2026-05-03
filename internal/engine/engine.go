@@ -11,6 +11,10 @@ import (
 	"github.com/elpic/blueprint/internal/ui"
 )
 
+// ExecutableName is the name to use in user-facing command hints (e.g. "Run to fix").
+// Defaults to "blueprint"; set to "go run ./cmd/blueprint" when running via go run.
+var ExecutableName = "blueprint"
+
 type ExecutionRecord struct {
 	Timestamp  string `json:"timestamp"`
 	Blueprint  string `json:"blueprint"`
@@ -87,6 +91,17 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 	if err != nil {
 		fmt.Println("Parse error:", err)
 		return
+	}
+
+	// Interpolate ${VAR_NAME} in all rules before any further processing so that
+	// paths like ${WORKSPACE}/repo are resolved consistently everywhere — OS
+	// filtering, skip/only flags, auto-uninstall comparisons, execution, and
+	// status saving all see the same expanded values.
+	{
+		vars := resolveVarMap(rules, nil)
+		for i, r := range rules {
+			rules[i] = interpolateRule(r, vars)
+		}
 	}
 
 	// Filter rules by current OS first, before applying skip flags.

@@ -1797,3 +1797,51 @@ func TestParseContentEdgeCases(t *testing.T) {
 		})
 	}
 }
+
+func TestParseCloneRule_Workdir(t *testing.T) {
+	t.Run("workdir flag sets CloneWorkdir true", func(t *testing.T) {
+		rules, err := Parse("clone git@github.com:org/repo.git to: ~/workspace/repo workdir: true on: [mac, linux]")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(rules) != 1 {
+			t.Fatalf("expected 1 rule, got %d", len(rules))
+		}
+		r := rules[0]
+		if !r.CloneWorkdir {
+			t.Errorf("CloneWorkdir should be true when workdir: is present")
+		}
+		if r.CloneURL != "git@github.com:org/repo.git" {
+			t.Errorf("unexpected CloneURL: %q", r.CloneURL)
+		}
+		if r.ClonePath != "~/workspace/repo" {
+			t.Errorf("unexpected ClonePath: %q", r.ClonePath)
+		}
+	})
+
+	t.Run("no workdir flag leaves CloneWorkdir false", func(t *testing.T) {
+		rules, err := Parse("clone git@github.com:org/repo.git to: ~/workspace/repo on: [mac]")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(rules) != 1 {
+			t.Fatalf("expected 1 rule, got %d", len(rules))
+		}
+		if rules[0].CloneWorkdir {
+			t.Errorf("CloneWorkdir should be false when workdir: is absent")
+		}
+	})
+
+	t.Run("workdir: true at end of line", func(t *testing.T) {
+		rules, err := Parse("clone git@github.com:org/repo.git to: ~/ws/repo workdir: true")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(rules) != 1 {
+			t.Fatalf("expected 1 rule, got %d", len(rules))
+		}
+		if !rules[0].CloneWorkdir {
+			t.Errorf("CloneWorkdir should be true when workdir: is at end of line")
+		}
+	})
+}

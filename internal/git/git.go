@@ -877,3 +877,36 @@ func cloneOrUpdateRepositoryTwoStageImpl(url, targetPath, branch string) (string
 
 	return oldStorageSHA, newStorageSHA, status, nil
 }
+
+// CloneOrUpdateRepositoryDirect clones url into targetPath preserving the .git
+// directory, making it a fully functional working copy. When the directory
+// already exists it does a git pull (fast-forward only) instead of re-cloning.
+// Returns (oldSHA, newSHA, status, error) — same contract as CloneOrUpdateRepository.
+func CloneOrUpdateRepositoryDirect(url, targetPath, branch string) (string, string, string, error) {
+	// Expand tilde
+	expanded := targetPath
+	if strings.HasPrefix(targetPath, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", "", "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		expanded = filepath.Join(homeDir, targetPath[2:])
+	}
+
+	if err := os.MkdirAll(filepath.Dir(expanded), 0o750); err != nil {
+		return "", "", "", fmt.Errorf("failed to create parent directory: %w", err)
+	}
+
+	info, err := os.Stat(expanded)
+	exists := err == nil && info.IsDir()
+
+	if !exists {
+		// Fresh clone — delegate to CloneOrUpdateRepository which handles
+		// SSH/HTTPS fallback and go-git vs system git negotiation.
+		old, new, status, cloneErr := CloneOrUpdateRepository(url, expanded, branch)
+		return old, new, status, cloneErr
+	}
+
+	// Directory already exists — pull instead of re-clone.
+	return CloneOrUpdateRepository(url, expanded, branch)
+}
