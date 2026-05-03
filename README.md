@@ -156,6 +156,83 @@ The exported script is fully standalone: it bootstraps prerequisites (homebrew, 
 
 Actions that cannot be exported (like `decrypt`) are shown as skipped with guidance on how to run them via blueprint directly.
 
+### Template Rendering & Drift Detection
+
+Use your blueprint as a single source of truth for generated files — Dockerfiles, CI configs, Makefiles, shell scripts — and catch drift before it causes problems.
+
+**Render a single template:**
+```bash
+blueprint render setup.bp --template Dockerfile.tmpl --output Dockerfile
+```
+
+**Render an entire directory at once:**
+```bash
+blueprint render setup.bp --template ./templates --output .
+```
+
+**Render from a shared remote template library:**
+```bash
+blueprint render setup.bp \
+  --template @github:org/templates@main:containers/python \
+  --output . \
+  --var APP_NAME=myapp
+```
+
+**Example `Dockerfile.tmpl`:**
+```dockerfile
+FROM python:{{ mise "python" }}-slim
+
+RUN apt-get install -y --no-install-recommends \
+    {{ packages "" "runtime" }}
+
+EXPOSE {{ default "PORT" "8000" }}
+CMD {{ default "CMD" "python -m myapp" | toArgs }}
+```
+
+**Check for drift in CI** (exits `1` with a diff if any file is out of date):
+```yaml
+- name: Check Dockerfiles are up to date
+  run: |
+    blueprint check setup.bp \
+      --template @github:org/templates@main:containers/python \
+      --against . \
+      --var APP_NAME=myapp
+```
+
+**Local overrides** — drop a `.tmpl` file next to your `setup.bp` to shadow a remote template. Everything else still comes from the shared library:
+```bash
+# entrypoint.sh.tmpl exists locally → used instead of the remote version
+blueprint render setup.bp --template @github:org/templates@main:containers/python --output .
+# rendered  Dockerfile
+# rendered  entrypoint.sh (local override)
+```
+
+**Query a single value** (useful in Makefiles and shell scripts):
+```bash
+blueprint get setup.bp mise python     # → 3.13
+blueprint get setup.bp var APP_NAME    # → myapp
+
+PYTHON_VERSION := $(shell blueprint get setup.bp mise python)
+docker build --build-arg PYTHON_VERSION=$(PYTHON_VERSION) .
+```
+
+**Available template functions:**
+
+| Function | Returns |
+|----------|---------|
+| `{{ mise "python" }}` | Version pinned in `mise:` rule |
+| `{{ asdf "nodejs" }}` | Version pinned in `asdf:` rule |
+| `{{ packages }}` | All `install:` packages, space-separated |
+| `{{ packages "" "build" }}` | Build-stage packages only |
+| `{{ packages "" "runtime" }}` | Runtime-stage packages only |
+| `{{ var "KEY" }}` | Required variable — errors if not set |
+| `{{ default "KEY" "fallback" }}` | Optional variable with fallback |
+| `{{ toArgs "cmd arg" }}` | String → JSON exec-form array |
+| `{{ homebrewFormulas }}` | All homebrew formulas |
+| `{{ cloneURL "name" }}` | Clone URL for a matching `clone:` rule |
+
+See [`docs/render.md`](docs/render.md) for the full reference.
+
 ### Modular Blueprints
 
 Split configuration across files with `include`:
@@ -232,6 +309,7 @@ blueprint-windows-amd64.exe apply setup.bp
 
 - [`docs/`](docs/) -- full documentation for every action
 - [`docs/export.md`](docs/export.md) -- generate standalone shell scripts from blueprints
+- [`docs/render.md`](docs/render.md) -- render templates and detect drift with `render`, `check`, and `get`
 - [`docs/doctor.md`](docs/doctor.md) -- inspect and repair `~/.blueprint/status.json`
 - [`docs/validate.md`](docs/validate.md) -- parse and semantic-check a blueprint without applying
 - [`docs/architecture.md`](docs/architecture.md) -- project structure, engine internals, handler interfaces

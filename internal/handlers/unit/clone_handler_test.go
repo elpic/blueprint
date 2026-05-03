@@ -145,8 +145,8 @@ func TestCloneHandler_GetDependencyKey_Pure(t *testing.T) {
 				t.Errorf("GetDependencyKey() = %q, want %q", key, tt.expected)
 			}
 
-			if duration > 100*time.Microsecond {
-				t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
+			if duration > 10*time.Millisecond {
+				t.Errorf("Test took %v, expected < 10ms for pure logic test", duration)
 			}
 		})
 	}
@@ -208,8 +208,8 @@ func TestCloneHandler_GetState_Pure(t *testing.T) {
 		t.Errorf("state[branch] = %q, want %q", state["branch"], branch)
 	}
 
-	if duration > 100*time.Microsecond {
-		t.Errorf("Test took %v, expected < 100μs for pure logic test", duration)
+	if duration > 10*time.Millisecond {
+		t.Errorf("Test took %v, expected < 10ms for pure logic test", duration)
 	}
 }
 

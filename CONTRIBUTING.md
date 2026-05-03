@@ -65,6 +65,36 @@ mise run check       # run tests + lint + security scan
 
 See [`docs/architecture.md`](docs/architecture.md) for a full project structure tree, component descriptions, and handler interface documentation.
 
+## Try the Examples
+
+The `examples/` directory contains ready-to-use blueprints and templates. To try them without installing blueprint, use `go run`:
+
+```bash
+# Render the Dockerfile template
+go run ./cmd/blueprint render examples/python-uv/setup.bp \
+  --template examples/python-uv/Dockerfile.tmpl
+
+# Write the rendered Dockerfile to disk
+go run ./cmd/blueprint render examples/python-uv/setup.bp \
+  --template examples/python-uv/Dockerfile.tmpl \
+  --output examples/python-uv/Dockerfile
+
+# Render the dev variant
+go run ./cmd/blueprint render examples/python-uv/setup.bp \
+  --template examples/python-uv/Dockerfile.local.tmpl \
+  --output examples/python-uv/Dockerfile.local
+
+# Check for drift between the template and the committed file
+go run ./cmd/blueprint check examples/python-uv/setup.bp \
+  --template examples/python-uv/Dockerfile.tmpl \
+  --against examples/python-uv/Dockerfile
+
+# Query a single value
+go run ./cmd/blueprint get examples/python-uv/setup.bp mise python
+```
+
+Once installed, drop `go run ./cmd/blueprint` and use `blueprint` directly.
+
 ## Code Style
 
 - Run `mise run format` before committing to ensure code is formatted

@@ -13,6 +13,7 @@ type Package struct {
 	Name           string
 	Version        string
 	PackageManager string // e.g., "apt", "snap", defaults to system default
+	Stage          string // e.g., "build", "runtime" — used by container templates
 }
 
 type Rule struct {
@@ -96,6 +97,11 @@ type Rule struct {
 	AuthorizedKeysFile       string // Plain file path containing public key(s)
 	AuthorizedKeysEncrypted  string // Encrypted file containing public key(s)
 	AuthorizedKeysPasswordID string // Password ID for decryption
+
+	// Var-specific fields
+	VarName     string // Variable name
+	VarDefault  string // Default value (empty string means required)
+	VarRequired bool   // True when no default was provided
 }
 
 type parseEntry struct {
@@ -124,6 +130,7 @@ var parsers = []parseEntry{
 	{"schedule", ParseScheduleRule},
 	{"shell ", ParseShellRule},
 	{"authorized_keys ", ParseAuthorizedKeysRule},
+	{"var ", ParseVarRule},
 }
 
 // Parse parses content without include support
@@ -324,10 +331,11 @@ func loadGitInclude(rawURL string, loadedFiles map[string]bool) ([]Rule, error) 
 func ParseInstallRule(line string) (*Rule, error) {
 	f := parseFields(strings.TrimPrefix(line, "install "))
 	packageManager := f.word("package-manager:")
+	stage := f.word("stage:")
 	packageNames := f.tokens
 	pkgs := make([]Package, len(packageNames))
 	for i, pkg := range packageNames {
-		pkgs[i] = Package{Name: pkg, Version: "latest", PackageManager: packageManager}
+		pkgs[i] = Package{Name: pkg, Version: "latest", PackageManager: packageManager, Stage: stage}
 	}
 	return &Rule{
 		ID:       f.word("id:"),
@@ -714,5 +722,29 @@ func ParseAuthorizedKeysRule(line string) (*Rule, error) {
 		Group:                    f.word("group:"),
 		OSList:                   f.osFilter,
 		After:                    f.list("after:"),
+	}, nil
+}
+
+// ParseVarRule parses "var NAME [default]" lines.
+// If no default is provided the variable is required at render time.
+func ParseVarRule(line string) (*Rule, error) {
+	rest := strings.TrimPrefix(line, "var ")
+	tokens := strings.Fields(rest)
+	if len(tokens) == 0 {
+		return nil, lineError(line, "var requires a variable name")
+	}
+	name := tokens[0]
+	var defaultVal string
+	required := true
+	if len(tokens) > 1 {
+		defaultVal = strings.Join(tokens[1:], " ")
+		required = false
+	}
+	return &Rule{
+		ID:          fmt.Sprintf("var-%s", name),
+		Action:      "var",
+		VarName:     name,
+		VarDefault:  defaultVal,
+		VarRequired: required,
 	}, nil
 }
