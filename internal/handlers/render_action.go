@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/elpic/blueprint/internal/parser"
@@ -54,9 +56,17 @@ func NewRenderActionHandler(rule parser.Rule, basePath string) *RenderActionHand
 
 // Up renders the template(s) using the current blueprint as the data source.
 func (h *RenderActionHandler) Up() (string, error) {
-	rules, err := parser.ParseFile(h.BasePath)
+	// h.BasePath is the directory containing setup.bp (filepath.Dir of the
+	// resolved blueprint file). Reconstruct the file path so ParseFile gets
+	// a file, not a directory.
+	blueprintFile := h.BasePath
+	if info, err := os.Stat(blueprintFile); err == nil && info.IsDir() {
+		blueprintFile = filepath.Join(blueprintFile, "setup.bp")
+	}
+
+	rules, err := parser.ParseFile(blueprintFile)
 	if err != nil {
-		return "", fmt.Errorf("render: failed to parse blueprint %s: %w", h.BasePath, err)
+		return "", fmt.Errorf("render: failed to parse blueprint %s: %w", blueprintFile, err)
 	}
 
 	cliVars := parseVarsSlice(h.Rule.RenderVars)
