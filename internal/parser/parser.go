@@ -25,9 +25,10 @@ type Rule struct {
 	Group    string
 
 	// Clone-specific fields
-	CloneURL  string // Git repository URL
-	ClonePath string // Destination path for cloned repository
-	Branch    string // Branch to clone (optional, defaults to repo default)
+	CloneURL     string // Git repository URL
+	ClonePath    string // Destination path for cloned repository
+	Branch       string // Branch to clone (optional, defaults to repo default)
+	CloneWorkdir bool   // If true, clone with .git intact (for active development repos)
 
 	// ASDF-specific fields
 	AsdfPackages []string // List of "plugin@version" for asdf (e.g., "nodejs@21.4.0")
@@ -368,13 +369,14 @@ func ParseCloneRule(line string) (*Rule, error) {
 		id = "clone-" + cloneURL
 	}
 	return &Rule{
-		ID:        id,
-		Action:    "clone",
-		CloneURL:  cloneURL,
-		ClonePath: clonePath,
-		Branch:    f.word("branch:"),
-		OSList:    f.osFilter,
-		After:     f.list("after:"),
+		ID:           id,
+		Action:       "clone",
+		CloneURL:     cloneURL,
+		ClonePath:    clonePath,
+		Branch:       f.word("branch:"),
+		CloneWorkdir: f.word("workdir:") == "true",
+		OSList:       f.osFilter,
+		After:        f.list("after:"),
 	}, nil
 }
 

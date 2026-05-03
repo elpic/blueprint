@@ -254,7 +254,7 @@ func isGitURL(input string) bool {
 // lowercase HTTPS form). Local file paths are normalized via normalizePath.
 func normalizeBlueprint(input string) string {
 	if isGitURL(input) {
-		return gitpkg.NormalizeGitURL(input)
+		return gitpkg.NormalizeGitURL(gitpkg.StripBranch(input))
 	}
 	return normalizePath(input)
 }

@@ -579,7 +579,10 @@ func NormalizeBlueprint(input string) string {
 // lowercase HTTPS form). Local file paths are normalized via normalizePath.
 func normalizeBlueprint(input string) string {
 	if gitpkg.IsGitURL(input) {
-		return gitpkg.NormalizeGitURL(input)
+		// Strip @branch/:path before normalizing so that
+		// "https://github.com/user/repo@main" and "https://github.com/user/repo"
+		// are treated as the same blueprint for status lookups.
+		return gitpkg.NormalizeGitURL(gitpkg.StripBranch(input))
 	}
 	// Detect mangled git URLs: normalizePath() was previously called on git URL
 	// strings, producing absolute paths like "/home/user/https:/github.com/repo.git".

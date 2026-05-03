@@ -260,6 +260,11 @@ func PrintDiff(blueprintFile string, preferSSH bool) {
 	}
 
 	currentOS := getOSName()
+	// Interpolate ${VAR_NAME} references before filtering and display.
+	vars := resolveVarMap(rules, nil)
+	for i, r := range rules {
+		rules[i] = interpolateRule(r, vars)
+	}
 	desiredRules := filterRulesByOS(rules)
 
 	statusPath, err := getStatusPath()
@@ -277,8 +282,13 @@ func PrintDiff(blueprintFile string, preferSSH bool) {
 	removeRules := getAutoUninstallRules(desiredRules, blueprintFile, currentOS)
 
 	// Additions: rules in the blueprint that have no matching status entry.
+	// Skip AlwaysRunUp rules (e.g. render) — they re-run every apply by design
+	// and are not meaningful as "will install" items in the diff.
 	var addRules []parser.Rule
 	for _, rule := range desiredRules {
+		if def := handlerskg.GetAction(rule.Action); def != nil && def.AlwaysRunUp {
+			continue
+		}
 		handler := handlerskg.NewHandler(rule, "", nil)
 		if handler != nil && !handler.IsInstalled(&status, blueprintFile, currentOS) {
 			addRules = append(addRules, rule)

@@ -153,7 +153,7 @@ func TestRenderWithRules_SingleFileToFile(t *testing.T) {
 	writeFile(t, tmpl, `FROM python:{{ mise "python" }}-slim`)
 
 	rules := miseRules("python", "3.13")
-	if err := RenderWithRules(rules, tmpl, out, false, nil); err != nil {
+	if err := RenderWithRules(rules, tmpl, out, false, nil, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -169,7 +169,7 @@ func TestRenderWithRules_SingleFileToStdout(t *testing.T) {
 	writeFile(t, tmpl, `hello`)
 
 	// output="" → stdout (we just ensure no error)
-	if err := RenderWithRules(nil, tmpl, "", false, nil); err != nil {
+	if err := RenderWithRules(nil, tmpl, "", false, nil, false); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -184,7 +184,7 @@ func TestRenderWithRules_DirectoryMode(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "templates", "app.conf.tmpl"), `port={{ default "PORT" "8000" }}`)
 
 	rules := miseRules("python", "3.12")
-	if err := RenderWithRules(rules, filepath.Join(dir, "templates"), outDir, false, nil); err != nil {
+	if err := RenderWithRules(rules, filepath.Join(dir, "templates"), outDir, false, nil, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -203,7 +203,7 @@ func TestRenderWithRules_DirectoryMode_PreservesSubdirs(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "tmpl", "a", "b.tmpl"), `hello`)
 	writeFile(t, filepath.Join(dir, "tmpl", "c.tmpl"), `world`)
 
-	if err := RenderWithRules(nil, filepath.Join(dir, "tmpl"), outDir, false, nil); err != nil {
+	if err := RenderWithRules(nil, filepath.Join(dir, "tmpl"), outDir, false, nil, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -222,7 +222,7 @@ func TestRenderWithRules_DirectoryMode_PartialsSkipped(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "tmpl", "main.tmpl"), `hello`)
 	writeFile(t, filepath.Join(dir, "tmpl", "_partial.tmpl"), `should not render`)
 
-	if err := RenderWithRules(nil, filepath.Join(dir, "tmpl"), outDir, false, nil); err != nil {
+	if err := RenderWithRules(nil, filepath.Join(dir, "tmpl"), outDir, false, nil, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -244,7 +244,7 @@ func TestRenderWithRules_DirectoryMode_LocalOverride(t *testing.T) {
 	// Local override in output directory
 	writeFile(t, filepath.Join(outDir, "entrypoint.sh.tmpl"), `#!/bin/sh\npython manage.py migrate\nexec "$@"`)
 
-	if err := RenderWithRules(nil, remoteDir, outDir, false, nil); err != nil {
+	if err := RenderWithRules(nil, remoteDir, outDir, false, nil, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -261,7 +261,7 @@ func TestRenderWithRules_DirectoryMode_TemplateError_NothingWritten(t *testing.T
 	writeFile(t, filepath.Join(dir, "tmpl", "good.tmpl"), `ok`)
 	writeFile(t, filepath.Join(dir, "tmpl", "bad.tmpl"), `{{ .Unclosed`)
 
-	err := RenderWithRules(nil, filepath.Join(dir, "tmpl"), outDir, false, nil)
+	err := RenderWithRules(nil, filepath.Join(dir, "tmpl"), outDir, false, nil, false)
 	if err == nil {
 		t.Fatal("expected error from bad template")
 	}
@@ -278,7 +278,7 @@ func TestRenderWithRules_DirectoryMode_NoTemplates(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := RenderWithRules(nil, filepath.Join(dir, "tmpl"), dir, false, nil)
+	err := RenderWithRules(nil, filepath.Join(dir, "tmpl"), dir, false, nil, false)
 	if err == nil {
 		t.Error("expected error for empty template directory")
 	}
@@ -345,10 +345,10 @@ func TestLocalOverride_NestedPath(t *testing.T) {
 
 func TestResolveOutput_WithOutputRoot(t *testing.T) {
 	cases := []struct {
-		tmpl    string
-		root    string
-		output  string
-		want    string
+		tmpl   string
+		root   string
+		output string
+		want   string
 	}{
 		{
 			tmpl:   "/remote/Dockerfile.tmpl",
@@ -521,7 +521,7 @@ CMD {{ default "CMD" "python -m app" | toArgs }}
 			{Name: "libpq5", Stage: "runtime"},
 		}},
 	}
-	if err := RenderWithRules(rules, filepath.Join(dir, "tmpl"), outDir, false, nil); err != nil {
+	if err := RenderWithRules(rules, filepath.Join(dir, "tmpl"), outDir, false, nil, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -551,7 +551,7 @@ func TestFullPipeline_CLIVarsOverrideBlueprintVars(t *testing.T) {
 
 	rules := varRules("APP", "blueprint-default")
 	if err := RenderWithRules(rules, filepath.Join(dir, "tmpl"), outDir, false,
-		map[string]string{"APP": "cli-override"}); err != nil {
+		map[string]string{"APP": "cli-override"}, false); err != nil {
 		t.Fatal(err)
 	}
 

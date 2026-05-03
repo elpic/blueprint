@@ -20,7 +20,7 @@ import (
 // output is used only for single-file mode ("" → stdout, path → file).
 func Render(file, tmplPath, output string, preferSSH bool, cliVars map[string]string) {
 	rules := loadRulesForRender(file, preferSSH)
-	if err := renderer.RenderWithRules(rules, tmplPath, output, preferSSH, cliVars); err != nil {
+	if err := renderer.RenderWithRules(rules, tmplPath, output, preferSSH, cliVars, true); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -29,7 +29,7 @@ func Render(file, tmplPath, output string, preferSSH bool, cliVars map[string]st
 // RenderWithRules renders tmplPath using pre-parsed rules. Used by the render
 // blueprint action so the rules don't need to be re-parsed from a file.
 func RenderWithRules(rules []parser.Rule, tmplPath, output string, preferSSH bool, cliVars map[string]string) error {
-	return renderer.RenderWithRules(rules, tmplPath, output, preferSSH, cliVars)
+	return renderer.RenderWithRules(rules, tmplPath, output, preferSSH, cliVars, true)
 }
 
 // Check parses a blueprint, renders tmplPath (file or directory), and compares
@@ -40,6 +40,7 @@ func RenderWithRules(rules []parser.Rule, tmplPath, output string, preferSSH boo
 func Check(file, tmplPath, against string, preferSSH bool, cliVars map[string]string) {
 	rules := loadRulesForRender(file, preferSSH)
 
+	originalTmplPath := tmplPath // preserve for the "Run to fix" hint
 	localTmpl, tmplRoot, cleanup, err := renderer.ResolveTemplatePath(tmplPath, preferSSH)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -86,7 +87,11 @@ func Check(file, tmplPath, against string, preferSSH bool, cliVars map[string]st
 		drifted = true
 		fmt.Fprintf(os.Stderr, "%s\n", ui.FormatError(fmt.Sprintf("%s is out of date.", p.target)))
 		fmt.Fprintln(os.Stderr, printDiff(string(existing), rendered, p.target))
-		fmt.Fprintf(os.Stderr, "Run to fix:\n  blueprint render %s --template %s --output %s\n\n", file, p.tmpl, p.target)
+		fixOutput := against
+		if fixOutput == "" {
+			fixOutput = p.target
+		}
+		fmt.Fprintf(os.Stderr, "Run to fix:\n  %s render %s --template %s --output %s\n\n", ExecutableName, file, originalTmplPath, fixOutput)
 	}
 	if drifted {
 		os.Exit(1)
@@ -186,36 +191,77 @@ func mustRenderTemplate(tmplPath string, rules []parser.Rule, cliVars map[string
 	return result
 }
 
-// printDiff produces a simple unified-style diff between old and new strings.
+// printDiff produces a unified-style diff between old and new strings,
+// showing up to 3 lines of context around each changed section.
 func printDiff(old, new, label string) string {
-	oldLines := strings.Split(old, "\n")
-	newLines := strings.Split(new, "\n")
+	const context = 3
 
+	oldLines := strings.Split(strings.TrimRight(old, "\n"), "\n")
+	newLines := strings.Split(strings.TrimRight(new, "\n"), "\n")
+
+	// Build an edit script: for each position record whether the line is
+	// equal, removed (-), or added (+). We use a simple LCS-free approach:
+	// walk both slices and emit ops greedily, which is sufficient for the
+	// typical case of small template drift.
+	type op struct {
+		kind byte // ' ', '-', '+'
+		line string
+	}
+	var ops []op
+	i, j := 0, 0
+	for i < len(oldLines) || j < len(newLines) {
+		if i < len(oldLines) && j < len(newLines) && oldLines[i] == newLines[j] {
+			ops = append(ops, op{' ', oldLines[i]})
+			i++
+			j++
+		} else if i < len(oldLines) {
+			ops = append(ops, op{'-', oldLines[i]})
+			i++
+		} else {
+			ops = append(ops, op{'+', newLines[j]})
+			j++
+		}
+	}
+
+	// Collect indices of changed ops so we know which context to show.
+	changed := make([]bool, len(ops))
+	for k, o := range ops {
+		if o.kind != ' ' {
+			changed[k] = true
+		}
+	}
+
+	// Emit hunks: groups of changed lines plus surrounding context.
 	var b strings.Builder
 	fmt.Fprintf(&b, "--- %s (existing)\n", label)
 	fmt.Fprintf(&b, "+++ %s (rendered)\n", label)
 
-	maxLen := len(oldLines)
-	if len(newLines) > maxLen {
-		maxLen = len(newLines)
-	}
-
-	for i := 0; i < maxLen; i++ {
-		oldLine := ""
-		newLine := ""
-		if i < len(oldLines) {
-			oldLine = oldLines[i]
-		}
-		if i < len(newLines) {
-			newLine = newLines[i]
-		}
-		if oldLine != newLine {
-			if i < len(oldLines) {
-				fmt.Fprintf(&b, "-%s\n", oldLine)
+	inHunk := false
+	for k := range ops {
+		// Is this op within context distance of a changed line?
+		near := false
+		for d := -context; d <= context; d++ {
+			idx := k + d
+			if idx >= 0 && idx < len(ops) && changed[idx] {
+				near = true
+				break
 			}
-			if i < len(newLines) {
-				fmt.Fprintf(&b, "+%s\n", newLine)
+		}
+		if !near {
+			if inHunk {
+				fmt.Fprintf(&b, "...\n")
+				inHunk = false
 			}
+			continue
+		}
+		inHunk = true
+		switch ops[k].kind {
+		case ' ':
+			fmt.Fprintf(&b, " %s\n", ops[k].line)
+		case '-':
+			fmt.Fprintf(&b, "-%s\n", ops[k].line)
+		case '+':
+			fmt.Fprintf(&b, "+%s\n", ops[k].line)
 		}
 	}
 	return b.String()

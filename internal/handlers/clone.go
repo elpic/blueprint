@@ -97,14 +97,27 @@ func NewCloneHandlerLegacy(rule parser.Rule, basePath string) *CloneHandler {
 	return NewCloneHandler(rule, basePath, platform.NewContainer())
 }
 
-// Up clones or updates the repository using two-stage approach with dependency injection
+// Up clones or updates the repository.
+// When CloneWorkdir is true a direct git clone is used so the .git directory is
+// preserved — the target becomes a fully functional working copy.
+// Otherwise the default two-stage approach is used: clone to clean storage then
+// copy files without .git, preventing accidental pollution of the target.
 func (h *CloneHandler) Up() (string, error) {
-	// Use two-stage clone to prevent repository pollution
-	oldSHA, newSHA, status, err := gitpkg.CloneOrUpdateRepositoryTwoStage(
-		h.Rule.CloneURL,
-		h.Rule.ClonePath,
-		h.Rule.Branch,
-	)
+	var oldSHA, newSHA, status string
+	var err error
+	if h.Rule.CloneWorkdir {
+		oldSHA, newSHA, status, err = gitpkg.CloneOrUpdateRepositoryDirect(
+			h.Rule.CloneURL,
+			h.Rule.ClonePath,
+			h.Rule.Branch,
+		)
+	} else {
+		oldSHA, newSHA, status, err = gitpkg.CloneOrUpdateRepositoryTwoStage(
+			h.Rule.CloneURL,
+			h.Rule.ClonePath,
+			h.Rule.Branch,
+		)
+	}
 	if err != nil {
 		return "", fmt.Errorf("failed to clone/update repository: %w", err)
 	}

@@ -73,6 +73,11 @@ func checkBlueprintURLs(status *handlerskg.Status) []doctorIssue {
 // It handles both well-formed and malformed URL forms (e.g. single-slash https:/)
 // by always delegating to NormalizeBlueprint, which now recognises all known variants.
 func normalizeBlueprintForDoctor(bp string) string {
+	// Deliberately preserve the branch so checkBranchDuplicates can distinguish
+	// "repo@main" from "repo@feat/test". Only normalize URL form (SSH→HTTPS, .git suffix).
+	if gitpkg.IsGitURL(bp) {
+		return gitpkg.NormalizeGitURL(bp)
+	}
 	return handlerskg.NormalizeBlueprint(bp)
 }
 
@@ -272,6 +277,11 @@ func checkOrphansWithLoader(status *handlerskg.Status, loader func(string) []par
 		if rules == nil {
 			cache[norm] = nil
 			return nil
+		}
+		// Interpolate ${VAR_NAME} so rule keys match the paths stored in status.
+		vars := resolveVarMap(rules, nil)
+		for i, r := range rules {
+			rules[i] = interpolateRule(r, vars)
 		}
 		rs := ruleSet{}
 		for _, r := range rules {

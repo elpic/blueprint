@@ -108,7 +108,19 @@ func (d *TemplateData) Get(action, key string) (string, error) {
 // cliVars are KEY=VALUE overrides that take precedence over blueprint var rules.
 // output is the destination: "" → stdout (single-file mode), a path → file or directory root.
 // preferSSH controls whether git operations prefer SSH over HTTPS.
-func RenderWithRules(rules []parser.Rule, tmplPath, output string, preferSSH bool, cliVars map[string]string) error {
+// verbose controls whether per-file "rendered ..." lines are printed (true for CLI, false for action handler).
+// RenderWithRules renders tmplPath (file or directory) against the given rules.
+// overrideDirs is an optional list of directories to search for local .tmpl overrides
+// before falling back to the remote template. Directories are checked in order;
+// the first match wins. The output directory is always checked last.
+func RenderWithRules(rules []parser.Rule, tmplPath, output string, preferSSH bool, cliVars map[string]string, verbose bool, overrideDirs ...string) error {
+	// Expand leading ~/ so paths like ~/workspace/... resolve correctly.
+	if strings.HasPrefix(output, "~/") {
+		if homeDir, err := os.UserHomeDir(); err == nil {
+			output = filepath.Join(homeDir, output[2:])
+		}
+	}
+
 	localTmpl, tmplRoot, cleanup, err := ResolveTemplatePath(tmplPath, preferSSH)
 	if err != nil {
 		return err
@@ -131,12 +143,24 @@ func RenderWithRules(rules []parser.Rule, tmplPath, output string, preferSSH boo
 		return nil
 	}
 
+	// Build the ordered list of directories to search for local overrides.
+	// overrideDirs (e.g. blueprint repo dir) take priority over the output dir.
+	searchDirs := append(overrideDirs, output)
+
+	findOverride := func(t string) string {
+		for _, dir := range searchDirs {
+			if ov := LocalOverride(t, tmplRoot, dir); ov != "" {
+				return ov
+			}
+		}
+		return ""
+	}
+
 	// Directory mode — validate all templates first, then write.
-	// A local override (.tmpl file next to output) shadows the remote template.
 	rendered := make(map[string]string, len(templates))
 	for _, t := range templates {
 		src := t
-		if override := LocalOverride(t, tmplRoot, output); override != "" {
+		if override := findOverride(t); override != "" {
 			src = override
 		}
 		result, err := RenderTemplate(src, rules, cliVars)
@@ -147,17 +171,19 @@ func RenderWithRules(rules []parser.Rule, tmplPath, output string, preferSSH boo
 	}
 	for _, t := range templates {
 		out := ResolveOutput(t, tmplRoot, output)
-		override := LocalOverride(t, tmplRoot, output)
+		override := findOverride(t)
 		if err := os.MkdirAll(filepath.Dir(out), 0o750); err != nil { // #nosec G301 -- output directories must be group-readable
 			return fmt.Errorf("cannot create directory for %s: %w", out, err)
 		}
 		if err := os.WriteFile(out, []byte(rendered[t]), 0o644); err != nil { // #nosec G306 -- rendered template files must be world-readable
 			return fmt.Errorf("cannot write %s: %w", out, err)
 		}
-		if override != "" {
-			fmt.Printf("rendered  %s (local override)\n", out)
-		} else {
-			fmt.Printf("rendered  %s\n", out)
+		if verbose {
+			if override != "" {
+				fmt.Printf("rendered  %s (local override)\n", out)
+			} else {
+				fmt.Printf("rendered  %s\n", out)
+			}
 		}
 	}
 	return nil
