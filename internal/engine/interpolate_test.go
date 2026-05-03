@@ -23,10 +23,10 @@ func TestExpandVars_NoMarker(t *testing.T) {
 }
 
 func TestExpandVars_Multiple(t *testing.T) {
-	vars := map[string]string{"ORG": "avant", "REPO": "cas"}
-	got := expandVars("~/workspace/${ORG}/${REPO}", vars)
-	if got != "~/workspace/avant/cas" {
-		t.Errorf("expected ~/workspace/avant/cas, got %q", got)
+	vars := map[string]string{"ORG": "acme", "REPO": "myrepo"}
+	got := expandVars("~/projects/${ORG}/${REPO}", vars)
+	if got != "~/projects/acme/myrepo" {
+		t.Errorf("expected ~/projects/acme/myrepo, got %q", got)
 	}
 }
 
@@ -41,17 +41,17 @@ func TestExpandVars_Unknown(t *testing.T) {
 
 func TestResolveVarMap_BlueprintDefault(t *testing.T) {
 	rules := []parser.Rule{
-		{Action: "var", VarName: "WORKSPACE", VarDefault: "~/workspace/avant"},
+		{Action: "var", VarName: "WORKSPACE", VarDefault: "~/projects/myapp"},
 	}
 	vars := resolveVarMap(rules, nil)
-	if vars["WORKSPACE"] != "~/workspace/avant" {
-		t.Errorf("expected ~/workspace/avant, got %q", vars["WORKSPACE"])
+	if vars["WORKSPACE"] != "~/projects/myapp" {
+		t.Errorf("expected ~/projects/myapp, got %q", vars["WORKSPACE"])
 	}
 }
 
 func TestResolveVarMap_CLIOverrides(t *testing.T) {
 	rules := []parser.Rule{
-		{Action: "var", VarName: "WORKSPACE", VarDefault: "~/workspace/avant"},
+		{Action: "var", VarName: "WORKSPACE", VarDefault: "~/projects/myapp"},
 	}
 	vars := resolveVarMap(rules, map[string]string{"WORKSPACE": "/custom/path"})
 	if vars["WORKSPACE"] != "/custom/path" {
@@ -68,15 +68,15 @@ func TestResolveVarMap_CLIOnlyVar(t *testing.T) {
 }
 
 func TestInterpolateRule_ClonePath(t *testing.T) {
-	vars := map[string]string{"WORKSPACE": "~/workspace/avant"}
+	vars := map[string]string{"WORKSPACE": "~/projects/myapp"}
 	rule := parser.Rule{
 		Action:    "clone",
 		CloneURL:  "git@github.com:org/repo.git",
 		ClonePath: "${WORKSPACE}/repo",
 	}
 	got := interpolateRule(rule, vars)
-	if got.ClonePath != "~/workspace/avant/repo" {
-		t.Errorf("expected ~/workspace/avant/repo, got %q", got.ClonePath)
+	if got.ClonePath != "~/projects/myapp/repo" {
+		t.Errorf("expected ~/projects/myapp/repo, got %q", got.ClonePath)
 	}
 	// CloneURL without marker is unchanged
 	if got.CloneURL != "git@github.com:org/repo.git" {
@@ -85,27 +85,27 @@ func TestInterpolateRule_ClonePath(t *testing.T) {
 }
 
 func TestInterpolateRule_MisePath(t *testing.T) {
-	vars := map[string]string{"WORKSPACE": "~/workspace/avant"}
+	vars := map[string]string{"WORKSPACE": "~/projects/myapp"}
 	rule := parser.Rule{
 		Action:   "mise",
-		MisePath: "${WORKSPACE}/card-account-service",
+		MisePath: "${WORKSPACE}/myservice",
 	}
 	got := interpolateRule(rule, vars)
-	if got.MisePath != "~/workspace/avant/card-account-service" {
-		t.Errorf("expected ~/workspace/avant/card-account-service, got %q", got.MisePath)
+	if got.MisePath != "~/projects/myapp/myservice" {
+		t.Errorf("expected ~/projects/myapp/myservice, got %q", got.MisePath)
 	}
 }
 
 func TestInterpolateRule_RenderOutput(t *testing.T) {
-	vars := map[string]string{"WORKSPACE": "~/workspace/avant"}
+	vars := map[string]string{"WORKSPACE": "~/projects/myapp"}
 	rule := parser.Rule{
 		Action:         "render",
 		RenderTemplate: "@github:elpic/templates@main:containers/python",
-		RenderOutput:   "${WORKSPACE}/card-account-service",
+		RenderOutput:   "${WORKSPACE}/myservice",
 	}
 	got := interpolateRule(rule, vars)
-	if got.RenderOutput != "~/workspace/avant/card-account-service" {
-		t.Errorf("expected ~/workspace/avant/card-account-service, got %q", got.RenderOutput)
+	if got.RenderOutput != "~/projects/myapp/myservice" {
+		t.Errorf("expected ~/projects/myapp/myservice, got %q", got.RenderOutput)
 	}
 }
 
@@ -121,13 +121,13 @@ func TestInterpolateRule_NoVars(t *testing.T) {
 }
 
 func TestInterpolateRule_RunCommand(t *testing.T) {
-	vars := map[string]string{"WORKSPACE": "~/workspace/avant"}
+	vars := map[string]string{"WORKSPACE": "~/projects/myapp"}
 	rule := parser.Rule{
 		Action:     "run",
-		RunCommand: "cd ${WORKSPACE}/myapp && make setup",
+		RunCommand: "cd ${WORKSPACE}/src && make setup",
 	}
 	got := interpolateRule(rule, vars)
-	if got.RunCommand != "cd ~/workspace/avant/myapp && make setup" {
+	if got.RunCommand != "cd ~/projects/myapp/src && make setup" {
 		t.Errorf("unexpected RunCommand: %q", got.RunCommand)
 	}
 }
