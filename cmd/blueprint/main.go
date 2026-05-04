@@ -51,6 +51,352 @@ var knownCommands = map[string]bool{
 	"render": true, "check": true, "get": true,
 }
 
+// isHelpFlag returns true if the argument is --help or -h.
+func isHelpFlag(arg string) bool {
+	return arg == "--help" || arg == "-h"
+}
+
+// hasHelpFlag returns true if any argument in args is --help or -h.
+func hasHelpFlag(args []string) bool {
+	for _, a := range args {
+		if isHelpFlag(a) {
+			return true
+		}
+	}
+	return false
+}
+
+func printGlobalHelp() {
+	fmt.Print(`blueprint - declarative machine setup tool
+
+Usage:
+  blueprint <command> [arguments]
+
+Commands:
+  plan      <file.bp>   Dry-run: show what would be applied
+  apply     <file.bp>   Apply a blueprint (with automatic cleanup)
+  validate  <file.bp>   Parse and semantically check a blueprint
+  diff      <file.bp>   Show rules that differ from current status
+  export    <file.bp>   Generate a shell script or Dockerfile from a blueprint
+  render    <file.bp>   Render Go templates using blueprint data
+  check     <file.bp>   Compare rendered output against existing files
+  get       <file.bp>   Extract a value from a blueprint
+  encrypt   <file>      Encrypt a file with AES-256-GCM
+  status                Show installed resource state
+  history               View execution history
+  ps                    Show progress summary
+  slow                  Show slowest rules from history
+  doctor                Diagnose and optionally fix issues
+  version               Show version information
+
+Run 'blueprint <command> --help' for usage details on a specific command.
+`)
+}
+
+func printPlanHelp() {
+	fmt.Print(`blueprint plan - dry-run preview of what would be applied
+
+Usage:
+  blueprint plan <file.bp> [flags]
+
+Arguments:
+  <file.bp>           Path to the blueprint file
+
+Flags:
+  --skip-group <name> Skip all rules in the given group
+  --skip-id <name>    Skip the rule with the given id
+  --only <id>         Only run the rule with the given id
+  --skip-decrypt      Skip encrypted rules (useful when no password is available)
+  --prefer-ssh        Prefer SSH over HTTPS for git operations
+  --help, -h          Show this help message
+
+Examples:
+  blueprint plan setup.bp
+  blueprint plan setup.bp --skip-group expensive
+  blueprint plan setup.bp --only my-rule
+`)
+}
+
+func printApplyHelp() {
+	fmt.Print(`blueprint apply - apply a blueprint with automatic cleanup
+
+Usage:
+  blueprint apply <file.bp> [flags]
+
+Arguments:
+  <file.bp>           Path to the blueprint file
+
+Flags:
+  --skip-group <name> Skip all rules in the given group
+  --skip-id <name>    Skip the rule with the given id
+  --only <id>         Only run the rule with the given id
+  --skip-decrypt      Skip encrypted rules (useful when no password is available)
+  --prefer-ssh        Prefer SSH over HTTPS for git operations
+  --no-status         Do not write to ~/.blueprint/status.json
+  --help, -h          Show this help message
+
+Examples:
+  blueprint apply setup.bp
+  blueprint apply setup.bp --skip-group expensive --prefer-ssh
+  blueprint apply setup.bp --only my-rule
+`)
+}
+
+func printEncryptHelp() {
+	fmt.Print(`blueprint encrypt - encrypt a file with AES-256-GCM
+
+Usage:
+  blueprint encrypt <file> [flags]
+
+Arguments:
+  <file>              Path to the file to encrypt
+
+Flags:
+  --password-id <id>  Named password identifier (default: "default")
+  --help, -h          Show this help message
+
+Examples:
+  blueprint encrypt secrets.yaml
+  blueprint encrypt secrets.yaml --password-id mypassword
+`)
+}
+
+func printExportHelp() {
+	fmt.Print(`blueprint export - generate a shell script or Dockerfile from a blueprint
+
+Usage:
+  blueprint export <file.bp> [flags]
+
+Arguments:
+  <file.bp>           Path to the blueprint file
+
+Flags:
+  --format <fmt>      Output format: bash (default) or sh
+  --output <path>     Write output to a file instead of stdout
+  --prefer-ssh        Prefer SSH over HTTPS for git operations
+  --help, -h          Show this help message
+
+Examples:
+  blueprint export setup.bp
+  blueprint export setup.bp --format sh --output setup.sh
+  blueprint export setup.bp --prefer-ssh
+`)
+}
+
+func printStatusHelp() {
+	fmt.Print(`blueprint status - show installed resource state
+
+Usage:
+  blueprint status
+
+Description:
+  Reads ~/.blueprint/status.json and prints all tracked resources:
+  installed packages, cloned repos, symlinks, downloads, and commands.
+
+Flags:
+  --help, -h          Show this help message
+`)
+}
+
+func printHistoryHelp() {
+	fmt.Print(`blueprint history - view execution history
+
+Usage:
+  blueprint history [run_number [step_number]]
+
+Arguments:
+  run_number          Show details for a specific run (0 = latest)
+  step_number         Show details for a specific step within the run
+
+Description:
+  Reads ~/.blueprint/history.json and prints past apply operations
+  with timestamps, commands, outputs, and duration.
+
+Flags:
+  --help, -h          Show this help message
+
+Examples:
+  blueprint history           # list all runs
+  blueprint history 0         # show latest run
+  blueprint history 0 3       # show step 3 of the latest run
+`)
+}
+
+func printPSHelp() {
+	fmt.Print(`blueprint ps - show progress summary
+
+Usage:
+  blueprint ps
+
+Description:
+  Prints a compact summary of which rules are installed, skipped, or pending
+  based on ~/.blueprint/status.json.
+
+Flags:
+  --help, -h          Show this help message
+`)
+}
+
+func printSlowHelp() {
+	fmt.Print(`blueprint slow - show slowest rules from history
+
+Usage:
+  blueprint slow [flags]
+
+Flags:
+  --top <n>           Show the top N slowest rules (default: 10)
+  --help, -h          Show this help message
+
+Examples:
+  blueprint slow
+  blueprint slow --top 20
+`)
+}
+
+func printDiffHelp() {
+	fmt.Print(`blueprint diff - show rules that differ from current status
+
+Usage:
+  blueprint diff <file.bp> [flags]
+
+Arguments:
+  <file.bp>           Path to the blueprint file
+
+Flags:
+  --prefer-ssh        Prefer SSH over HTTPS for git operations
+  --help, -h          Show this help message
+
+Examples:
+  blueprint diff setup.bp
+  blueprint diff setup.bp --prefer-ssh
+`)
+}
+
+func printDoctorHelp() {
+	fmt.Print(`blueprint doctor - diagnose and optionally fix issues
+
+Usage:
+  blueprint doctor [flags]
+
+Description:
+  Checks for common problems such as stale symlinks, missing clones,
+  and orphaned downloads in ~/.blueprint/status.json.
+
+Flags:
+  --fix               Automatically fix detected issues
+  --help, -h          Show this help message
+
+Examples:
+  blueprint doctor
+  blueprint doctor --fix
+`)
+}
+
+func printValidateHelp() {
+	fmt.Print(`blueprint validate - parse and semantically check a blueprint
+
+Usage:
+  blueprint validate <file.bp> [flags]
+
+Arguments:
+  <file.bp>           Path to the blueprint file
+
+Flags:
+  --prefer-ssh        Prefer SSH over HTTPS for git operations
+  --help, -h          Show this help message
+
+Examples:
+  blueprint validate setup.bp
+`)
+}
+
+func printRenderHelp() {
+	fmt.Print(`blueprint render - render Go templates using blueprint data
+
+Usage:
+  blueprint render <file.bp> --template <file.tmpl|dir> [flags]
+
+Arguments:
+  <file.bp>           Path to the blueprint file
+
+Flags:
+  --template <path>   Template file or directory to render (required)
+  --output <path>     Write output to a file or directory instead of stdout
+  --var KEY=VALUE     Set a template variable (repeatable)
+  --prefer-ssh        Prefer SSH over HTTPS for git operations
+  --help, -h          Show this help message
+
+Examples:
+  blueprint render setup.bp --template Dockerfile.tmpl
+  blueprint render setup.bp --template templates/ --output out/
+  blueprint render setup.bp --template ci.yml.tmpl --var ENV=production
+`)
+}
+
+func printCheckHelp() {
+	fmt.Print(`blueprint check - compare rendered output against existing files
+
+Usage:
+  blueprint check <file.bp> --template <file.tmpl|dir> [flags]
+
+Arguments:
+  <file.bp>           Path to the blueprint file
+
+Flags:
+  --template <path>   Template file or directory to render (required)
+  --against <path>    File or directory to compare rendered output against
+  --var KEY=VALUE     Set a template variable (repeatable)
+  --prefer-ssh        Prefer SSH over HTTPS for git operations
+  --help, -h          Show this help message
+
+Examples:
+  blueprint check setup.bp --template Dockerfile.tmpl --against Dockerfile
+  blueprint check setup.bp --template templates/ --against out/
+`)
+}
+
+func printGetHelp() {
+	fmt.Print(`blueprint get - extract a value from a blueprint
+
+Usage:
+  blueprint get <file.bp> <action> <key> [flags]
+
+Arguments:
+  <file.bp>           Path to the blueprint file
+  <action>            Rule action type (e.g. mise, asdf, homebrew, var)
+  <key>               Key to look up within that action
+
+Flags:
+  --var KEY=VALUE     Set a variable (repeatable)
+  --prefer-ssh        Prefer SSH over HTTPS for git operations
+  --help, -h          Show this help message
+
+Examples:
+  blueprint get setup.bp mise ruby
+  blueprint get setup.bp asdf nodejs
+  blueprint get setup.bp homebrew formula
+  blueprint get setup.bp var APP_NAME
+`)
+}
+
+func printVersionHelp() {
+	fmt.Print(`blueprint version - show version information
+
+Usage:
+  blueprint version [flags]
+
+Flags:
+  --short             Print only the version number
+  --commit            Print only the commit hash
+  --help, -h          Show this help message
+
+Examples:
+  blueprint version
+  blueprint version --short
+  blueprint version --commit
+`)
+}
+
 // parseVarFlags extracts all --var KEY=VALUE pairs from args into a map.
 func parseVarFlags(args []string) map[string]string {
 	vars := map[string]string{}
@@ -114,8 +460,12 @@ func main() {
 		engine.ExecutableName = "go run ./cmd/blueprint"
 	}
 
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: blueprint <plan|apply|encrypt|export|status|history|ps|slow|diff|doctor|validate|version> [<file|run_number>]")
+	if len(os.Args) < 2 || isHelpFlag(os.Args[1]) {
+		printGlobalHelp()
+		if len(os.Args) >= 2 {
+			// --help or -h was explicitly passed — exit 0
+			os.Exit(0)
+		}
 		os.Exit(1)
 	}
 
@@ -124,6 +474,10 @@ func main() {
 	switch mode {
 	case "version":
 		args := os.Args[2:]
+		if hasHelpFlag(args) {
+			printVersionHelp()
+			os.Exit(0)
+		}
 		if len(args) > 0 && args[0] == "--commit" {
 			fmt.Println(commit)
 		} else if len(args) > 0 && args[0] == "--short" {
@@ -132,6 +486,10 @@ func main() {
 			fmt.Printf("Version: %s\nCommit:  %s\n", version, commit)
 		}
 	case "history":
+		if hasHelpFlag(os.Args[2:]) {
+			printHistoryHelp()
+			os.Exit(0)
+		}
 		runNumber := 0
 		stepNumber := -1
 		if len(os.Args) >= 3 {
@@ -150,24 +508,36 @@ func main() {
 		}
 		engine.PrintHistory(runNumber, stepNumber)
 	case "plan":
+		if hasHelpFlag(os.Args[2:]) {
+			printPlanHelp()
+			os.Exit(0)
+		}
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint plan <file.bp> [--skip-group <name>] [--skip-id <name>] [--only <id>] [--skip-decrypt] [--prefer-ssh]")
+			printPlanHelp()
 			os.Exit(1)
 		}
 		file := os.Args[2]
 		skipGroup, skipID, onlyID, skipDecrypt, preferSSH, _ := parseFlags(os.Args[3:])
 		engine.RunWithSkip(file, true, skipGroup, skipID, onlyID, skipDecrypt, preferSSH, false) // dry-run
 	case "apply":
+		if hasHelpFlag(os.Args[2:]) {
+			printApplyHelp()
+			os.Exit(0)
+		}
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint apply <file.bp> [--skip-group <name>] [--skip-id <name>] [--only <id>] [--skip-decrypt] [--prefer-ssh] [--no-status]")
+			printApplyHelp()
 			os.Exit(1)
 		}
 		file := os.Args[2]
 		skipGroup, skipID, onlyID, skipDecrypt, preferSSH, noStatus := parseFlags(os.Args[3:])
 		engine.RunWithSkip(file, false, skipGroup, skipID, onlyID, skipDecrypt, preferSSH, noStatus)
 	case "encrypt":
+		if hasHelpFlag(os.Args[2:]) {
+			printEncryptHelp()
+			os.Exit(0)
+		}
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint encrypt <file> [--password-id <id>]")
+			printEncryptHelp()
 			os.Exit(1)
 		}
 		file := os.Args[2]
@@ -181,8 +551,12 @@ func main() {
 		}
 		engine.EncryptFile(file, passwordID)
 	case "export":
+		if hasHelpFlag(os.Args[2:]) {
+			printExportHelp()
+			os.Exit(0)
+		}
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint export <file.bp> [--format bash|sh] [--output <path>] [--prefer-ssh]")
+			printExportHelp()
 			os.Exit(1)
 		}
 		file := os.Args[2]
@@ -209,17 +583,33 @@ func main() {
 		}
 		engine.Export(file, format, output, preferSSH)
 	case "status":
+		if hasHelpFlag(os.Args[2:]) {
+			printStatusHelp()
+			os.Exit(0)
+		}
 		engine.PrintStatus()
 	case "ps":
+		if hasHelpFlag(os.Args[2:]) {
+			printPSHelp()
+			os.Exit(0)
+		}
 		engine.PrintPS()
 	case "diff":
+		if hasHelpFlag(os.Args[2:]) {
+			printDiffHelp()
+			os.Exit(0)
+		}
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint diff <file.bp> [--prefer-ssh]")
+			printDiffHelp()
 			os.Exit(1)
 		}
 		_, _, _, _, preferSSH, _ := parseFlags(os.Args[3:])
 		engine.PrintDiff(os.Args[2], preferSSH)
 	case "slow":
+		if hasHelpFlag(os.Args[2:]) {
+			printSlowHelp()
+			os.Exit(0)
+		}
 		topN := 10
 		for i := 2; i < len(os.Args); i++ {
 			if os.Args[i] == "--top" && i+1 < len(os.Args) {
@@ -233,6 +623,10 @@ func main() {
 		}
 		engine.PrintSlow(topN)
 	case "doctor":
+		if hasHelpFlag(os.Args[2:]) {
+			printDoctorHelp()
+			os.Exit(0)
+		}
 		fix := false
 		for _, arg := range os.Args[2:] {
 			if arg == "--fix" {
@@ -241,15 +635,23 @@ func main() {
 		}
 		engine.DoctorCheck(fix)
 	case "validate":
+		if hasHelpFlag(os.Args[2:]) {
+			printValidateHelp()
+			os.Exit(0)
+		}
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint validate <file.bp> [--prefer-ssh]")
+			printValidateHelp()
 			os.Exit(1)
 		}
 		_, _, _, _, preferSSH, _ := parseFlags(os.Args[3:])
 		engine.Validate(os.Args[2], preferSSH)
 	case "render":
+		if hasHelpFlag(os.Args[2:]) {
+			printRenderHelp()
+			os.Exit(0)
+		}
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint render <file.bp> --template <file.tmpl|dir> [--output <path>] [--var KEY=VALUE] [--prefer-ssh]")
+			printRenderHelp()
 			os.Exit(1)
 		}
 		file := os.Args[2]
@@ -277,8 +679,12 @@ func main() {
 		cliVars := parseVarFlags(os.Args[3:])
 		engine.Render(file, tmplPath, output, preferSSH, cliVars)
 	case "check":
+		if hasHelpFlag(os.Args[2:]) {
+			printCheckHelp()
+			os.Exit(0)
+		}
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: blueprint check <file.bp> --template <file.tmpl|dir> --against <file|dir> [--var KEY=VALUE] [--prefer-ssh]")
+			printCheckHelp()
 			os.Exit(1)
 		}
 		file := os.Args[2]
@@ -306,13 +712,12 @@ func main() {
 		cliVars := parseVarFlags(os.Args[3:])
 		engine.Check(file, tmplPath, against, preferSSH, cliVars)
 	case "get":
+		if hasHelpFlag(os.Args[2:]) {
+			printGetHelp()
+			os.Exit(0)
+		}
 		if len(os.Args) < 5 {
-			fmt.Println("Usage: blueprint get <file.bp> <action> <key> [--var KEY=VALUE]")
-			fmt.Println("Examples:")
-			fmt.Println("  blueprint get setup.bp mise ruby")
-			fmt.Println("  blueprint get setup.bp asdf nodejs")
-			fmt.Println("  blueprint get setup.bp homebrew formula")
-			fmt.Println("  blueprint get setup.bp var APP_NAME")
+			printGetHelp()
 			os.Exit(1)
 		}
 		file := os.Args[2]
