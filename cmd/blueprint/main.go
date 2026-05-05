@@ -518,7 +518,7 @@ func main() {
 		}
 		file := os.Args[2]
 		skipGroup, skipID, onlyID, skipDecrypt, preferSSH, _ := parseFlags(os.Args[3:])
-		engine.RunWithSkip(file, true, skipGroup, skipID, onlyID, skipDecrypt, preferSSH, false) // dry-run
+		os.Exit(engine.RunWithSkip(file, true, skipGroup, skipID, onlyID, skipDecrypt, preferSSH, false))
 	case "apply":
 		if hasHelpFlag(os.Args[2:]) {
 			printApplyHelp()
@@ -530,7 +530,7 @@ func main() {
 		}
 		file := os.Args[2]
 		skipGroup, skipID, onlyID, skipDecrypt, preferSSH, noStatus := parseFlags(os.Args[3:])
-		engine.RunWithSkip(file, false, skipGroup, skipID, onlyID, skipDecrypt, preferSSH, noStatus)
+		os.Exit(engine.RunWithSkip(file, false, skipGroup, skipID, onlyID, skipDecrypt, preferSSH, noStatus))
 	case "encrypt":
 		if hasHelpFlag(os.Args[2:]) {
 			printEncryptHelp()
@@ -730,7 +730,7 @@ func main() {
 		// Short mode: treat as file path only if it looks like a path (not a known command typo).
 		if !isKnownCommand(mode) {
 			if _, err := os.Stat(mode); err == nil { // #nosec G703 -- user-supplied file path is intentional
-				engine.Run(mode, false)
+				os.Exit(engine.Run(mode, false))
 				return
 			}
 		}
