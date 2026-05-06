@@ -843,3 +843,33 @@ func TestRemoteHeadSHAWithError(t *testing.T) {
 		}
 	})
 }
+
+func TestGitTimeout(t *testing.T) {
+	t.Run("default timeout is 120s", func(t *testing.T) {
+		_ = os.Unsetenv("BLUEPRINT_GIT_TIMEOUT")
+		if got := gitTimeout(); got != 120*1e9 {
+			t.Errorf("expected 120s, got %v", got)
+		}
+	})
+
+	t.Run("custom timeout from env", func(t *testing.T) {
+		t.Setenv("BLUEPRINT_GIT_TIMEOUT", "30")
+		if got := gitTimeout(); got != 30*1e9 {
+			t.Errorf("expected 30s, got %v", got)
+		}
+	})
+
+	t.Run("invalid env falls back to default", func(t *testing.T) {
+		t.Setenv("BLUEPRINT_GIT_TIMEOUT", "notanumber")
+		if got := gitTimeout(); got != 120*1e9 {
+			t.Errorf("expected 120s, got %v", got)
+		}
+	})
+
+	t.Run("zero env falls back to default", func(t *testing.T) {
+		t.Setenv("BLUEPRINT_GIT_TIMEOUT", "0")
+		if got := gitTimeout(); got != 120*1e9 {
+			t.Errorf("expected 120s, got %v", got)
+		}
+	})
+}

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/elpic/blueprint/internal/engine"
+	"github.com/elpic/blueprint/internal/logging"
 )
 
 // version and commit are set at build time via -ldflags.
@@ -14,7 +15,7 @@ import (
 var version = "dev"
 var commit = "none"
 
-// parseFlags extracts --skip-group, --skip-id, --skip-decrypt, --only, --prefer-ssh, and --no-status flags from arguments
+// parseFlags extracts --skip-group, --skip-id, --skip-decrypt, --only, --prefer-ssh, --no-status, and --debug flags from arguments
 func parseFlags(args []string) (skipGroup, skipID, onlyID string, skipDecrypt, preferSSH, noStatus bool) {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -39,6 +40,8 @@ func parseFlags(args []string) (skipGroup, skipID, onlyID string, skipDecrypt, p
 			preferSSH = true
 		case "--no-status":
 			noStatus = true
+		case "--debug":
+			logging.SetLogLevel(logging.DEBUG)
 		}
 	}
 	return
@@ -108,6 +111,7 @@ Flags:
   --only <id>         Only run the rule with the given id
   --skip-decrypt      Skip encrypted rules (useful when no password is available)
   --prefer-ssh        Prefer SSH over HTTPS for git operations
+  --debug             Enable debug logging (printed to stderr)
   --help, -h          Show this help message
 
 Examples:
@@ -133,12 +137,14 @@ Flags:
   --skip-decrypt      Skip encrypted rules (useful when no password is available)
   --prefer-ssh        Prefer SSH over HTTPS for git operations
   --no-status         Do not write to ~/.blueprint/status.json
+  --debug             Enable debug logging (printed to stderr)
   --help, -h          Show this help message
 
 Examples:
   blueprint apply setup.bp
   blueprint apply setup.bp --skip-group expensive --prefer-ssh
   blueprint apply setup.bp --only my-rule
+  blueprint apply setup.bp --debug
 `)
 }
 

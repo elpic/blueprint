@@ -1,19 +1,23 @@
 package engine
 
 import (
+	"context"
 	"fmt"
-	"github.com/elpic/blueprint/internal"
-	cryptopkg "github.com/elpic/blueprint/internal/crypto"
-	handlerskg "github.com/elpic/blueprint/internal/handlers"
-	"github.com/elpic/blueprint/internal/parser"
-	"github.com/elpic/blueprint/internal/ui"
-	"golang.org/x/term"
 	"os"
 	"os/exec"
 	"os/user"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/elpic/blueprint/internal"
+	cryptopkg "github.com/elpic/blueprint/internal/crypto"
+	handlerskg "github.com/elpic/blueprint/internal/handlers"
+	"github.com/elpic/blueprint/internal/logging"
+	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/ui"
+	"golang.org/x/term"
 )
 
 func EncryptFile(filePath string, passwordID string) {
@@ -146,17 +150,23 @@ func promptForSudoPasswordWithOS(rules []parser.Rule, currentOS string) error {
 	// If sudo is needed, prompt for password upfront
 	if needsSudoPassword {
 		fmt.Printf("Enter sudo password: ")
+		logging.Debugf("prompting for sudo password")
 		password, err := readPassword()
 		if err != nil {
 			return fmt.Errorf("failed to read sudo password: %w", err)
 		}
+		logging.Debugf("sudo password read, warming sudo session")
 		// Cache the sudo password for blueprint-level sudo commands
 		passwordCache.set("sudo", password)
 		// Pre-warm the system sudo session so child processes (e.g. brew) that
 		// call sudo internally reuse the authenticated session without re-prompting.
-		warmCmd := exec.Command("sudo", "-S", "-v")
+		// Use a 10s timeout — sudo -v can hang if PAM or a network auth service stalls.
+		warmCtx, warmCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer warmCancel()
+		warmCmd := exec.CommandContext(warmCtx, "sudo", "-S", "-v")
 		warmCmd.Stdin = strings.NewReader(password + "\n")
 		_ = warmCmd.Run() // ignore error — worst case sudo prompts mid-run
+		logging.Debugf("sudo session warmed")
 	}
 
 	return nil
