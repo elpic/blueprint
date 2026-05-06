@@ -16,7 +16,7 @@ Setting only `GITHUB_TOKEN` is sufficient for most cases, including GitHub Actio
 ```bash
 export GITHUB_TOKEN=ghp_yourtoken
 
-blueprint apply my-private.blueprint
+blueprint apply my-private.bp
 ```
 
 In GitHub Actions, `GITHUB_TOKEN` is automatically available:
