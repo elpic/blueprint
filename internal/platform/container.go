@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/elpic/blueprint/internal"
+	gitpkg "github.com/elpic/blueprint/internal/git"
 )
 
 // container implements the Container interface and manages all platform dependencies.
@@ -590,9 +591,11 @@ func (g *realGitProvider) Clone(url, path, branch string) (*GitResult, error) {
 	panic("not implemented")
 }
 func (g *realGitProvider) Update(path, branch string) (*GitResult, error) { panic("not implemented") }
-func (g *realGitProvider) GetLocalSHA(path string) (string, error)        { panic("not implemented") }
+func (g *realGitProvider) GetLocalSHA(path string) (string, error) {
+	return gitpkg.LocalSHAWithError(path)
+}
 func (g *realGitProvider) GetRemoteHeadSHA(url, branch string) (string, error) {
-	panic("not implemented")
+	return gitpkg.RemoteHeadSHAWithError(url, branch)
 }
 func (g *realGitProvider) IsRepository(path string) bool { panic("not implemented") }
 
