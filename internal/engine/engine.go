@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	gitpkg "github.com/elpic/blueprint/internal/git"
+	"github.com/elpic/blueprint/internal/logging"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
 )
@@ -79,12 +80,14 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 		}
 	}
 
+	logging.Debugf("resolving blueprint file: %s", file)
 	setupPath, blueprintSHA, cleanup, err := resolveBlueprintFile(file, dry, preferSSH)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return 1
 	}
 	defer cleanup()
+	logging.Debugf("blueprint resolved: %s", setupPath)
 
 	// Parse the setup file (with include support for both local and git repositories)
 	var rules []parser.Rule
@@ -174,16 +177,20 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 
 	// Prompt for sudo password upfront (before decrypt passwords)
 	// Check all rules including auto-uninstall rules
+	logging.Debugf("checking sudo requirements (%d rules)", len(allRules))
 	if err := promptForSudoPasswordWithOS(allRules, currentOS); err != nil {
 		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error prompting for sudo password: %v", err)))
 		return 1
 	}
+	logging.Debugf("sudo check complete")
 
 	// Prompt for all decrypt passwords upfront
+	logging.Debugf("checking decrypt password requirements")
 	if err := promptForDecryptPasswords(allRules); err != nil {
 		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error prompting for passwords: %v", err)))
 		return 1
 	}
+	logging.Debugf("password prompts complete, starting rule execution")
 
 	records := executeRules(allRules, file, currentOS, basePath, runNumber)
 	if err := saveHistory(records); err != nil {

@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"fmt"
 	"os"
 	"strings"
 )
@@ -48,4 +49,11 @@ func SetLogLevel(level LogLevel) {
 // GetLogLevel returns the current log level
 func GetLogLevel() LogLevel {
 	return currentLogLevel
+}
+
+// Debugf prints a debug message to stderr when debug mode is active.
+func Debugf(format string, args ...any) {
+	if currentLogLevel >= DEBUG {
+		fmt.Fprintf(os.Stderr, "[debug] "+format+"\n", args...)
+	}
 }
