@@ -58,7 +58,10 @@ func (p *passwordStore) snapshot() map[string]string {
 // passwordCache stores decryption passwords by password-id to avoid re-prompting
 var passwordCache = &passwordStore{m: make(map[string]string)}
 
-func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID string, skipDecrypt bool, preferSSH bool, noStatus bool) {
+// RunWithSkip executes the blueprint and returns an exit code:
+// 0 = success (all rules applied or dry-run completed),
+// 1 = one or more rules failed or a fatal error occurred.
+func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID string, skipDecrypt bool, preferSSH bool, noStatus bool) int {
 	if preferSSH {
 		file = gitpkg.ExpandShorthandSSH(file)
 	} else {
@@ -79,7 +82,7 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 	setupPath, blueprintSHA, cleanup, err := resolveBlueprintFile(file, dry, preferSSH)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
-		return
+		return 1
 	}
 	defer cleanup()
 
@@ -90,7 +93,7 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 	rules, err = parser.ParseFile(setupPath)
 	if err != nil {
 		fmt.Println("Parse error:", err)
-		return
+		return 1
 	}
 
 	// Interpolate ${VAR_NAME} in all rules before any further processing so that
@@ -134,7 +137,7 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 
 	if onlyID != "" && len(filteredRules) == 0 {
 		fmt.Printf("No rule found with id: %s\n", onlyID)
-		return
+		return 1
 	}
 
 	// Check history and add auto-uninstall rules for removed packages.
@@ -164,40 +167,47 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 			displayRules(autoUninstallRules)
 		}
 		ui.PrintPlanFooter()
-	} else {
-		ui.PrintExecutionHeader(true, currentOS, file, len(filteredRules), len(autoUninstallRules), numCleanups)
-
-		// Prompt for sudo password upfront (before decrypt passwords)
-		// Check all rules including auto-uninstall rules
-		err := promptForSudoPasswordWithOS(allRules, currentOS)
-		if err != nil {
-			fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error prompting for sudo password: %v", err)))
-			return
-		}
-
-		// Prompt for all decrypt passwords upfront
-		err = promptForDecryptPasswords(allRules)
-		if err != nil {
-			fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error prompting for passwords: %v", err)))
-			return
-		}
-
-		records := executeRules(allRules, file, currentOS, basePath, runNumber)
-		if err := saveHistory(records); err != nil {
-			fmt.Printf("Warning: Failed to save history: %v\n", err)
-		}
-		// Use the original file path/URL for status (never temp paths)
-		if !noStatus {
-			if err := saveStatus(allRules, records, file, blueprintSHA, currentOS); err != nil {
-				fmt.Printf("Warning: Failed to save status: %v\n", err)
-			}
-		}
-
-		// Clear sudo cache on all operating systems
-		clearSudoCache()
+		return 0
 	}
+
+	ui.PrintExecutionHeader(true, currentOS, file, len(filteredRules), len(autoUninstallRules), numCleanups)
+
+	// Prompt for sudo password upfront (before decrypt passwords)
+	// Check all rules including auto-uninstall rules
+	if err := promptForSudoPasswordWithOS(allRules, currentOS); err != nil {
+		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error prompting for sudo password: %v", err)))
+		return 1
+	}
+
+	// Prompt for all decrypt passwords upfront
+	if err := promptForDecryptPasswords(allRules); err != nil {
+		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error prompting for passwords: %v", err)))
+		return 1
+	}
+
+	records := executeRules(allRules, file, currentOS, basePath, runNumber)
+	if err := saveHistory(records); err != nil {
+		fmt.Printf("Warning: Failed to save history: %v\n", err)
+	}
+	// Use the original file path/URL for status (never temp paths)
+	if !noStatus {
+		if err := saveStatus(allRules, records, file, blueprintSHA, currentOS); err != nil {
+			fmt.Printf("Warning: Failed to save status: %v\n", err)
+		}
+	}
+
+	// Clear sudo cache on all operating systems
+	clearSudoCache()
+
+	// Return exit code 1 if any rule failed.
+	for _, r := range records {
+		if r.Status == "error" {
+			return 1
+		}
+	}
+	return 0
 }
 
-func Run(file string, dry bool) {
-	RunWithSkip(file, dry, "", "", "", false, false, false)
+func Run(file string, dry bool) int {
+	return RunWithSkip(file, dry, "", "", "", false, false, false)
 }
