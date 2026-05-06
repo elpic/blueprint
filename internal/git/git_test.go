@@ -846,7 +846,7 @@ func TestRemoteHeadSHAWithError(t *testing.T) {
 
 func TestGitTimeout(t *testing.T) {
 	t.Run("default timeout is 120s", func(t *testing.T) {
-		os.Unsetenv("BLUEPRINT_GIT_TIMEOUT")
+		_ = os.Unsetenv("BLUEPRINT_GIT_TIMEOUT")
 		if got := gitTimeout(); got != 120*1e9 {
 			t.Errorf("expected 120s, got %v", got)
 		}
