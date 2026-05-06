@@ -1,13 +1,16 @@
 package git
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -18,6 +21,17 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
+
+// gitTimeout returns the timeout duration for git network operations.
+// Reads BLUEPRINT_GIT_TIMEOUT (seconds); defaults to 120s.
+func gitTimeout() time.Duration {
+	if s := os.Getenv("BLUEPRINT_GIT_TIMEOUT"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return 120 * time.Second
+}
 
 // GitURLParams holds parsed git URL information
 type GitURLParams struct {
@@ -438,13 +452,33 @@ func remoteRef(url, ref string) string {
 
 // remoteRefWithError returns the SHA for the given ref on the remote, propagating any error.
 func remoteRefWithError(url, ref string) (string, error) {
-	// Try go-git first
+	// Try go-git first with a timeout (go-git lacks native context support).
 	remote := git.NewRemote(nil, &config.RemoteConfig{
 		Name: "origin",
 		URLs: []string{url},
 	})
 	auth, _ := repoAuth(url)
-	refs, err := remote.List(&git.ListOptions{Auth: auth})
+
+	type listResult struct {
+		refs []*plumbing.Reference
+		err  error
+	}
+	ch := make(chan listResult, 1)
+	go func() {
+		r, e := remote.List(&git.ListOptions{Auth: auth})
+		ch <- listResult{r, e}
+	}()
+
+	timeout := gitTimeout()
+	var refs []*plumbing.Reference
+	var err error
+	select {
+	case res := <-ch:
+		refs, err = res.refs, res.err
+	case <-time.After(timeout):
+		err = fmt.Errorf("remote list timed out after %s", timeout)
+	}
+
 	if err == nil {
 		refMap := make(map[string]string, len(refs))
 		for _, r := range refs {
@@ -465,7 +499,9 @@ func remoteRefWithError(url, ref string) (string, error) {
 	}
 
 	// Fall back to system git ls-remote (handles SSH agent, keychain, etc.)
-	out, cmdErr := exec.Command("git", "ls-remote", "--symref", url, ref).Output() // #nosec G204
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout())
+	defer cancel()
+	out, cmdErr := exec.CommandContext(ctx, "git", "ls-remote", "--symref", url, ref).Output() // #nosec G204
 	if cmdErr != nil {
 		return "", fmt.Errorf("ls-remote %s %s: %w", url, ref, cmdErr)
 	}
@@ -537,7 +573,9 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 		if !fetched {
 			// go-git failed (e.g. SSH agent/passphrase issues) — use system git
 			fetchArgs := []string{"-C", path, "fetch", "--quiet", "origin"}
-			fetchCmd := exec.Command("git", fetchArgs...) // #nosec G204
+			fetchCtx, fetchCancel := context.WithTimeout(context.Background(), gitTimeout())
+			defer fetchCancel()
+			fetchCmd := exec.CommandContext(fetchCtx, "git", fetchArgs...) // #nosec G204
 			fetchCmd.Stdout = io.Discard
 			fetchCmd.Stderr = os.Stderr
 			if fetchErr := fetchCmd.Run(); fetchErr != nil {
@@ -613,7 +651,9 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 			args = append(args, "--branch", branch)
 		}
 		args = append(args, url, path)
-		cloneCmd := exec.Command("git", args...) // #nosec G204
+		cloneCtx, cloneCancel := context.WithTimeout(context.Background(), gitTimeout())
+		defer cloneCancel()
+		cloneCmd := exec.CommandContext(cloneCtx, "git", args...) // #nosec G204
 		cloneCmd.Stdout = io.Discard
 		cloneCmd.Stderr = os.Stderr
 		if err := cloneCmd.Run(); err != nil {

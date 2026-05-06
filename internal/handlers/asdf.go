@@ -822,7 +822,8 @@ func getLatestAsdfVersion() (string, error) {
 	asdfVersionMutex.Unlock()
 
 	// Fetch from GitHub API
-	resp, err := http.Get("https://api.github.com/repos/asdf-vm/asdf/releases/latest")
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get("https://api.github.com/repos/asdf-vm/asdf/releases/latest")
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch latest asdf version: %w", err)
 	}

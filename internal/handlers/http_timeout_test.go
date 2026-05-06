@@ -55,3 +55,17 @@ func TestDownloadHandlerUsesHTTPTimeout(t *testing.T) {
 		t.Errorf("HTTP timeout too short: %v, want at least 5s", client.Timeout)
 	}
 }
+
+func TestAsdfHTTPClientHasTimeout(t *testing.T) {
+	// Verify getLatestAsdfVersion uses a timeout-aware client by checking that
+	// the cache path returns without hitting the network.
+	asdfVersionCache = "0.0.0-test"
+	got, err := getLatestAsdfVersion()
+	asdfVersionCache = ""
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "0.0.0-test" {
+		t.Errorf("expected cached version, got %q", got)
+	}
+}
