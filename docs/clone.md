@@ -19,6 +19,10 @@ clone <repo-url> to: <path> [id: <rule-id>] [branch: <branch>] [after: <dependen
 - If SHA unchanged: Reports "Already up to date"
 - Supports dependencies between clone rules
 
+**Authentication:**
+
+For private repositories, set `GITHUB_TOKEN` (and optionally `GITHUB_USER`) in your environment. See [github-token.md](github-token.md) for details.
+
 **Examples:**
 ```
 # Simple clone

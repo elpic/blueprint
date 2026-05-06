@@ -264,14 +264,8 @@ func tryClone(tmpDir, url, branch string, verbose bool) error {
 
 	// Add authentication if credentials are provided
 	if strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://") {
-		// Check for HTTPS credentials
-		if username := os.Getenv("GITHUB_USER"); username != "" {
-			if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-				cloneOpts.Auth = &http.BasicAuth{
-					Username: username,
-					Password: token,
-				}
-			}
+		if auth := httpsAuth(); auth != nil {
+			cloneOpts.Auth = auth
 		}
 	} else if strings.HasPrefix(url, "git@") {
 		if auth, authErr := sshAuth(); authErr == nil {
@@ -395,15 +389,27 @@ func gitSHA(path string) string {
 	return ref.Hash().String()
 }
 
+// httpsAuth returns HTTP basic auth from GITHUB_TOKEN (and optionally GITHUB_USER).
+// Returns nil if no token is set, allowing unauthenticated access to public repos.
+func httpsAuth() *http.BasicAuth {
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		return nil
+	}
+	username := os.Getenv("GITHUB_USER")
+	if username == "" {
+		username = "x-access-token"
+	}
+	return &http.BasicAuth{Username: username, Password: token}
+}
+
 // repoAuth returns the appropriate go-git auth method for the given URL.
 func repoAuth(url string) (transport.AuthMethod, error) {
 	if strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://") {
-		if username := os.Getenv("GITHUB_USER"); username != "" {
-			if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-				return &http.BasicAuth{Username: username, Password: token}, nil
-			}
+		if auth := httpsAuth(); auth != nil {
+			return auth, nil
 		}
-		return nil, fmt.Errorf("no HTTPS credentials available")
+		return nil, nil
 	}
 	if strings.HasPrefix(url, "git@") {
 		return sshAuth()
