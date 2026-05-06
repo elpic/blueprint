@@ -2,6 +2,8 @@ package git
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 )
 
@@ -785,4 +787,59 @@ func TestHttpsAuth(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLocalSHAWithError(t *testing.T) {
+	t.Run("nonexistent path returns error", func(t *testing.T) {
+		sha, err := LocalSHAWithError("/nonexistent/path/that/does/not/exist")
+		if err == nil {
+			t.Error("expected error, got nil")
+		}
+		if sha != "" {
+			t.Errorf("expected empty SHA, got %q", sha)
+		}
+	})
+
+	t.Run("valid repo returns SHA", func(t *testing.T) {
+		dir := t.TempDir()
+		// Init a real git repo in the temp dir
+		cmd := exec.Command("git", "init", dir)
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("git init: %v", err)
+		}
+		// Need at least one commit for HEAD to exist
+		f := filepath.Join(dir, "f.txt")
+		if err := os.WriteFile(f, []byte("hi"), 0o600); err != nil {
+			t.Fatalf("write file: %v", err)
+		}
+		for _, args := range [][]string{
+			{"git", "-C", dir, "config", "user.email", "test@test.com"},
+			{"git", "-C", dir, "config", "user.name", "Test"},
+			{"git", "-C", dir, "add", "."},
+			{"git", "-C", dir, "commit", "-m", "init"},
+		} {
+			if err := exec.Command(args[0], args[1:]...).Run(); err != nil {
+				t.Fatalf("cmd %v: %v", args, err)
+			}
+		}
+		sha, err := LocalSHAWithError(dir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(sha) != 40 {
+			t.Errorf("expected 40-char SHA, got %q", sha)
+		}
+	})
+}
+
+func TestRemoteHeadSHAWithError(t *testing.T) {
+	t.Run("invalid URL returns error", func(t *testing.T) {
+		sha, err := RemoteHeadSHAWithError("https://invalid.example.invalid/nonexistent/repo.git", "")
+		if err == nil {
+			t.Error("expected error for unreachable URL, got nil")
+		}
+		if sha != "" {
+			t.Errorf("expected empty SHA, got %q", sha)
+		}
+	})
 }

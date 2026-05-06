@@ -363,30 +363,42 @@ func CleanupRepository(path string) error {
 // LocalSHA reads the HEAD SHA of a local repository at the given path using go-git.
 // Returns empty string if the path is not a valid git repository.
 func LocalSHA(path string) string {
+	sha, _ := LocalSHAWithError(path)
+	return sha
+}
+
+// LocalSHAWithError reads the HEAD SHA of a local repository, returning any error encountered.
+func LocalSHAWithError(path string) (string, error) {
 	return gitSHA(path)
 }
 
 // RemoteHeadSHA returns the SHA of the remote HEAD (or branch tip) for the given URL and branch.
 // Returns empty string if the check fails (network unavailable, auth issue, etc.).
 func RemoteHeadSHA(url, branch string) string {
+	sha, _ := RemoteHeadSHAWithError(url, branch)
+	return sha
+}
+
+// RemoteHeadSHAWithError returns the remote HEAD SHA, propagating any error to the caller.
+func RemoteHeadSHAWithError(url, branch string) (string, error) {
 	ref := "HEAD"
 	if branch != "" {
 		ref = "refs/heads/" + branch
 	}
-	return remoteRef(url, ref)
+	return remoteRefWithError(url, ref)
 }
 
 // gitSHA reads the HEAD SHA of a repository at the given path using go-git.
-func gitSHA(path string) string {
+func gitSHA(path string) (string, error) {
 	repo, err := git.PlainOpen(path)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("open repository at %s: %w", path, err)
 	}
 	ref, err := repo.Head()
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("read HEAD at %s: %w", path, err)
 	}
-	return ref.Hash().String()
+	return ref.Hash().String(), nil
 }
 
 // httpsAuth returns HTTP basic auth from GITHUB_TOKEN (and optionally GITHUB_USER).
@@ -417,10 +429,15 @@ func repoAuth(url string) (transport.AuthMethod, error) {
 	return nil, fmt.Errorf("unsupported URL scheme")
 }
 
-// remoteRef returns the SHA for the given ref on the remote using go-git (no git binary required).
-// Returns empty string if the check fails (network unavailable, auth issue, etc.) —
-// callers should fall back to a full fetch in that case.
+// remoteRef returns the SHA for the given ref on the remote.
+// Returns empty string if the check fails — callers should fall back to a full fetch in that case.
 func remoteRef(url, ref string) string {
+	sha, _ := remoteRefWithError(url, ref)
+	return sha
+}
+
+// remoteRefWithError returns the SHA for the given ref on the remote, propagating any error.
+func remoteRefWithError(url, ref string) (string, error) {
 	// Try go-git first
 	remote := git.NewRemote(nil, &config.RemoteConfig{
 		Name: "origin",
@@ -436,30 +453,30 @@ func remoteRef(url, ref string) string {
 			}
 		}
 		if sha, ok := refMap[ref]; ok {
-			return sha
+			return sha, nil
 		}
 		if ref == "HEAD" {
 			for _, r := range refs {
 				if r.Name().String() == "HEAD" && r.Type() == plumbing.SymbolicReference {
-					return refMap[r.Target().String()]
+					return refMap[r.Target().String()], nil
 				}
 			}
 		}
 	}
 
 	// Fall back to system git ls-remote (handles SSH agent, keychain, etc.)
-	out, cmdErr := exec.Command("git", "ls-remote", "--symref", url, ref).Output()
+	out, cmdErr := exec.Command("git", "ls-remote", "--symref", url, ref).Output() // #nosec G204
 	if cmdErr != nil {
-		return ""
+		return "", fmt.Errorf("ls-remote %s %s: %w", url, ref, cmdErr)
 	}
 	// Output format: "<sha>\t<refname>\n" or "ref: refs/heads/main\tHEAD\n<sha>\t..."
 	for _, line := range strings.Split(string(out), "\n") {
 		parts := strings.Fields(line)
 		if len(parts) == 2 && parts[1] == ref && len(parts[0]) == 40 {
-			return parts[0]
+			return parts[0], nil
 		}
 	}
-	return ""
+	return "", fmt.Errorf("ref %s not found on remote %s", ref, url)
 }
 
 // CloneOrUpdateRepository clones a repository to a specific path or updates it if already exists.
@@ -485,7 +502,7 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 	pathExists := err == nil && info.IsDir()
 
 	if pathExists {
-		oldSHA := gitSHA(path)
+		oldSHA, _ := gitSHA(path)
 
 		// Check remote HEAD without fetching to avoid unnecessary network traffic
 		ref := "HEAD"
@@ -604,7 +621,7 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 		}
 	}
 
-	newSHA := gitSHA(path)
+	newSHA, _ := gitSHA(path)
 	return "", newSHA, "Cloned", nil
 }
 
@@ -798,7 +815,8 @@ var GetCleanRepositorySHA = func(url, branch string) string {
 	if err != nil {
 		return ""
 	}
-	return gitSHA(storagePath)
+	sha, _ := gitSHA(storagePath)
+	return sha
 }
 
 // CloneOrUpdateRepositoryTwoStage variable for test stubbing
@@ -831,7 +849,7 @@ func cloneOrUpdateRepositoryTwoStageImpl(url, targetPath, branch string) (string
 	// Get old SHA from clean storage (not from potentially polluted target)
 	oldStorageSHA := ""
 	if storageInfo, err := os.Stat(storagePath); err == nil && storageInfo.IsDir() {
-		oldStorageSHA = gitSHA(storagePath)
+		oldStorageSHA, _ = gitSHA(storagePath)
 	}
 
 	// Clone/update the clean repository in storage
