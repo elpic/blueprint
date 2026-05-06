@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,6 +9,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/elpic/blueprint/internal"
 	cryptopkg "github.com/elpic/blueprint/internal/crypto"
@@ -158,7 +160,10 @@ func promptForSudoPasswordWithOS(rules []parser.Rule, currentOS string) error {
 		passwordCache.set("sudo", password)
 		// Pre-warm the system sudo session so child processes (e.g. brew) that
 		// call sudo internally reuse the authenticated session without re-prompting.
-		warmCmd := exec.Command("sudo", "-S", "-v")
+		// Use a 10s timeout — sudo -v can hang if PAM or a network auth service stalls.
+		warmCtx, warmCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer warmCancel()
+		warmCmd := exec.CommandContext(warmCtx, "sudo", "-S", "-v")
 		warmCmd.Stdin = strings.NewReader(password + "\n")
 		_ = warmCmd.Run() // ignore error — worst case sudo prompts mid-run
 		logging.Debugf("sudo session warmed")
