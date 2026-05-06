@@ -519,10 +519,99 @@ func getLatestRunNumber() (int, error) {
 	return latestRun, nil
 }
 
+// filterHistoryRecords filters records by timestamp prefix and blueprint name substring.
+func filterHistoryRecords(records []ExecutionRecord, since, blueprintFilter string) []ExecutionRecord {
+	if since == "" && blueprintFilter == "" {
+		return records
+	}
+	var filtered []ExecutionRecord
+	for _, r := range records {
+		if since != "" && !strings.HasPrefix(r.Timestamp, since) {
+			continue
+		}
+		if blueprintFilter != "" && !strings.Contains(r.Blueprint, blueprintFilter) {
+			continue
+		}
+		filtered = append(filtered, r)
+	}
+	return filtered
+}
+
+// loadHistoryRecords loads and optionally filters the history.json records.
+// since is a time prefix (e.g. "2025-05", "2025-05-01"); blueprintFilter filters by blueprint name substring.
+func loadHistoryRecords(since, blueprintFilter string) ([]ExecutionRecord, error) {
+	historyPath, err := getHistoryPath()
+	if err != nil {
+		return nil, err
+	}
+	data, err := readBlueprintFile(historyPath)
+	if err != nil {
+		return nil, err
+	}
+	var records []ExecutionRecord
+	if err := json.Unmarshal(data, &records); err != nil {
+		return nil, err
+	}
+	return filterHistoryRecords(records, since, blueprintFilter), nil
+}
+
+// PrintHistoryStats prints aggregate stats from history, optionally filtered.
+func PrintHistoryStats(since, blueprintFilter string) {
+	records, err := loadHistoryRecords(since, blueprintFilter)
+	if err != nil {
+		fmt.Printf("%s\n", ui.FormatInfo("No history found. Run 'blueprint apply' to create one."))
+		return
+	}
+	if len(records) == 0 {
+		fmt.Printf("%s\n", ui.FormatInfo("No matching history records found."))
+		return
+	}
+	total := len(records)
+	var succeeded, failed int
+	var totalMs int64
+	blueprints := map[string]int{}
+	for _, r := range records {
+		if r.Status == "success" {
+			succeeded++
+		} else {
+			failed++
+		}
+		totalMs += r.DurationMs
+		if r.Blueprint != "" {
+			blueprints[r.Blueprint]++
+		}
+	}
+	fmt.Printf("\n%s\n", ui.FormatHighlight("=== HISTORY STATS ==="))
+	fmt.Printf("  Total rules run : %d\n", total)
+	fmt.Printf("  Succeeded       : %d\n", succeeded)
+	fmt.Printf("  Failed          : %d\n", failed)
+	if totalMs > 0 {
+		fmt.Printf("  Total duration  : %.1fs\n", float64(totalMs)/1000)
+		fmt.Printf("  Avg duration    : %.1fs\n", float64(totalMs)/float64(total)/1000)
+	}
+	if len(blueprints) > 0 {
+		fmt.Printf("\n%s\n", ui.FormatHighlight("  Blueprints:"))
+		type bpCount struct {
+			name  string
+			count int
+		}
+		var bps []bpCount
+		for k, v := range blueprints {
+			bps = append(bps, bpCount{k, v})
+		}
+		sort.Slice(bps, func(i, j int) bool { return bps[i].count > bps[j].count })
+		for _, bp := range bps {
+			fmt.Printf("    %-40s %d runs\n", bp.name, bp.count)
+		}
+	}
+	fmt.Printf("\n")
+}
+
 // PrintHistory displays the history of a specific run
 // If runNumber is 0, displays the latest run
 // If stepNumber is >= 0, displays only that specific step
-func PrintHistory(runNumber int, stepNumber int) {
+// since and blueprintFilter are optional filters applied to the run listing.
+func PrintHistory(runNumber int, stepNumber int, since, blueprintFilter string) {
 	blueprintDir, err := getBlueprintDir()
 	if err != nil {
 		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Failed to get blueprint directory: %v", err)))

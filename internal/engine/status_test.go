@@ -251,3 +251,54 @@ func TestGetLatestRunNumber(t *testing.T) {
 		t.Errorf("getLatestRunNumber() = %d, expected >= 0", num)
 	}
 }
+
+func TestLoadHistoryRecords(t *testing.T) {
+	records := []ExecutionRecord{
+		{Timestamp: "2025-05-01T10:00:00Z", Blueprint: "dotfiles.bp", Status: "success", DurationMs: 100},
+		{Timestamp: "2025-05-02T11:00:00Z", Blueprint: "dotfiles.bp", Status: "success", DurationMs: 200},
+		{Timestamp: "2025-06-01T12:00:00Z", Blueprint: "tools.bp", Status: "failure", DurationMs: 50},
+		{Timestamp: "2024-12-01T09:00:00Z", Blueprint: "old.bp", Status: "success", DurationMs: 75},
+	}
+
+	t.Run("no filter returns all", func(t *testing.T) {
+		got := filterHistoryRecords(records, "", "")
+		if len(got) != 4 {
+			t.Errorf("want 4 records, got %d", len(got))
+		}
+	})
+
+	t.Run("since month filter", func(t *testing.T) {
+		got := filterHistoryRecords(records, "2025-05", "")
+		if len(got) != 2 {
+			t.Errorf("want 2 records, got %d", len(got))
+		}
+	})
+
+	t.Run("since year filter", func(t *testing.T) {
+		got := filterHistoryRecords(records, "2025", "")
+		if len(got) != 3 {
+			t.Errorf("want 3 records, got %d", len(got))
+		}
+	})
+
+	t.Run("blueprint filter", func(t *testing.T) {
+		got := filterHistoryRecords(records, "", "dotfiles")
+		if len(got) != 2 {
+			t.Errorf("want 2 records, got %d", len(got))
+		}
+	})
+
+	t.Run("combined filter", func(t *testing.T) {
+		got := filterHistoryRecords(records, "2025-05", "dotfiles")
+		if len(got) != 2 {
+			t.Errorf("want 2 records, got %d", len(got))
+		}
+	})
+
+	t.Run("no matches returns empty", func(t *testing.T) {
+		got := filterHistoryRecords(records, "2099", "")
+		if len(got) != 0 {
+			t.Errorf("want 0 records, got %d", len(got))
+		}
+	})
+}

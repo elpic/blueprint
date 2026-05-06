@@ -202,23 +202,26 @@ func printHistoryHelp() {
 	fmt.Print(`blueprint history - view execution history
 
 Usage:
-  blueprint history [run_number [step_number]]
+  blueprint history [run_number [step_number]] [flags]
 
 Arguments:
   run_number          Show details for a specific run (0 = latest)
   step_number         Show details for a specific step within the run
 
-Description:
-  Reads ~/.blueprint/history.json and prints past apply operations
-  with timestamps, commands, outputs, and duration.
-
 Flags:
+  --since <prefix>    Filter records by timestamp prefix (e.g. 2025, 2025-05, 2025-05-01)
+  --blueprint <name>  Filter records by blueprint name substring
+  --stats             Show aggregate stats instead of run details
   --help, -h          Show this help message
 
 Examples:
-  blueprint history           # list all runs
-  blueprint history 0         # show latest run
-  blueprint history 0 3       # show step 3 of the latest run
+  blueprint history                          # show latest run
+  blueprint history 0                        # show latest run explicitly
+  blueprint history 0 3                      # show step 3 of the latest run
+  blueprint history --since 2025-05          # runs from May 2025
+  blueprint history --blueprint dotfiles     # runs for a specific blueprint
+  blueprint history --stats                  # aggregate stats
+  blueprint history --stats --since 2025     # stats for this year
 `)
 }
 
@@ -490,23 +493,49 @@ func main() {
 			printHistoryHelp()
 			os.Exit(0)
 		}
+		var since, blueprintFilter string
+		var statsOnly bool
+		args := os.Args[2:]
+		var positional []string
+		for i := 0; i < len(args); i++ {
+			switch {
+			case args[i] == "--stats":
+				statsOnly = true
+			case args[i] == "--since" && i+1 < len(args):
+				i++
+				since = args[i]
+			case strings.HasPrefix(args[i], "--since="):
+				since = strings.TrimPrefix(args[i], "--since=")
+			case args[i] == "--blueprint" && i+1 < len(args):
+				i++
+				blueprintFilter = args[i]
+			case strings.HasPrefix(args[i], "--blueprint="):
+				blueprintFilter = strings.TrimPrefix(args[i], "--blueprint=")
+			default:
+				positional = append(positional, args[i])
+			}
+		}
 		runNumber := 0
 		stepNumber := -1
-		if len(os.Args) >= 3 {
-			n, ok := parseNonNegativeInt(os.Args[2], "run_number")
+		if len(positional) >= 1 {
+			n, ok := parseNonNegativeInt(positional[0], "run_number")
 			if !ok {
 				os.Exit(1)
 			}
 			runNumber = n
 		}
-		if len(os.Args) >= 4 {
-			n, ok := parseNonNegativeInt(os.Args[3], "step_number")
+		if len(positional) >= 2 {
+			n, ok := parseNonNegativeInt(positional[1], "step_number")
 			if !ok {
 				os.Exit(1)
 			}
 			stepNumber = n
 		}
-		engine.PrintHistory(runNumber, stepNumber)
+		if statsOnly {
+			engine.PrintHistoryStats(since, blueprintFilter)
+		} else {
+			engine.PrintHistory(runNumber, stepNumber, since, blueprintFilter)
+		}
 	case "plan":
 		if hasHelpFlag(os.Args[2:]) {
 			printPlanHelp()
