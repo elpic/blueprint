@@ -660,8 +660,8 @@ func TestParseGitURL_Shorthand(t *testing.T) {
 		wantPath   string
 	}{
 		{
-			input:   "@github:user/repo",
-			wantURL: "https://github.com/user/repo",
+			input:    "@github:user/repo",
+			wantURL:  "https://github.com/user/repo",
 			wantPath: "setup.bp",
 		},
 		{
@@ -677,8 +677,8 @@ func TestParseGitURL_Shorthand(t *testing.T) {
 			wantPath:   "infra/setup.bp",
 		},
 		{
-			input:   "@bitbucket:user/repo",
-			wantURL: "https://bitbucket.org/user/repo",
+			input:    "@bitbucket:user/repo",
+			wantURL:  "https://bitbucket.org/user/repo",
 			wantPath: "setup.bp",
 		},
 	}
@@ -731,6 +731,57 @@ func TestExpandShorthandSSH(t *testing.T) {
 			got := ExpandShorthandSSH(tt.input)
 			if got != tt.want {
 				t.Errorf("ExpandShorthandSSH(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHttpsAuth(t *testing.T) {
+	tests := []struct {
+		name         string
+		envToken     string
+		envUser      string
+		wantNil      bool
+		wantUsername string
+		wantPassword string
+	}{
+		{
+			name:    "no env vars returns nil",
+			wantNil: true,
+		},
+		{
+			name:         "token only uses x-access-token as username",
+			envToken:     "ghp_token123",
+			wantUsername: "x-access-token",
+			wantPassword: "ghp_token123",
+		},
+		{
+			name:         "token and user uses provided username",
+			envToken:     "ghp_token123",
+			envUser:      "myuser",
+			wantUsername: "myuser",
+			wantPassword: "ghp_token123",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("GITHUB_TOKEN", tt.envToken)
+			t.Setenv("GITHUB_USER", tt.envUser)
+			auth := httpsAuth()
+			if tt.wantNil {
+				if auth != nil {
+					t.Errorf("expected nil, got %+v", auth)
+				}
+				return
+			}
+			if auth == nil {
+				t.Fatal("expected non-nil auth")
+			}
+			if auth.Username != tt.wantUsername {
+				t.Errorf("Username = %q, want %q", auth.Username, tt.wantUsername)
+			}
+			if auth.Password != tt.wantPassword {
+				t.Errorf("Password = %q, want %q", auth.Password, tt.wantPassword)
 			}
 		})
 	}
