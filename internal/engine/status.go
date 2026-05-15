@@ -282,11 +282,13 @@ func PrintDiff(blueprintFile string, preferSSH bool) {
 	removeRules := getAutoUninstallRules(desiredRules, blueprintFile, currentOS)
 
 	// Additions: rules in the blueprint that have no matching status entry.
-	// Skip AlwaysRunUp rules (e.g. render) — they re-run every apply by design
-	// and are not meaningful as "will install" items in the diff.
+	// Skip render rules — they re-run every apply by design and always show
+	// as "will render", which is noise in the diff.
+	// Dotfiles rules ARE included because they have meaningful local state
+	// (symlinks, SHA) that can be checked via IsInstalled.
 	var addRules []parser.Rule
 	for _, rule := range desiredRules {
-		if def := handlerskg.GetAction(rule.Action); def != nil && def.AlwaysRunUp {
+		if rule.Action == "render" {
 			continue
 		}
 		handler := handlerskg.NewHandler(rule, "", nil)

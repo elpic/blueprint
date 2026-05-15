@@ -645,7 +645,7 @@ func (h *DotfilesHandler) IsInstalled(status *Status, blueprintFile, osName stri
 			clonePath := h.expandedDotfilesPath()
 			localSHA := gitpkg.LocalSHA(clonePath)
 			if localSHA != "" {
-				remoteSHA := gitpkg.RemoteHeadSHA(h.Rule.DotfilesURL, "")
+				remoteSHA := gitpkg.RemoteHeadSHA(h.Rule.DotfilesURL, h.Rule.DotfilesBranch)
 				if remoteSHA != "" && remoteSHA != localSHA {
 					return false
 				}
