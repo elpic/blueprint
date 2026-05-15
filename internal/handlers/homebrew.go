@@ -42,7 +42,7 @@ func init() {
 		ShellExport: func(rule parser.Rule, _, _ string) []string {
 			var lines []string
 			for _, f := range rule.HomebrewPackages {
-				name := strings.Split(f, "@")[0]
+				name := formulaName(strings.Split(f, "@")[0])
 				lines = append(lines,
 					fmt.Sprintf("if ! brew list --versions %s >/dev/null 2>&1 && ! brew list --cask %s >/dev/null 2>&1; then", name, name),
 					fmt.Sprintf("  brew install %s", f),
@@ -98,7 +98,8 @@ func (h *HomebrewHandler) Up() (string, error) {
 	brew := brewCmd()
 	var missingFormulas []string
 	for _, f := range h.Rule.HomebrewPackages {
-		if !isBrewFormulaInstalled(brew, f) && !isBrewCaskInstalled(brew, f) {
+		name := formulaName(strings.Split(f, "@")[0])
+		if !isBrewFormulaInstalled(brew, name) && !isBrewCaskInstalled(brew, name) {
 			missingFormulas = append(missingFormulas, f)
 		}
 	}
@@ -175,7 +176,7 @@ func (h *HomebrewHandler) UpdateStatus(status *Status, records []ExecutionRecord
 		// Record each formula/cask as installed
 		for _, formulaStr := range h.Rule.HomebrewPackages {
 			parts := strings.Split(formulaStr, "@")
-			formula := parts[0]
+			formula := formulaName(parts[0])
 			version := "latest"
 			if len(parts) > 1 {
 				version = parts[1]
@@ -216,6 +217,13 @@ func (h *HomebrewHandler) UpdateStatus(status *Status, records []ExecutionRecord
 // caskKey returns a storage key that distinguishes casks from formulas with the same name
 func caskKey(name string) string {
 	return "cask:" + name
+}
+
+// formulaName strips a tap prefix from a formula string.
+// "anomalyco/tap/opencode" → "opencode", "opencode" → "opencode"
+func formulaName(s string) string {
+	parts := strings.Split(s, "/")
+	return parts[len(parts)-1]
 }
 
 // ensureHomebrewInstalled ensures homebrew is installed on the system
@@ -520,7 +528,7 @@ func (h *HomebrewHandler) FindUninstallRules(status *Status, currentRules []pars
 		if rule.Action == "homebrew" {
 			for _, formulaStr := range rule.HomebrewPackages {
 				parts := strings.Split(formulaStr, "@")
-				currentKeys[parts[0]] = true
+				currentKeys[formulaName(parts[0])] = true
 			}
 			for _, cask := range rule.HomebrewCasks {
 				currentKeys[caskKey(cask)] = true
@@ -570,7 +578,7 @@ func (h *HomebrewHandler) IsInstalled(status *Status, blueprintFile, osName stri
 
 	for _, formulaStr := range h.Rule.HomebrewPackages {
 		parts := strings.Split(formulaStr, "@")
-		if !stored[parts[0]] {
+		if !stored[formulaName(parts[0])] {
 			return false
 		}
 	}
