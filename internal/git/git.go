@@ -598,30 +598,23 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 			}
 			targetHash = ref.Hash()
 		} else {
-			ref, refErr := repo.Reference(plumbing.NewRemoteReferenceName("origin", "HEAD"), true)
-			if refErr != nil {
-				// Fall back to FETCH_HEAD
-				ref, refErr = repo.Reference("FETCH_HEAD", true)
-				if refErr != nil {
-					// Fall back to any available remote tracking branch (e.g. origin/master, origin/main)
-					remoteRefs, listErr := repo.References()
-					if listErr != nil {
-						return oldSHA, "", "", fmt.Errorf("failed to resolve fetch target: %w", refErr)
-					}
-					var fallbackRef *plumbing.Reference
-					_ = remoteRefs.ForEach(func(r *plumbing.Reference) error {
-						if fallbackRef == nil && strings.HasPrefix(r.Name().String(), "refs/remotes/origin/") {
-							fallbackRef = r
-						}
-						return nil
-					})
-					if fallbackRef == nil {
-						return oldSHA, "", "", fmt.Errorf("failed to resolve fetch target: %w", refErr)
-					}
-					ref = fallbackRef
+			// Use the remote HEAD SHA we resolved before the fetch via ls-remote.
+			// This is the authoritative answer — go-git's Fetch does NOT update
+			// refs/remotes/origin/HEAD the way system git does, so relying on
+			// origin/HEAD would cause us to reset to a stale commit.
+			if remoteSHA != "" {
+				targetHash = plumbing.NewHash(remoteSHA)
+			}
+			if targetHash.IsZero() {
+				// Fallback: try origin/HEAD (may be stale but better than nothing)
+				ref, refErr := repo.Reference(plumbing.NewRemoteReferenceName("origin", "HEAD"), true)
+				if refErr == nil {
+					targetHash = ref.Hash()
 				}
 			}
-			targetHash = ref.Hash()
+			if targetHash.IsZero() {
+				return oldSHA, "", "", fmt.Errorf("failed to resolve fetch target: cannot determine remote HEAD")
+			}
 		}
 
 		worktree, err := repo.Worktree()
