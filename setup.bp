@@ -36,16 +36,5 @@ mise golangci-lint@2.11.3 id: dev-lint after: workspace-dir on: [mac, linux]
 clone https://github.com/elpic/blueprint.git to: ${WORKSPACE} id: blueprint-repo after: workspace-dir on: [mac, linux]
 
 # ---- Generate GitHub Actions workflows from templates ----
-render @github:elpic/templates@main:actions/github/integration/go \
-  output: ${WORKSPACE}/.github/workflows \
-  after: blueprint-repo \
-  var: APP_NAME=blueprint \
-  on: [mac, linux]
-
-render @github:elpic/templates@main:actions/github/blueprint-check \
-  output: ${WORKSPACE}/.github/workflows \
-  after: blueprint-repo \
-  var: BLUEPRINT_FILE=setup.bp \
-  var: TEMPLATE=@github:elpic/templates@main:actions/github/integration/go \
-  var: AGAINST=.github/workflows \
-  on: [mac, linux]
+render @github:elpic/templates@main:actions/github/integration/go output: ${WORKSPACE}/.github/workflows after: blueprint-repo var: APP_NAME=blueprint on: [mac, linux]
+render @github:elpic/templates@main:actions/github/blueprint-check output: ${WORKSPACE}/.github/workflows after: blueprint-repo var: BLUEPRINT_FILE=setup.bp var: TEMPLATE=@github:elpic/templates@main:actions/github/integration/go var: AGAINST=.github/workflows on: [mac, linux]
