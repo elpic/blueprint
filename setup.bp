@@ -1,0 +1,51 @@
+# ============================================
+# Blueprint Development Environment Setup
+# ============================================
+#
+# Apply this blueprint to set up your development
+# environment for contributing to the blueprint project.
+#
+# Prerequisites:
+#   - blueprint installed (install.sh or go install)
+#
+# Usage:
+#   blueprint apply @github:elpic/blueprint
+#
+# To override a variable:
+#   blueprint apply @github:elpic/blueprint --var WORKSPACE=~/other/path
+# ============================================
+
+# ---- Variables (pinned versions for reproducibility) ----
+# Blueprint diff/status checks installed tool versions against these.
+# Bump them here when updating the development toolchain.
+var WORKSPACE ~/development/workspace/personal/blueprint
+var GO_VERSION 1.24.1
+var GOLANGCI_LINT_VERSION 2.11.3
+var GOSEC_VERSION 2.24.7
+
+# ---- Directory structure ----
+mkdir ${WORKSPACE} id: workspace-dir on: [mac, linux]
+
+# ---- Development tools at pinned versions ----
+# mise handles installation and version management automatically.
+# If an installed version differs from the one below, blueprint diff will flag it.
+mise go@1.24.1 id: dev-go after: workspace-dir on: [mac, linux]
+mise golangci-lint@2.11.3 id: dev-lint after: workspace-dir on: [mac, linux]
+
+# ---- Clone the blueprint repository ----
+clone https://github.com/elpic/blueprint.git to: ${WORKSPACE} id: blueprint-repo after: workspace-dir on: [mac, linux]
+
+# ---- Generate GitHub Actions workflows from templates ----
+render @github:elpic/templates@main:actions/github/integration/go \
+  output: ${WORKSPACE}/.github/workflows \
+  after: blueprint-repo \
+  var: APP_NAME=blueprint \
+  on: [mac, linux]
+
+render @github:elpic/templates@main:actions/github/blueprint-check \
+  output: ${WORKSPACE}/.github/workflows \
+  after: blueprint-repo \
+  var: BLUEPRINT_FILE=setup.bp \
+  var: TEMPLATE=@github:elpic/templates@main:actions/github/integration/go \
+  var: AGAINST=.github/workflows \
+  on: [mac, linux]
