@@ -62,7 +62,7 @@ var passwordCache = &passwordStore{m: make(map[string]string)}
 // RunWithSkip executes the blueprint and returns an exit code:
 // 0 = success (all rules applied or dry-run completed),
 // 1 = one or more rules failed or a fatal error occurred.
-func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID string, skipDecrypt bool, preferSSH bool, noStatus bool) int {
+func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID string, skipDecrypt bool, preferSSH bool, noStatus bool, cliVars map[string]string) int {
 	if preferSSH {
 		file = gitpkg.ExpandShorthandSSH(file)
 	} else {
@@ -104,7 +104,7 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 	// filtering, skip/only flags, auto-uninstall comparisons, execution, and
 	// status saving all see the same expanded values.
 	{
-		vars := resolveVarMap(rules, nil)
+		vars := resolveVarMap(rules, cliVars)
 		for i, r := range rules {
 			rules[i] = interpolateRule(r, vars)
 		}
@@ -216,5 +216,5 @@ func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID 
 }
 
 func Run(file string, dry bool) int {
-	return RunWithSkip(file, dry, "", "", "", false, false, false)
+	return RunWithSkip(file, dry, "", "", "", false, false, false, nil)
 }

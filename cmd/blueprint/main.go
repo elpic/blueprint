@@ -137,6 +137,7 @@ Flags:
   --skip-decrypt      Skip encrypted rules (useful when no password is available)
   --prefer-ssh        Prefer SSH over HTTPS for git operations
   --no-status         Do not write to ~/.blueprint/status.json
+  --var KEY=VALUE     Override or set a blueprint variable (can be repeated)
   --debug             Enable debug logging (printed to stderr)
   --help, -h          Show this help message
 
@@ -144,6 +145,7 @@ Examples:
   blueprint apply setup.bp
   blueprint apply setup.bp --skip-group expensive --prefer-ssh
   blueprint apply setup.bp --only my-rule
+  blueprint apply @github:elpic/blueprint --var WORKSPACE=~/other/path
   blueprint apply setup.bp --debug
 `)
 }
@@ -553,7 +555,8 @@ func main() {
 		}
 		file := os.Args[2]
 		skipGroup, skipID, onlyID, skipDecrypt, preferSSH, _ := parseFlags(os.Args[3:])
-		os.Exit(engine.RunWithSkip(file, true, skipGroup, skipID, onlyID, skipDecrypt, preferSSH, false))
+		cliVars := parseVarFlags(os.Args[3:])
+		os.Exit(engine.RunWithSkip(file, true, skipGroup, skipID, onlyID, skipDecrypt, preferSSH, false, cliVars))
 	case "apply":
 		if hasHelpFlag(os.Args[2:]) {
 			printApplyHelp()
@@ -565,7 +568,8 @@ func main() {
 		}
 		file := os.Args[2]
 		skipGroup, skipID, onlyID, skipDecrypt, preferSSH, noStatus := parseFlags(os.Args[3:])
-		os.Exit(engine.RunWithSkip(file, false, skipGroup, skipID, onlyID, skipDecrypt, preferSSH, noStatus))
+		cliVars := parseVarFlags(os.Args[3:])
+		os.Exit(engine.RunWithSkip(file, false, skipGroup, skipID, onlyID, skipDecrypt, preferSSH, noStatus, cliVars))
 	case "encrypt":
 		if hasHelpFlag(os.Args[2:]) {
 			printEncryptHelp()
