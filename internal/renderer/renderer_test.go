@@ -394,6 +394,131 @@ func TestParseVarRule_WithDefault(t *testing.T) {
 	}
 }
 
+func TestToValue_PlainString(t *testing.T) {
+	rules := append(testRules(), parser.Rule{
+		Action:     "var",
+		VarName:    "GREETING",
+		VarDefault: "hello world",
+	})
+	d := BuildTemplateData(rules, nil)
+	v, err := d.toValue("GREETING")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s, ok := v.(string); !ok || s != "hello world" {
+		t.Errorf("expected string 'hello world', got %T %v", v, v)
+	}
+}
+
+func TestToValue_JSONArray(t *testing.T) {
+	rules := append(testRules(), parser.Rule{
+		Action:     "var",
+		VarName:    "CHECKS",
+		VarDefault: `[{"file":"setup.bp","against":"."},{"file":"test.bp","against":"src"}]`,
+	})
+	d := BuildTemplateData(rules, nil)
+	v, err := d.toValue("CHECKS")
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, ok := v.([]interface{})
+	if !ok {
+		t.Fatalf("expected []interface{}, got %T", v)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(items))
+	}
+	first := items[0].(map[string]interface{})
+	if first["file"] != "setup.bp" {
+		t.Errorf("expected first file 'setup.bp', got %v", first["file"])
+	}
+	if first["against"] != "." {
+		t.Errorf("expected first against '.', got %v", first["against"])
+	}
+}
+
+func TestToValue_JSONObject(t *testing.T) {
+	rules := append(testRules(), parser.Rule{
+		Action:     "var",
+		VarName:    "CONFIG",
+		VarDefault: `{"enabled":true,"timeout":30,"name":"test"}`,
+	})
+	d := BuildTemplateData(rules, nil)
+	v, err := d.toValue("CONFIG")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, ok := v.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map[string]interface{}, got %T", v)
+	}
+	if m["name"] != "test" {
+		t.Errorf("expected name 'test', got %v", m["name"])
+	}
+}
+
+func TestToValue_Undefined_Error(t *testing.T) {
+	d := BuildTemplateData(testRules(), nil)
+	_, err := d.toValue("NONEXISTENT")
+	if err == nil {
+		t.Error("expected error for undefined variable")
+	}
+}
+
+func TestToValue_MalformedJSON_ReturnsRaw(t *testing.T) {
+	rules := append(testRules(), parser.Rule{
+		Action:     "var",
+		VarName:    "BROKEN",
+		VarDefault: `{not: json}`,
+	})
+	d := BuildTemplateData(rules, nil)
+	v, err := d.toValue("BROKEN")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s, ok := v.(string); !ok || s != "{not: json}" {
+		t.Errorf("expected raw string fallback, got %T %v", v, v)
+	}
+}
+
+func TestToValue_RangeInTemplate(t *testing.T) {
+	rules := append(testRules(), parser.Rule{
+		Action:     "var",
+		VarName:    "ITEMS",
+		VarDefault: `[{"name":"a"},{"name":"b"}]`,
+	})
+	d := BuildTemplateData(rules, nil)
+	src := `{{- range toValue "ITEMS" }}- {{ .name }}\n{{ end -}}`
+	tmpl, err := template.New("t").Funcs(d.FuncMap()).Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, nil); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "- a") || !strings.Contains(out, "- b") {
+		t.Errorf("expected '- a' and '- b' in output, got: %s", out)
+	}
+}
+
+func TestToValue_EmptyString_ReturnsString(t *testing.T) {
+	rules := append(testRules(), parser.Rule{
+		Action:     "var",
+		VarName:    "EMPTY",
+		VarDefault: "",
+	})
+	d := BuildTemplateData(rules, nil)
+	v, err := d.toValue("EMPTY")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s, ok := v.(string); !ok || s != "" {
+		t.Errorf("expected empty string, got %T %v", v, v)
+	}
+}
+
 func TestSplitToolVersion(t *testing.T) {
 	tests := []struct {
 		input   string
