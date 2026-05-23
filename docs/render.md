@@ -345,6 +345,28 @@ Templates use Go's [`text/template`](https://pkg.go.dev/text/template) syntax. B
 | `{{ var "KEY" }}` | Required variable — errors if not set | `myapp` |
 | `{{ default "KEY" "fallback" }}` | Optional variable with fallback | `8000` |
 | `{{ toArgs "cmd arg1 arg2" }}` | Converts a string to a JSON exec-form array | `["cmd","arg1","arg2"]` |
+| `{{ toValue "CHECKS" }}` | Returns a variable's value as structured data. Plain strings stay strings; values starting with `[` or `{` are parsed as JSON arrays/objects. Enables `{{ range toValue "CHECKS" }}` in templates. | `[{"file":"setup.bp","against":"."}]` |
+
+**Iterating over lists with `toValue` and `range`:**
+
+Define a list as compact JSON in your blueprint:
+```
+var CHECKS [{"file":"setup.bp","template":"@github:org/templates@main:actions/github/integration/go","against":".github/workflows"}]
+```
+
+Then iterate in the template:
+```yaml
+steps:
+{{ range toValue "CHECKS" }}
+  - uses: elpic/actions/github/blueprint-check@v1
+    with:
+      blueprint-file: '{{ .file }}'
+      template: '{{ .template }}'
+      against: '{{ .against }}'
+{{ end }}
+```
+
+Variables with a single check still work with `{{ var "BLUEPRINT_FILE" }}` — `toValue` is only needed when you want multiple items.
 
 **Missing keys fail loudly.** If you reference `{{ mise "python" }}` but there is no `mise python@...` rule in the blueprint, the render fails with a clear error. A `Dockerfile` with `FROM python:-slim` is worse than a render error.
 
