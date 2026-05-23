@@ -373,7 +373,16 @@ func (h *CloneHandler) IsInstalled(status *Status, blueprintFile, osName string)
 			return true
 		}
 
-		// Try clean repository storage first (prevents pollution issues)
+		// When workdir is set, we only care about the target directory — skip the
+		// clean storage check (which is for two-stage clones) and verify .git exists.
+		if h.Rule.CloneWorkdir {
+			localSHAVal := localSHA(h.Container.SystemProvider().Filesystem().ExpandPath(h.Rule.ClonePath))
+			gitDir := h.Container.SystemProvider().Filesystem().ExpandPath(h.Rule.ClonePath) + "/.git"
+			hasGit := h.Container.SystemProvider().Filesystem().Exists(gitDir)
+			return hasGit && localSHAVal == remoteSHA
+		}
+
+		// Two-stage clone — try clean repository storage first (prevents pollution issues)
 		cleanSHA := gitpkg.GetCleanRepositorySHA(h.Rule.CloneURL, h.Rule.Branch)
 		if cleanSHA != "" {
 			// Clean storage exists, use it for SHA comparison
@@ -383,20 +392,7 @@ func (h *CloneHandler) IsInstalled(status *Status, blueprintFile, osName string)
 		// Fall back to checking target directory for backward compatibility
 		// This handles existing installations that don't have clean storage yet
 		localSHAVal := localSHA(h.Container.SystemProvider().Filesystem().ExpandPath(h.Rule.ClonePath))
-		if localSHAVal != remoteSHA {
-			return false
-		}
-
-		// When workdir is set, verify .git exists — a previous clone without workdir
-		// would have left the directory without .git, and we need to re-clone.
-		if h.Rule.CloneWorkdir {
-			gitDir := h.Container.SystemProvider().Filesystem().ExpandPath(h.Rule.ClonePath) + "/.git"
-			if !h.Container.SystemProvider().Filesystem().Exists(gitDir) {
-				return false
-			}
-		}
-
-		return true
+		return localSHAVal == remoteSHA
 	}
 	return false
 }
