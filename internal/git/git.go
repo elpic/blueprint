@@ -520,6 +520,9 @@ func remoteRefWithError(url, ref string) (string, error) {
 // Returns: (oldSHA, newSHA, status_message, error)
 // status_message can be: "Cloned", "Updated", "Already up to date"
 func CloneOrUpdateRepository(url, path, branch string) (string, string, string, error) {
+	// Expand @github: shorthand to full URL
+	url = ExpandShorthand(url)
+
 	// Expand home directory
 	if strings.HasPrefix(path, "~/") {
 		homeDir, err := os.UserHomeDir()
