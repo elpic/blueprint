@@ -20,6 +20,12 @@ var GO_VERSION 1.24.1
 var GOLANGCI_LINT_VERSION 2.11.3
 var GOSEC_VERSION 2.24.7
 
+# --- Workflow templates ---
+var APP_NAME blueprint
+
+# --- Drift checks (validated on every PR) ---
+var CHECKS [{"file":"setup.bp","template":"@github:elpic/templates@main:actions/github/integration/go","against":".github/workflows"},{"file":"setup.bp","template":"@github:elpic/templates@main:actions/github/drift-check","against":".github/workflows"}]
+
 # ---- Directory structure ----
 mkdir ${WORKSPACE} id: workspace-dir on: [mac, linux]
 
@@ -33,5 +39,5 @@ mise golangci-lint@${GOLANGCI_LINT_VERSION} id: dev-lint after: workspace-dir on
 clone @github:elpic/blueprint to: ${WORKSPACE}/${REPO_NAME} workdir: true id: blueprint-repo after: workspace-dir on: [mac, linux]
 
 # ---- Generate GitHub Actions workflows from templates ----
-render @github:elpic/templates@main:actions/github/integration/go output: ${WORKSPACE}/${REPO_NAME}/.github/workflows after: blueprint-repo var: APP_NAME=blueprint, SETUP=mise on: [mac, linux]
-render @github:elpic/templates@main:actions/github/blueprint-check output: ${WORKSPACE}/${REPO_NAME}/.github/workflows after: blueprint-repo var: BLUEPRINT_FILE=setup.bp, TEMPLATE=@github:elpic/templates@main:actions/github/integration/go, AGAINST=.github/workflows on: [mac, linux]
+render @github:elpic/templates@main:actions/github/integration/go output: ${WORKSPACE}/${REPO_NAME}/.github/workflows after: blueprint-repo var: SETUP=mise on: [mac, linux]
+render @github:elpic/templates@main:actions/github/drift-check output: ${WORKSPACE}/${REPO_NAME}/.github/workflows after: blueprint-repo on: [mac, linux]
