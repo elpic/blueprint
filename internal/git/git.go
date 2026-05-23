@@ -395,6 +395,7 @@ func RemoteHeadSHA(url, branch string) string {
 
 // RemoteHeadSHAWithError returns the remote HEAD SHA, propagating any error to the caller.
 func RemoteHeadSHAWithError(url, branch string) (string, error) {
+	url = ExpandShorthand(url)
 	ref := "HEAD"
 	if branch != "" {
 		ref = "refs/heads/" + branch
