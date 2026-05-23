@@ -1,0 +1,37 @@
+# ============================================
+# Blueprint Development Environment Setup
+# ============================================
+#
+# Bootstrap your environment for contributing to blueprint.
+#
+# Usage:
+#   blueprint apply @github:elpic/blueprint [--var WORKSPACE=~/other/path ...]
+
+# ---- Variables ----
+# Blueprint diff/status checks installed versions against these.
+# Bump them here when something needs updating.
+
+# --- Repo setup ---
+var WORKSPACE ~/development/workspace/personal
+var REPO_NAME blueprint
+
+# --- Go toolchain ---
+var GO_VERSION 1.24.1
+var GOLANGCI_LINT_VERSION 2.11.3
+var GOSEC_VERSION 2.24.7
+
+# ---- Directory structure ----
+mkdir ${WORKSPACE} id: workspace-dir on: [mac, linux]
+
+# ---- Development tools at pinned versions ----
+# mise handles installation and version management automatically.
+# If an installed version differs from the one below, blueprint diff will flag it.
+mise go@${GO_VERSION} id: dev-go after: workspace-dir on: [mac, linux]
+mise golangci-lint@${GOLANGCI_LINT_VERSION} id: dev-lint after: workspace-dir on: [mac, linux]
+
+# ---- Clone the blueprint repository ----
+clone @github:elpic/blueprint to: ${WORKSPACE}/${REPO_NAME} workdir: true id: blueprint-repo after: workspace-dir on: [mac, linux]
+
+# ---- Generate GitHub Actions workflows from templates ----
+render @github:elpic/templates@main:actions/github/integration/go output: ${WORKSPACE}/${REPO_NAME}/.github/workflows after: blueprint-repo var: APP_NAME=blueprint, SETUP=mise on: [mac, linux]
+render @github:elpic/templates@main:actions/github/blueprint-check output: ${WORKSPACE}/${REPO_NAME}/.github/workflows after: blueprint-repo var: BLUEPRINT_FILE=setup.bp, TEMPLATE=@github:elpic/templates@main:actions/github/integration/go, AGAINST=.github/workflows on: [mac, linux]

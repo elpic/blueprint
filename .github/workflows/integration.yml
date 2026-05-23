@@ -1,3 +1,7 @@
+# Generated from setup.bp — do not edit directly.
+# Regenerate: blueprint render setup.bp --template . --output .github/workflows --var APP_NAME=blueprint
+# Check drift:  blueprint check setup.bp --template . --against .github/workflows --var APP_NAME=blueprint
+
 name: Integration
 
 on:
@@ -11,224 +15,38 @@ permissions:
   contents: read
 
 jobs:
+
   test:
     name: Run Tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
+      - uses: elpic/actions/integration/go/test@v1
         with:
-          fetch-depth: 0
-
-      - name: Install mise
-        uses: jdx/mise-action@v2
-
-      - name: Download main branch coverage
-        id: download-main-coverage
-        run: |
-          # Get the main branch SHA
-          MAIN_SHA=$(git rev-parse origin/main)
-          echo "main_sha=$MAIN_SHA" >> $GITHUB_OUTPUT
-          
-          # Try to download coverage from main branch
-          if gh run download -n "coverage-$MAIN_SHA" --repo ${{ github.repository }} 2>/dev/null; then
-            echo "Downloaded coverage from main branch: $MAIN_SHA"
-            echo "coverage_available=true" >> $GITHUB_OUTPUT
-          else
-            echo "coverage_available=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Run tests without coverage (if coverage available from main)
-        if: steps.download-main-coverage.outputs.coverage_available == 'true'
-        run: go test ./...
-
-      - name: Run tests with coverage (if no cached coverage)
-        if: steps.download-main-coverage.outputs.coverage_available != 'true'
-        run: mise run test:coverage
-        timeout-minutes: 8
-
-      - name: Generate coverage report
-        if: hashFiles('coverage.out') != ''
-        run: |
-          go tool cover -html=coverage.out -o coverage.html
-
-      - name: Upload coverage artifact with SHA
-        if: hashFiles('coverage.out') != ''
-        uses: actions/upload-artifact@v7
-        with:
-          name: coverage-${{ github.event.pull_request.head.sha }}
-          path: coverage.*
-
-      - name: Calculate coverage percentage
-        id: coverage
-        if: hashFiles('coverage.out') != ''
-        run: |
-          coverage=$(go tool cover -func coverage.out | grep total | awk '{print $3}' | sed 's/%//')
-          echo "current_coverage=$coverage" >> $GITHUB_OUTPUT
-          echo "Coverage: ${coverage}%"
-
-      - name: Calculate main branch coverage
-        id: main-coverage
-        if: steps.download-main-coverage.outputs.coverage_available != 'true'
-        run: |
-          # Stash current changes
-          git stash
-          
-          # Checkout main and get coverage
-          git checkout main
-          mise run test:coverage || true
-          main_coverage=$(go tool cover -func coverage.out | grep total | awk '{print $3}' | sed 's/%//')
-          echo "main_coverage=$main_coverage" >> $GITHUB_OUTPUT
-          
-          # Upload main branch coverage for future PRs
-          gh run upload -n "coverage-$(git rev-parse HEAD)" --repo ${{ github.repository }} coverage.out || true
-          
-          # Restore changes
-          git checkout -
-          git stash pop || true
-
-      - name: Generate coverage comparison report
-        id: coverage-report
-        run: |
-          current_coverage="${{ steps.coverage.outputs.current_coverage }}"
-          main_coverage="${{ steps.main-coverage.outputs.main_coverage }}"
-          
-          # Handle empty or missing values
-          current_coverage=${current_coverage:-0}
-          main_coverage=${main_coverage:-0}
-          
-          # Calculate difference
-          diff=$(echo "$current_coverage - $main_coverage" | bc 2>/dev/null || echo "0")
-          
-          # Set output for PR comment
-          echo "current=$current_coverage" >> $GITHUB_OUTPUT
-          echo "main=$main_coverage" >> $GITHUB_OUTPUT
-          echo "diff=$diff" >> $GITHUB_OUTPUT
-          
-          echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Current Coverage | ${current_coverage}% |" >> $GITHUB_STEP_SUMMARY
-          echo "| Main Branch Coverage | ${main_coverage}% |" >> $GITHUB_STEP_SUMMARY
-          echo "| Difference | ${diff}% |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if (( $(echo "$diff > 0" | bc -l 2>/dev/null || echo "0") )); then
-            echo "✅ Coverage increased by ${diff}%" >> $GITHUB_STEP_SUMMARY
-          elif (( $(echo "$diff < 0" | bc -l 2>/dev/null || echo "0") )); then
-            echo "⚠️ Coverage decreased by ${diff#-}%" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "➡️ Coverage unchanged" >> $GITHUB_STEP_SUMMARY
-          fi
-
-      - name: Post coverage comment on PR
-        if: hashFiles('coverage.out') != ''
-        run: |
-          current="${{ steps.coverage-report.outputs.current }}"
-          main="${{ steps.main-coverage.outputs.main_coverage }}"
-          diff="${{ steps.coverage-report.outputs.diff }}"
-          
-          # Default to 0 if empty
-          current=${current:-0}
-          main=${main:-0}
-          diff=${diff:-0}
-          
-          # Format diff with sign and emoji
-          if (( $(echo "$diff > 0" | bc -l 2>/dev/null || echo "0") )); then
-            diff_formatted="+${diff}%"
-            emoji="📈"
-          elif (( $(echo "$diff < 0" | bc -l 2>/dev/null || echo "0") )); then
-            diff_formatted="${diff}%"
-            emoji="📉"
-          else
-            diff_formatted="unchanged"
-            emoji="➡️"
-          fi
-          
-          # Get files with low coverage (below 50%) - show file with lowest coverage, sorted numerically
-          low_coverage=$(go tool cover -func coverage.out | grep -v "total:" | \
-            awk -F'[\t:]' '{
-              split($2,pct,"%")
-              if (pct[1] < 50 && pct[1] > 0) {
-                path = $1
-                n = split(path, parts, "/")
-                file = parts[n]
-                if (!(file in min) || pct[1] < min[file]) {
-                  min[file] = pct[1]
-                  paths[file] = path
-                }
-              }
-            } END {
-              for (file in min) {
-                printf "| %3d%% | %s |\n", min[file], paths[file]
-              }
-            }' | sort -t'|' -k2 -n | head -10)
-          
-          # Build comment body
-          COMMENT="## Coverage Report ${emoji}
-          
-          | Metric | Value |
-          |--------|-------|
-          | **This PR** | ${current}% |
-          | **Main Branch** | ${main}% |
-          | **Change** | ${diff_formatted} ${emoji} |"
-          
-          if [ -n "$low_coverage" ]; then
-            COMMENT="${COMMENT}
-          
-          ### Files Needing Coverage
-          
-          | Coverage | File |
-          |----------|------|
-          ${low_coverage}"
-          fi
-          
-          # Find existing coverage comment and update it, or create new one
-          PR_NUMBER=${{ github.event.pull_request.number }}
-          COMMENT_ID=$(gh api repos/${{ github.repository }}/issues/${PR_NUMBER}/comments \
-            --jq '.[] | select(.body | startswith("## Coverage Report")) | .id' 2>/dev/null | head -1)
-          
-          if [ -n "$COMMENT_ID" ]; then
-            gh api repos/${{ github.repository }}/issues/comments/${COMMENT_ID} \
-              --method PATCH \
-              --field body="${COMMENT}"
-          else
-            gh pr comment ${PR_NUMBER} --body "${COMMENT}"
-          fi
+          setup: mise
+          test-coverage-task: test:coverage
 
   lint:
     name: Run Linter
     runs-on: ubuntu-latest
-
+    timeout-minutes: 10
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Install mise
-        uses: jdx/mise-action@v2
-
-      - name: Run linter
-        run: mise run lint
+      - uses: elpic/actions/integration/go/lint@v1
+        with:
+          setup: mise
+          lint-task: lint
 
   build:
     name: Build Binary
     runs-on: ubuntu-latest
-
+    timeout-minutes: 10
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Install mise
-        uses: jdx/mise-action@v2
-
-      - name: Build binary
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v2
+      - name: Build
         run: mise run build
-
-      - name: Upload binary
-        uses: actions/upload-artifact@v7
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
         with:
           name: blueprint-binaries
           path: blueprint-*
@@ -237,37 +55,20 @@ jobs:
     name: Integration Tests
     runs-on: ubuntu-latest
     needs: [test, lint, build]
-
+    timeout-minutes: 10
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Install mise
-        uses: jdx/mise-action@v2
-
-      - name: Download blueprint binaries
-        uses: actions/download-artifact@v8
+      - uses: elpic/actions/integration/go/integration-tests@v1
         with:
-          name: blueprint-binaries
-
-      - name: Make binaries executable
-        run: |
-          chmod +x blueprint-*
-
-      - name: Run integration tests
-        run: |
-          mise run test:integration
+          setup: mise
+          app-name: blueprint
+          integration-task: test:integration
 
   security:
     name: Security Checks
     runs-on: ubuntu-latest
-
+    timeout-minutes: 10
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Install mise
-        uses: jdx/mise-action@v2
-
-      - name: Run security scan
-        run: mise run security
+      - uses: elpic/actions/integration/go/security@v1
+        with:
+          setup: mise
+          security-task: security

@@ -57,6 +57,17 @@ func interpolateRule(rule parser.Rule, vars map[string]string) parser.Rule {
 	rule.RenderOutput = expand(rule.RenderOutput)
 	rule.KnownHosts = expand(rule.KnownHosts)
 
+	// Expand variables in []string fields (MisePackages, AsdfPackages, HomebrewPackages, etc.)
+	for i, pkg := range rule.MisePackages {
+		rule.MisePackages[i] = expand(pkg)
+	}
+	for i, pkg := range rule.AsdfPackages {
+		rule.AsdfPackages[i] = expand(pkg)
+	}
+	for i, pkg := range rule.HomebrewPackages {
+		rule.HomebrewPackages[i] = expand(pkg)
+	}
+
 	return rule
 }
 
