@@ -635,6 +635,10 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 			return oldSHA, "", "", fmt.Errorf("failed to reset: %w", err)
 		}
 
+		// go-git's HardReset may leave some working tree files un-checked-out.
+		// Run system git restore to guarantee the working tree matches HEAD.
+		_ = gitRestore(path)
+
 		newSHA := targetHash.String()
 		if oldSHA != newSHA {
 			return oldSHA, newSHA, "Updated", nil
@@ -659,10 +663,24 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 		if err := cloneCmd.Run(); err != nil {
 			return "", "", "", fmt.Errorf("failed to clone: %w", err)
 		}
+	} else {
+		// go-git clone succeeded but may have left files un-checked-out.
+		_ = gitRestore(path)
 	}
 
 	newSHA, _ := gitSHA(path)
 	return "", newSHA, "Cloned", nil
+}
+
+// gitRestore runs system git restore to ensure the working tree is complete.
+// go-git's HardReset and PlainClone can leave files un-checked-out (known go-git issue).
+func gitRestore(path string) error {
+	restoreCtx, restoreCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer restoreCancel()
+	cmd := exec.CommandContext(restoreCtx, "git", "-C", path, "restore", ".") // #nosec G204
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	return cmd.Run()
 }
 
 // generateRepositoryID creates a unique ID for a repository based on URL and branch
