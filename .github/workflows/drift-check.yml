@@ -31,3 +31,10 @@ jobs:
           template: '@github:elpic/templates@main:actions/github/integration/go'
           against: '.github/workflows'
 
+      - name: 'Check setup.bp'
+        uses: elpic/actions/github/drift-check@v1
+        with:
+          blueprint-file: 'setup.bp'
+          template: '@github:elpic/templates@main:actions/github/drift-check'
+          against: '.github/workflows'
+
