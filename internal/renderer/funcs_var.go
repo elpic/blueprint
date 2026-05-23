@@ -11,6 +11,7 @@ func init() {
 		{Name: "var", Factory: func(d *TemplateData) interface{} { return d.varValue }},
 		{Name: "default", Factory: func(d *TemplateData) interface{} { return d.varDefault }},
 		{Name: "toArgs", Factory: func(_ *TemplateData) interface{} { return toArgs }},
+		{Name: "toValue", Factory: func(d *TemplateData) interface{} { return d.toValue }},
 	})
 	RegisterGetHandler("var", func(d *TemplateData, key string) (string, error) {
 		return d.varValue(key)
@@ -60,4 +61,29 @@ func toArgs(cmd string) string {
 	parts := strings.Fields(cmd)
 	b, _ := json.Marshal(parts)
 	return string(b)
+}
+
+// toValue returns the parsed value of a variable.
+// If the value looks like JSON (starts with [ or {), it is parsed and returned
+// as []interface{} or map[string]interface{}. Plain strings are returned as-is.
+// This enables Go template's built-in range, if, and with operators:
+//
+//	var CHECKS [{"file":"setup.bp","against":"."}]
+//	{{ range tovalue "CHECKS" }}
+//	  file: {{ .file }}
+//	{{ end }}
+func (d *TemplateData) toValue(name string) (interface{}, error) {
+	val, err := d.varValue(name)
+	if err != nil {
+		return nil, err
+	}
+	trimmed := strings.TrimSpace(val)
+	if len(trimmed) == 0 || (trimmed[0] != '[' && trimmed[0] != '{') {
+		return val, nil // plain string — no JSON to parse
+	}
+	var parsed interface{}
+	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
+		return val, nil // not valid JSON, return as plain string
+	}
+	return parsed, nil
 }
