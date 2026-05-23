@@ -383,7 +383,20 @@ func (h *CloneHandler) IsInstalled(status *Status, blueprintFile, osName string)
 		// Fall back to checking target directory for backward compatibility
 		// This handles existing installations that don't have clean storage yet
 		localSHAVal := localSHA(h.Container.SystemProvider().Filesystem().ExpandPath(h.Rule.ClonePath))
-		return localSHAVal == remoteSHA
+		if localSHAVal != remoteSHA {
+			return false
+		}
+
+		// When workdir is set, verify .git exists — a previous clone without workdir
+		// would have left the directory without .git, and we need to re-clone.
+		if h.Rule.CloneWorkdir {
+			gitDir := h.Container.SystemProvider().Filesystem().ExpandPath(h.Rule.ClonePath) + "/.git"
+			if !h.Container.SystemProvider().Filesystem().Exists(gitDir) {
+				return false
+			}
+		}
+
+		return true
 	}
 	return false
 }

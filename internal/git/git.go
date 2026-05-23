@@ -992,6 +992,17 @@ func CloneOrUpdateRepositoryDirect(url, targetPath, branch string) (string, stri
 		return old, new, status, cloneErr
 	}
 
-	// Directory already exists — pull instead of re-clone.
+	// If the directory exists but has no .git, it's not a valid working copy
+	// (e.g. cloned without workdir: true in a previous run). Remove and re-clone.
+	gitDir := filepath.Join(expanded, ".git")
+	if gitInfo, gitErr := os.Stat(gitDir); gitErr != nil || !gitInfo.IsDir() {
+		if err := os.RemoveAll(expanded); err != nil {
+			return "", "", "", fmt.Errorf("failed to remove incomplete clone at %s: %w", expanded, err)
+		}
+		old, new, status, cloneErr := CloneOrUpdateRepository(url, expanded, branch)
+		return old, new, status, cloneErr
+	}
+
+	// Directory already exists with .git — fetch and reset instead of re-clone.
 	return CloneOrUpdateRepository(url, expanded, branch)
 }
