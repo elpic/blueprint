@@ -2,19 +2,10 @@
 # Blueprint Development Environment Setup
 # ============================================
 #
-# Apply this blueprint to set up your development
-# environment for contributing to the blueprint project.
-#
-# Prerequisites:
-#   - blueprint installed (install.sh or go install)
+# Bootstrap your environment for contributing to blueprint.
 #
 # Usage:
-#   blueprint apply @github:elpic/blueprint
-#
-# To override a variable:
-#   blueprint apply @github:elpic/blueprint --var WORKSPACE=~/other/path
-#   blueprint apply @github:elpic/blueprint --var WORKSPACE=~/other/path --var REPO_NAME=other
-# ============================================
+#   blueprint apply @github:elpic/blueprint [--var WORKSPACE=~/other/path ...]
 
 # ---- Variables ----
 # Blueprint diff/status checks installed versions against these.
