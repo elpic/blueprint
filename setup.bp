@@ -16,11 +16,15 @@
 #   blueprint apply @github:elpic/blueprint --var WORKSPACE=~/other/path --var REPO_NAME=other
 # ============================================
 
-# ---- Variables (pinned versions for reproducibility) ----
-# Blueprint diff/status checks installed tool versions against these.
-# Bump them here when updating the development toolchain.
+# ---- Variables ----
+# Blueprint diff/status checks installed versions against these.
+# Bump them here when something needs updating.
+
+# --- Repo setup ---
 var WORKSPACE ~/development/workspace/personal
 var REPO_NAME blueprint
+
+# --- Go toolchain ---
 var GO_VERSION 1.24.1
 var GOLANGCI_LINT_VERSION 2.11.3
 var GOSEC_VERSION 2.24.7
