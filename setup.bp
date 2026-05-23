@@ -35,7 +35,7 @@ mise go@1.24.1 id: dev-go after: workspace-dir on: [mac, linux]
 mise golangci-lint@2.11.3 id: dev-lint after: workspace-dir on: [mac, linux]
 
 # ---- Clone the blueprint repository ----
-clone @github:elpic/blueprint to: ${WORKSPACE}/${REPO_NAME} id: blueprint-repo after: workspace-dir on: [mac, linux]
+clone @github:elpic/blueprint to: ${WORKSPACE}/${REPO_NAME} workdir: true id: blueprint-repo after: workspace-dir on: [mac, linux]
 
 # ---- Generate GitHub Actions workflows from templates ----
 render @github:elpic/templates@main:actions/github/integration/go output: ${WORKSPACE}/${REPO_NAME}/.github/workflows after: blueprint-repo var: APP_NAME=blueprint on: [mac, linux]
