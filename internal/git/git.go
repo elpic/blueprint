@@ -395,6 +395,7 @@ func RemoteHeadSHA(url, branch string) string {
 
 // RemoteHeadSHAWithError returns the remote HEAD SHA, propagating any error to the caller.
 func RemoteHeadSHAWithError(url, branch string) (string, error) {
+	url = ExpandShorthand(url)
 	ref := "HEAD"
 	if branch != "" {
 		ref = "refs/heads/" + branch
@@ -520,6 +521,9 @@ func remoteRefWithError(url, ref string) (string, error) {
 // Returns: (oldSHA, newSHA, status_message, error)
 // status_message can be: "Cloned", "Updated", "Already up to date"
 func CloneOrUpdateRepository(url, path, branch string) (string, string, string, error) {
+	// Expand @github: shorthand to full URL
+	url = ExpandShorthand(url)
+
 	// Expand home directory
 	if strings.HasPrefix(path, "~/") {
 		homeDir, err := os.UserHomeDir()
@@ -635,6 +639,10 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 			return oldSHA, "", "", fmt.Errorf("failed to reset: %w", err)
 		}
 
+		// go-git's HardReset may leave some working tree files un-checked-out.
+		// Run system git restore to guarantee the working tree matches HEAD.
+		_ = gitRestore(path)
+
 		newSHA := targetHash.String()
 		if oldSHA != newSHA {
 			return oldSHA, newSHA, "Updated", nil
@@ -659,10 +667,24 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 		if err := cloneCmd.Run(); err != nil {
 			return "", "", "", fmt.Errorf("failed to clone: %w", err)
 		}
+	} else {
+		// go-git clone succeeded but may have left files un-checked-out.
+		_ = gitRestore(path)
 	}
 
 	newSHA, _ := gitSHA(path)
 	return "", newSHA, "Cloned", nil
+}
+
+// gitRestore runs system git restore to ensure the working tree is complete.
+// go-git's HardReset and PlainClone can leave files un-checked-out (known go-git issue).
+func gitRestore(path string) error {
+	restoreCtx, restoreCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer restoreCancel()
+	cmd := exec.CommandContext(restoreCtx, "git", "-C", path, "restore", ".") // #nosec G204
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	return cmd.Run()
 }
 
 // generateRepositoryID creates a unique ID for a repository based on URL and branch
@@ -971,6 +993,17 @@ func CloneOrUpdateRepositoryDirect(url, targetPath, branch string) (string, stri
 		return old, new, status, cloneErr
 	}
 
-	// Directory already exists — pull instead of re-clone.
+	// If the directory exists but has no .git, it's not a valid working copy
+	// (e.g. cloned without workdir: true in a previous run). Remove and re-clone.
+	gitDir := filepath.Join(expanded, ".git")
+	if gitInfo, gitErr := os.Stat(gitDir); gitErr != nil || !gitInfo.IsDir() {
+		if err := os.RemoveAll(expanded); err != nil {
+			return "", "", "", fmt.Errorf("failed to remove incomplete clone at %s: %w", expanded, err)
+		}
+		old, new, status, cloneErr := CloneOrUpdateRepository(url, expanded, branch)
+		return old, new, status, cloneErr
+	}
+
+	// Directory already exists with .git — fetch and reset instead of re-clone.
 	return CloneOrUpdateRepository(url, expanded, branch)
 }

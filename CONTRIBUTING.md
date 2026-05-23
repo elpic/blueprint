@@ -2,17 +2,25 @@
 
 Thank you for your interest in contributing to Blueprint. This guide covers everything you need to get started.
 
+## Quick Start (recommended)
+
+```bash
+blueprint apply @github:elpic/blueprint
+```
+
+This installs pinned tool versions via mise, creates the workspace directory, clones the repository, and generates CI workflows from templates. All tool versions are declared as variables in [`setup.bp`](setup.bp) — `blueprint diff` or `blueprint status` will flag any divergence.
+
 ## Requirements
 
 - [mise](https://mise.jdx.dev) — manages Go version and task runner
 
-## Getting Started
+## Manual Setup
 
-Clone the repository and install dependencies:
+If you prefer to set up things manually:
 
 ```bash
-git clone https://github.com/elpic/blueprint.git
-cd blueprint
+git clone https://github.com/elpic/blueprint.git ~/development/workspace/personal/blueprint
+cd ~/development/workspace/personal/blueprint
 mise install   # installs Go and golangci-lint at the versions in mise.toml
 ```
 
@@ -64,36 +72,6 @@ mise run check       # run tests + lint + security scan
 ## Project Structure
 
 See [`docs/architecture.md`](docs/architecture.md) for a full project structure tree, component descriptions, and handler interface documentation.
-
-## Try the Examples
-
-The `examples/` directory contains ready-to-use blueprints and templates. To try them without installing blueprint, use `go run`:
-
-```bash
-# Render the Dockerfile template
-go run ./cmd/blueprint render examples/python-uv/setup.bp \
-  --template examples/python-uv/Dockerfile.tmpl
-
-# Write the rendered Dockerfile to disk
-go run ./cmd/blueprint render examples/python-uv/setup.bp \
-  --template examples/python-uv/Dockerfile.tmpl \
-  --output examples/python-uv/Dockerfile
-
-# Render the dev variant
-go run ./cmd/blueprint render examples/python-uv/setup.bp \
-  --template examples/python-uv/Dockerfile.local.tmpl \
-  --output examples/python-uv/Dockerfile.local
-
-# Check for drift between the template and the committed file
-go run ./cmd/blueprint check examples/python-uv/setup.bp \
-  --template examples/python-uv/Dockerfile.tmpl \
-  --against examples/python-uv/Dockerfile
-
-# Query a single value
-go run ./cmd/blueprint get examples/python-uv/setup.bp mise python
-```
-
-Once installed, drop `go run ./cmd/blueprint` and use `blueprint` directly.
 
 ## Code Style
 

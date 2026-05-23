@@ -19,6 +19,7 @@ var multiwordKeys = map[string]bool{
 	"unless:": true,
 	"undo:":   true,
 	"after:":  true, // comma-separated list which may contain spaces: "after: a, b, c"
+	"var:":    true, // comma-separated KEY=VALUE pairs: "var: KEY1=VAL1, KEY2=VAL2"
 }
 
 // bracketKeys are keywords whose value is a bracket-delimited list: "key: [a, b, c]".

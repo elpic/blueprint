@@ -1,0 +1,40 @@
+# Generated from setup.bp — do not edit directly.
+# Regenerate: blueprint render setup.bp --template . --output .github/workflows \
+#   --var CHECKS='[{"file":"setup.bp","template":"@github:elpic/templates@main:actions/github/integration/go","against":".github/workflows"}]'
+# Check drift:  blueprint check setup.bp --template . --against .github/workflows \
+#   --var CHECKS='[{"file":"setup.bp","template":"@github:elpic/templates@main:actions/github/integration/go","against":".github/workflows"}]'
+
+name: Drift Check
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+
+  drift-check:
+    name: Drift Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+
+      - name: 'Check setup.bp'
+        uses: elpic/actions/github/drift-check@v2
+        with:
+          blueprint-file: 'setup.bp'
+          template: '@github:elpic/templates@main:actions/github/integration/go'
+          against: '.github/workflows'
+
+      - name: 'Check setup.bp'
+        uses: elpic/actions/github/drift-check@v2
+        with:
+          blueprint-file: 'setup.bp'
+          template: '@github:elpic/templates@main:actions/github/drift-check'
+          against: '.github/workflows'
+

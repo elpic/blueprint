@@ -3,9 +3,6 @@
 /blueprint-*
 *.exe
 
-# Claude Code
-.claude/settings.local.json
-
 # Agent brain (local agent data, task tracking)
 .brain/
 
