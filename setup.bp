@@ -37,4 +37,4 @@ clone https://github.com/elpic/blueprint.git to: ${WORKSPACE} id: blueprint-repo
 
 # ---- Generate GitHub Actions workflows from templates ----
 render @github:elpic/templates@main:actions/github/integration/go output: ${WORKSPACE}/.github/workflows after: blueprint-repo var: APP_NAME=blueprint on: [mac, linux]
-render @github:elpic/templates@main:actions/github/blueprint-check output: ${WORKSPACE}/.github/workflows after: blueprint-repo var: BLUEPRINT_FILE=setup.bp var: TEMPLATE=@github:elpic/templates@main:actions/github/integration/go var: AGAINST=.github/workflows on: [mac, linux]
+render @github:elpic/templates@main:actions/github/blueprint-check output: ${WORKSPACE}/.github/workflows after: blueprint-repo var: BLUEPRINT_FILE=setup.bp, TEMPLATE=@github:elpic/templates@main:actions/github/integration/go, AGAINST=.github/workflows on: [mac, linux]

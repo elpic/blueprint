@@ -2,27 +2,18 @@
 
 Thank you for your interest in contributing to Blueprint. This guide covers everything you need to get started.
 
-## Quick Start (recommended)
+## Requirements
+
+- [mise](https://mise.jdx.dev) — manages Go version and task runner
+
+## Getting Started
+
+Clone the repository and install dependencies:
 
 ```bash
-blueprint apply @github:elpic/blueprint
-```
-
-This will install pinned tool versions via mise, create the workspace directory, clone the repository, and generate GitHub Actions workflows from templates. All tool versions are declared as variables in [`setup.bp`](setup.bp) — `blueprint diff` or `blueprint status` will flag any divergence.
-
-## Manual Setup
-
-If you prefer to set up things manually:
-
-```bash
-# Prerequisites
-brew install mise            # macOS
-# or: curl https://mise.run | sh   # Linux
-
-# Clone and install tools
-git clone https://github.com/elpic/blueprint.git ~/development/workspace/personal/blueprint
-cd ~/development/workspace/personal/blueprint
-mise install                 # installs Go and golangci-lint at the versions in mise.toml
+git clone https://github.com/elpic/blueprint.git
+cd blueprint
+mise install   # installs Go and golangci-lint at the versions in mise.toml
 ```
 
 ## Building
