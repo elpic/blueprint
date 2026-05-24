@@ -16,7 +16,7 @@ var WORKSPACE ~/development/workspace/personal
 var REPO_NAME blueprint
 
 # --- Go toolchain ---
-var GO_VERSION 1.24.1
+var GO_VERSION 1.25.0
 var GOLANGCI_LINT_VERSION 2.11.3
 var GOSEC_VERSION 2.24.7
 
