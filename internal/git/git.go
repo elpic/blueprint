@@ -561,6 +561,15 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 		{
 			goRepo, openErr := git.PlainOpen(path)
 			if openErr == nil {
+				// Ensure the remote config fetches all branches. go-git's clone with
+				// SingleBranch: true stores a limited refspec — if a different branch
+				// is now requested, the stored refspec won't include it and the fetch
+				// will fail or miss the target.
+				if remoteCfg, cfgErr := goRepo.Remote("origin"); cfgErr == nil {
+					if specs := remoteCfg.Config().Fetch; len(specs) == 1 && specs[0] != config.RefSpec("+refs/heads/*:refs/remotes/origin/*") {
+						remoteCfg.Config().Fetch = []config.RefSpec{"+refs/heads/*:refs/remotes/origin/*"}
+					}
+				}
 				fetchOpts := &git.FetchOptions{
 					RemoteName: "origin",
 					Progress:   io.Discard,
