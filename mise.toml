@@ -16,7 +16,7 @@
 # =============
 # Define the exact versions of tools required for development
 [tools]
-go = "1.24.1"
+go = "1.25.0"
 golangci-lint = "2.11.3"
 # Note: gosec is installed via go install in the security task since it's not in mise registry
 
