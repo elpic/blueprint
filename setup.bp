@@ -24,7 +24,8 @@ var GOSEC_VERSION 2.24.7
 var APP_NAME blueprint
 
 # --- Drift checks (validated on every PR) ---
-var CHECKS [{"file":"setup.bp","template":"@github:elpic/templates@main:actions/github/integration/go","against":".github/workflows"},{"file":"setup.bp","template":"@github:elpic/templates@main:actions/github/drift-check","against":".github/workflows"}]
+var CHECKS \
+  [{"file":"setup.bp","template":"@github:elpic/templates@main:actions/github/integration/go","against":".github/workflows"},{"file":"setup.bp","template":"@github:elpic/templates@main:actions/github/drift-check","against":".github/workflows"}]
 
 # ---- Directory structure ----
 mkdir ${WORKSPACE} \
