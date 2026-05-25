@@ -558,6 +558,8 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 
 		// Try go-git fetch first; fall back to system git on failure.
 		fetched := false
+		fullRefspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
+		limitedRefspec := false
 		{
 			goRepo, openErr := git.PlainOpen(path)
 			if openErr == nil {
@@ -566,8 +568,10 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 				// is now requested, the stored refspec won't include it and the fetch
 				// will fail or miss the target.
 				if remoteCfg, cfgErr := goRepo.Remote("origin"); cfgErr == nil {
-					if specs := remoteCfg.Config().Fetch; len(specs) == 1 && specs[0] != config.RefSpec("+refs/heads/*:refs/remotes/origin/*") {
-						remoteCfg.Config().Fetch = []config.RefSpec{"+refs/heads/*:refs/remotes/origin/*"}
+					specs := remoteCfg.Config().Fetch
+					if len(specs) == 1 && specs[0] != fullRefspec {
+						remoteCfg.Config().Fetch = []config.RefSpec{fullRefspec}
+						limitedRefspec = true
 					}
 				}
 				fetchOpts := &git.FetchOptions{
@@ -584,8 +588,13 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 			}
 		}
 		if !fetched {
-			// go-git failed (e.g. SSH agent/passphrase issues) — use system git
+			// go-git failed (e.g. SSH agent/passphrase issues) — use system git.
+			// If the remote config has a limited (SingleBranch) refspec on disk,
+			// explicitly pass the full refspec so the new branch is fetched.
 			fetchArgs := []string{"-C", path, "fetch", "--quiet", "origin"}
+			if limitedRefspec {
+				fetchArgs = append(fetchArgs, string(fullRefspec))
+			}
 			fetchCtx, fetchCancel := context.WithTimeout(context.Background(), gitTimeout())
 			defer fetchCancel()
 			fetchCmd := exec.CommandContext(fetchCtx, "git", fetchArgs...) // #nosec G204
@@ -594,6 +603,13 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 			if fetchErr := fetchCmd.Run(); fetchErr != nil {
 				return oldSHA, "", "", fmt.Errorf("failed to fetch: %w", fetchErr)
 			}
+		}
+
+		// Persist the full refspec to disk so future operations (go-git or system git)
+		// don't encounter the same SingleBranch limitation.
+		if limitedRefspec {
+			setRefspec := exec.Command("git", "-C", path, "config", "remote.origin.fetch", string(fullRefspec))
+			_ = setRefspec.Run()
 		}
 
 		// Open the repo for local ref resolution and reset (no auth needed — local only)
