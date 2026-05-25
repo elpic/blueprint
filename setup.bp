@@ -58,6 +58,7 @@ render @github:elpic/templates@main:actions/github/integration/go \
   after: blueprint-repo \
   var: SETUP=mise \
   on: [mac, linux]
+
 render @github:elpic/templates@main:actions/github/drift-check \
   output: ${WORKSPACE}/${REPO_NAME}/.github/workflows \
   after: blueprint-repo \
