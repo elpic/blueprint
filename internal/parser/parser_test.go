@@ -1845,3 +1845,192 @@ func TestParseCloneRule_Workdir(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// Line continuation with backslash
+// ---------------------------------------------------------------------------
+
+func TestJoinContinuationLines(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "no continuation",
+			input: "run echo hello\nrun echo world",
+			want:  "run echo hello\nrun echo world",
+		},
+		{
+			name:  "basic continuation",
+			input: "run echo hello \\\n  world",
+			want:  "run echo hello world",
+		},
+		{
+			name:  "continuation with comment",
+			input: "run echo hello \\ # this continues\n  world",
+			want:  "run echo hello world",
+		},
+		{
+			name:  "chain of continuations",
+			input: "run echo \\\n  hello \\\n  world",
+			want:  "run echo hello world",
+		},
+		{
+			name:  "blank line during continuation is skipped",
+			input: "run echo hello \\\n\n  world",
+			want:  "run echo hello world",
+		},
+		{
+			name:  "dangling backslash at EOF",
+			input: "run echo hello \\",
+			want:  "run echo hello",
+		},
+		{
+			name:  "backslash not at end of line is literal",
+			input: `run echo hello\world`,
+			want:  `run echo hello\world`,
+		},
+		{
+			name:  "continuation with unless keyword",
+			input: "unless: test -f /some/long/path \\\n  && test -x /usr/bin/foo",
+			want:  "unless: test -f /some/long/path && test -x /usr/bin/foo",
+		},
+		{
+			name:  "mixed continued and non-continued directives",
+			input: "install curl \\\n  git \\\n  vim\nrun echo done",
+			want:  "install curl git vim\nrun echo done",
+		},
+		{
+			name:  "comment line before continuation is not affected",
+			input: "# comment\nrun echo hello \\\n  world",
+			want:  "\nrun echo hello world",
+		},
+		{
+			name:  "multiple blank lines during continuation",
+			input: "run echo hello \\\n\n\n  world",
+			want:  "run echo hello world",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := joinContinuationLines(tt.input)
+			if got != tt.want {
+				t.Errorf("joinContinuationLines() =\n%q\nwant:\n%q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseContentContinuation(t *testing.T) {
+	t.Run("run command across lines", func(t *testing.T) {
+		content := "run echo hello \\\n  world"
+		rules, err := parseContent(content, "", make(map[string]bool))
+		if err != nil {
+			t.Fatalf("parseContent() error: %v", err)
+		}
+		if len(rules) != 1 {
+			t.Fatalf("got %d rules, want 1", len(rules))
+		}
+		if rules[0].Action != "run" {
+			t.Errorf("action = %q, want %q", rules[0].Action, "run")
+		}
+		if rules[0].RunCommand != "echo hello world" {
+			t.Errorf("RunCommand = %q, want %q", rules[0].RunCommand, "echo hello world")
+		}
+	})
+
+	t.Run("install packages across lines", func(t *testing.T) {
+		content := "install curl \\\n  git \\\n  vim"
+		rules, err := parseContent(content, "", make(map[string]bool))
+		if err != nil {
+			t.Fatalf("parseContent() error: %v", err)
+		}
+		if len(rules) != 1 {
+			t.Fatalf("got %d rules, want 1", len(rules))
+		}
+		if len(rules[0].Packages) != 3 {
+			t.Fatalf("got %d packages, want 3", len(rules[0].Packages))
+		}
+	})
+
+	t.Run("unless with multiline condition", func(t *testing.T) {
+		content := "run echo hello \\\n  unless: test -f /tmp/foo \\\n  && test -x /usr/bin/bar"
+		rules, err := parseContent(content, "", make(map[string]bool))
+		if err != nil {
+			t.Fatalf("parseContent() error: %v", err)
+		}
+		if len(rules) != 1 {
+			t.Fatalf("got %d rules, want 1", len(rules))
+		}
+		if rules[0].RunUnless != "test -f /tmp/foo && test -x /usr/bin/bar" {
+			t.Errorf("RunUnless = %q, want %q", rules[0].RunUnless, "test -f /tmp/foo && test -x /usr/bin/bar")
+		}
+	})
+
+	t.Run("continuation with comment", func(t *testing.T) {
+		content := "install git \\ # the version control system\n  curl" // Note: curl becomes part of the same line
+		// After continuation: "install git curl" with the inline comment stripped
+		rules, err := parseContent(content, "", make(map[string]bool))
+		if err != nil {
+			t.Fatalf("parseContent() error: %v", err)
+		}
+		if len(rules) != 1 {
+			t.Fatalf("got %d rules, want 1", len(rules))
+		}
+		if len(rules[0].Packages) != 2 {
+			t.Fatalf("got %d packages, want 2", len(rules[0].Packages))
+		}
+	})
+
+	t.Run("clone with multiline args", func(t *testing.T) {
+		content := "clone https://github.com/user/repo.git \\\n  to: ~/workspace/repo \\\n  branch: main"
+		rules, err := parseContent(content, "", make(map[string]bool))
+		if err != nil {
+			t.Fatalf("parseContent() error: %v", err)
+		}
+		if len(rules) != 1 {
+			t.Fatalf("got %d rules, want 1", len(rules))
+		}
+		if rules[0].CloneURL != "https://github.com/user/repo.git" {
+			t.Errorf("CloneURL = %q, want %q", rules[0].CloneURL, "https://github.com/user/repo.git")
+		}
+		if rules[0].ClonePath != "~/workspace/repo" {
+			t.Errorf("ClonePath = %q, want %q", rules[0].ClonePath, "~/workspace/repo")
+		}
+		if rules[0].Branch != "main" {
+			t.Errorf("Branch = %q, want %q", rules[0].Branch, "main")
+		}
+	})
+
+	t.Run("after across lines", func(t *testing.T) {
+		content := "install git \\\n  after: curl, vim"
+		rules, err := parseContent(content, "", make(map[string]bool))
+		if err != nil {
+			t.Fatalf("parseContent() error: %v", err)
+		}
+		if len(rules) != 1 {
+			t.Fatalf("got %d rules, want 1", len(rules))
+		}
+		if len(rules[0].After) != 2 {
+			t.Fatalf("got %d after deps, want 2", len(rules[0].After))
+		}
+		if rules[0].After[0] != "curl" || rules[0].After[1] != "vim" {
+			t.Errorf("After = %v, want [curl vim]", rules[0].After)
+		}
+	})
+
+	t.Run("dangling backslash at EOF is not an error", func(t *testing.T) {
+		content := "install curl \\"
+		rules, err := parseContent(content, "", make(map[string]bool))
+		if err != nil {
+			t.Fatalf("parseContent() error: %v", err)
+		}
+		if len(rules) != 1 {
+			t.Fatalf("got %d rules, want 1", len(rules))
+		}
+		if len(rules[0].Packages) != 1 {
+			t.Fatalf("got %d packages, want 1", len(rules[0].Packages))
+		}
+	})
+}

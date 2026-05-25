@@ -164,8 +164,61 @@ func ParseFile(filePath string) ([]Rule, error) {
 	return parseContent(string(content), baseDir, make(map[string]bool))
 }
 
+// joinContinuationLines joins physical lines that end with a backslash (\) continuation
+// character into single logical lines.
+//
+// A line continues if its last non-whitespace character before any inline comment
+// is a single backslash. Blank lines between continuations are silently skipped.
+// A dangling backslash on the final line is treated as a literal backslash.
+//
+// Examples:
+//
+//	"run echo hello \\\n  world"           → "run echo hello   world"
+//	"run echo hello \\ # comment\n  world" → "run echo hello   world"
+//	"run echo \\\n  hello \\\n  world"     → "run echo   hello   world"
+//
+// This is called before the main parsing loop so that all Parse*Rule functions
+// see already-joined lines and do not need any multi-line awareness.
+func joinContinuationLines(content string) string {
+	lines := strings.Split(content, "\n")
+	var result []string
+	var pending string
+
+	for _, line := range lines {
+		// Strip inline comments first so that `\ # comment` continues.
+		line = stripComment(line)
+		// Right-trim to detect a trailing continuation backslash.
+		trimmed := strings.TrimRight(line, " \t")
+
+		if pending != "" {
+			if trimmed == "" {
+				// Blank line during continuation — skip silently.
+				continue
+			}
+			// Join the continued text with the current line.
+			trimmed = pending + " " + strings.TrimSpace(trimmed)
+			pending = ""
+		}
+
+		if strings.HasSuffix(trimmed, "\\") {
+			// Line continues — store the text without the trailing backslash.
+			pending = strings.TrimSpace(trimmed[:len(trimmed)-1])
+			continue
+		}
+
+		result = append(result, trimmed)
+	}
+
+	if pending != "" {
+		result = append(result, pending)
+	}
+
+	return strings.Join(result, "\n")
+}
+
 // parseContent parses content with optional include file support
 func parseContent(content string, baseDir string, loadedFiles map[string]bool) ([]Rule, error) {
+	content = joinContinuationLines(content)
 	lines := strings.Split(content, "\n")
 	var rules []Rule
 
