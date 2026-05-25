@@ -27,17 +27,37 @@ var APP_NAME blueprint
 var CHECKS [{"file":"setup.bp","template":"@github:elpic/templates@main:actions/github/integration/go","against":".github/workflows"},{"file":"setup.bp","template":"@github:elpic/templates@main:actions/github/drift-check","against":".github/workflows"}]
 
 # ---- Directory structure ----
-mkdir ${WORKSPACE} id: workspace-dir on: [mac, linux]
+mkdir ${WORKSPACE} \
+  id: workspace-dir \
+  on: [mac, linux]
 
 # ---- Development tools at pinned versions ----
 # mise handles installation and version management automatically.
 # If an installed version differs from the one below, blueprint diff will flag it.
-mise go@${GO_VERSION} id: dev-go after: workspace-dir on: [mac, linux]
-mise golangci-lint@${GOLANGCI_LINT_VERSION} id: dev-lint after: workspace-dir on: [mac, linux]
+mise go@${GO_VERSION} \
+  id: dev-go \
+  after: workspace-dir \
+  on: [mac, linux]
+mise golangci-lint@${GOLANGCI_LINT_VERSION} \
+  id: dev-lint \
+  after: workspace-dir \
+  on: [mac, linux]
 
 # ---- Clone the blueprint repository ----
-clone @github:elpic/blueprint to: ${WORKSPACE}/${REPO_NAME} workdir: true id: blueprint-repo after: workspace-dir on: [mac, linux]
+clone @github:elpic/blueprint \
+  to: ${WORKSPACE}/${REPO_NAME} \
+  workdir: true \
+  id: blueprint-repo \
+  after: workspace-dir \
+  on: [mac, linux]
 
 # ---- Generate GitHub Actions workflows from templates ----
-render @github:elpic/templates@main:actions/github/integration/go output: ${WORKSPACE}/${REPO_NAME}/.github/workflows after: blueprint-repo var: SETUP=mise on: [mac, linux]
-render @github:elpic/templates@main:actions/github/drift-check output: ${WORKSPACE}/${REPO_NAME}/.github/workflows after: blueprint-repo on: [mac, linux]
+render @github:elpic/templates@main:actions/github/integration/go \
+  output: ${WORKSPACE}/${REPO_NAME}/.github/workflows \
+  after: blueprint-repo \
+  var: SETUP=mise \
+  on: [mac, linux]
+render @github:elpic/templates@main:actions/github/drift-check \
+  output: ${WORKSPACE}/${REPO_NAME}/.github/workflows \
+  after: blueprint-repo \
+  on: [mac, linux]
