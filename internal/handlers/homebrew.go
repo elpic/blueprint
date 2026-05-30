@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -214,6 +215,75 @@ func (h *HomebrewHandler) UpdateStatus(status *Status, records []ExecutionRecord
 	return nil
 }
 
+// ensureBrewShellConfig adds brew's shellenv to the user's shell config file
+// so brew binaries are available on PATH. Idempotent — checks for the line
+// before adding it.
+func ensureBrewShellConfig() error {
+	brewPath := brewCmd()
+
+	// Build the standard shellenv eval line. The brew binary is guaranteed
+	// to exist since this is called after install or from ensureHomebrewInstalled.
+	shellEnvLine := fmt.Sprintf(`eval "$(%s shellenv)"`, brewPath)
+
+	// Determine which shell config file to use.
+	shell := os.Getenv("SHELL")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	var candidates []string
+	switch {
+	case strings.HasSuffix(shell, "/zsh"):
+		candidates = []string{".zshrc", ".zshenv"}
+	case strings.HasSuffix(shell, "/bash"):
+		candidates = []string{".bashrc", ".bash_profile", ".profile"}
+	default:
+		candidates = []string{".profile"}
+	}
+
+	// Pick the first existing config file, falling back to the first candidate.
+	configPath := ""
+	for _, c := range candidates {
+		p := filepath.Join(home, c)
+		if _, err := os.Stat(p); err == nil {
+			configPath = p
+			break
+		}
+	}
+	if configPath == "" {
+		configPath = filepath.Join(home, candidates[0])
+	}
+
+	// Read existing content.
+	data, err := os.ReadFile(configPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reading %s: %w", configPath, err)
+	}
+
+	// Check if the shellenv line is already present.
+	if strings.Contains(string(data), shellEnvLine) {
+		return nil // already set up
+	}
+
+	// Append with a comment header.
+	f, err := os.OpenFile(configPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("opening %s: %w", configPath, err)
+	}
+	defer f.Close()
+
+	header := "\n# Homebrew PATH setup\n"
+	if _, err := f.WriteString(header); err != nil {
+		return fmt.Errorf("writing %s: %w", configPath, err)
+	}
+	if _, err := f.WriteString(shellEnvLine + "\n"); err != nil {
+		return fmt.Errorf("writing %s: %w", configPath, err)
+	}
+
+	return nil
+}
+
 // caskKey returns a storage key that distinguishes casks from formulas with the same name
 func caskKey(name string) string {
 	return "cask:" + name
@@ -224,39 +294,6 @@ func caskKey(name string) string {
 func formulaName(s string) string {
 	parts := strings.Split(s, "/")
 	return parts[len(parts)-1]
-}
-
-// ensureHomebrewInstalled ensures homebrew is installed on the system
-// Uses mutex to prevent concurrent installation attempts that could cause conflicts
-func (h *HomebrewHandler) ensureHomebrewInstalled() error {
-	// Check if homebrew is already installed (fast path without lock)
-	if h.isHomebrewInstalled() {
-		return nil
-	}
-
-	// Use mutex to prevent concurrent installation attempts
-	homebrewInstallMutex.Lock()
-	defer homebrewInstallMutex.Unlock()
-
-	// Double-check after acquiring lock (another goroutine might have installed it)
-	if h.isHomebrewInstalled() {
-		return nil
-	}
-
-	// Determine OS and install accordingly
-	targetOS := getOSName()
-	if len(h.Rule.OSList) > 0 {
-		targetOS = strings.TrimSpace(h.Rule.OSList[0])
-	}
-
-	switch targetOS {
-	case "mac":
-		return h.installHomebrewMacOS()
-	case "linux":
-		return h.installHomebrewLinux()
-	default:
-		return fmt.Errorf("homebrew installation not supported on %s", targetOS)
-	}
 }
 
 // realIsBrewFormulaInstalled checks if a formula is already installed.
@@ -300,6 +337,42 @@ func (h *HomebrewHandler) isHomebrewInstalled() bool {
 	return exec.Command("which", "brew").Run() == nil
 }
 
+// ensureHomebrewInstalled ensures homebrew is installed on the system.
+// Uses mutex to prevent concurrent installation attempts that could cause conflicts.
+func (h *HomebrewHandler) ensureHomebrewInstalled() error {
+	// Check if homebrew is already installed (fast path without lock)
+	if h.isHomebrewInstalled() {
+		// Best-effort: ensure brew shellenv is in the user's shell config.
+		// This handles existing installs that predate this feature.
+		_ = ensureBrewShellConfig()
+		return nil
+	}
+
+	// Use mutex to prevent concurrent installation attempts
+	homebrewInstallMutex.Lock()
+	defer homebrewInstallMutex.Unlock()
+
+	// Double-check after acquiring lock (another goroutine might have installed it)
+	if h.isHomebrewInstalled() {
+		return nil
+	}
+
+	// Determine OS and install accordingly
+	targetOS := getOSName()
+	if len(h.Rule.OSList) > 0 {
+		targetOS = strings.TrimSpace(h.Rule.OSList[0])
+	}
+
+	switch targetOS {
+	case "mac":
+		return h.installHomebrewMacOS()
+	case "linux":
+		return h.installHomebrewLinux()
+	default:
+		return fmt.Errorf("homebrew installation not supported on %s", targetOS)
+	}
+}
+
 // installHomebrewMacOS installs homebrew on macOS using the official script
 func (h *HomebrewHandler) installHomebrewMacOS() error {
 	// Use the official Homebrew installation script
@@ -307,6 +380,11 @@ func (h *HomebrewHandler) installHomebrewMacOS() error {
 
 	if _, err := executeCommandWithCache(installCmd); err != nil {
 		return fmt.Errorf("failed to install homebrew on macOS: %w", err)
+	}
+
+	// Set up shell config so brew binaries are on PATH.
+	if err := ensureBrewShellConfig(); err != nil {
+		return fmt.Errorf("failed to configure brew shellenv: %w", err)
 	}
 
 	return nil
@@ -328,6 +406,11 @@ func (h *HomebrewHandler) installHomebrewLinux() error {
 	installCmd := `curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | bash`
 	if _, err := executeCommandWithCache(installCmd); err != nil {
 		return fmt.Errorf("failed to install homebrew on Linux: %w", err)
+	}
+
+	// Set up shell config so brew binaries are on PATH.
+	if err := ensureBrewShellConfig(); err != nil {
+		return fmt.Errorf("failed to configure brew shellenv: %w", err)
 	}
 
 	return nil
