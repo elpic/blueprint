@@ -259,23 +259,27 @@ func (h *HomebrewHandler) ensureHomebrewInstalled() error {
 	}
 }
 
-// isBrewFormulaInstalled checks if a formula is already installed.
+// realIsBrewFormulaInstalled checks if a formula is already installed.
 // Uses sh -c to support multi-word brew invocations (e.g. under Rosetta 2).
-// Overridable for testing.
-var isBrewFormulaInstalled = func(brew, formula string) bool {
+var realIsBrewFormulaInstalled = func(brew, formula string) bool {
 	cmd := exec.Command("sh", "-c", fmt.Sprintf("%s list --versions %s", brew, formula))
 	cmd.Stdin = nil
 	return cmd.Run() == nil
 }
 
-// isBrewCaskInstalled checks if a cask is already installed.
+// realIsBrewCaskInstalled checks if a cask is already installed.
 // Uses sh -c to support multi-word brew invocations (e.g. under Rosetta 2).
-// Overridable for testing.
-var isBrewCaskInstalled = func(brew, cask string) bool {
+var realIsBrewCaskInstalled = func(brew, cask string) bool {
 	cmd := exec.Command("sh", "-c", fmt.Sprintf("%s list --cask %s", brew, cask))
 	cmd.Stdin = nil
 	return cmd.Run() == nil
 }
+
+// isBrewFormulaInstalled is overridable for testing.
+var isBrewFormulaInstalled = realIsBrewFormulaInstalled
+
+// isBrewCaskInstalled is overridable for testing.
+var isBrewCaskInstalled = realIsBrewCaskInstalled
 
 // knownBrewPaths are the standard install locations for homebrew on each platform.
 var knownBrewPaths = []string{
@@ -387,6 +391,26 @@ func ResetBrewCmd() {
 		once sync.Once
 		val  string
 	}{}
+}
+
+// SetBrewFormulaInstalledFunc sets the brew formula installed check function (for testing)
+func SetBrewFormulaInstalledFunc(fn func(brew, formula string) bool) {
+	isBrewFormulaInstalled = fn
+}
+
+// ResetBrewFormulaInstalled resets the brew formula installed check to default
+func ResetBrewFormulaInstalled() {
+	isBrewFormulaInstalled = realIsBrewFormulaInstalled
+}
+
+// SetBrewCaskInstalledFunc sets the brew cask installed check function (for testing)
+func SetBrewCaskInstalledFunc(fn func(brew, cask string) bool) {
+	isBrewCaskInstalled = fn
+}
+
+// ResetBrewCaskInstalled resets the brew cask installed check to default
+func ResetBrewCaskInstalled() {
+	isBrewCaskInstalled = realIsBrewCaskInstalled
 }
 
 // buildCommand builds the install command for formulas and/or casks
@@ -564,7 +588,10 @@ func (h *HomebrewHandler) FindUninstallRules(status *Status, currentRules []pars
 	return rules
 }
 
-// IsInstalled returns true if all homebrew formulas and casks in this rule are already in status.
+// IsInstalled returns true if all homebrew formulas and casks in this rule are
+// both recorded in status AND confirmed installed on the system via brew.
+// The system-level check is necessary because the status file can get out of
+// sync with reality (e.g. brew was reinstalled, packages manually removed).
 func (h *HomebrewHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
 	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
@@ -576,6 +603,7 @@ func (h *HomebrewHandler) IsInstalled(status *Status, blueprintFile, osName stri
 		}
 	}
 
+	// Fast path: if not even recorded in status, definitely not installed.
 	for _, formulaStr := range h.Rule.HomebrewPackages {
 		parts := strings.Split(formulaStr, "@")
 		if !stored[formulaName(parts[0])] {
@@ -587,6 +615,23 @@ func (h *HomebrewHandler) IsInstalled(status *Status, blueprintFile, osName stri
 			return false
 		}
 	}
+
+	// Verified path: confirm each package is actually installed on the system.
+	// This catches stale status entries that would otherwise cause blueprint to
+	// skip installation of packages that are missing.
+	brew := brewCmd()
+	for _, f := range h.Rule.HomebrewPackages {
+		name := formulaName(strings.Split(f, "@")[0])
+		if !isBrewFormulaInstalled(brew, name) && !isBrewCaskInstalled(brew, name) {
+			return false
+		}
+	}
+	for _, c := range h.Rule.HomebrewCasks {
+		if !isBrewCaskInstalled(brew, c) {
+			return false
+		}
+	}
+
 	return true
 }
 
