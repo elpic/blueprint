@@ -373,6 +373,11 @@ func detectBrewCmd() string {
 				return p
 			}
 		}
+		// Fall back to PATH lookup for per-user Linuxbrew (~/.linuxbrew/bin/brew)
+		// or other custom install locations.
+		if path, err := exec.LookPath("brew"); err == nil {
+			return path
+		}
 		return "brew"
 	}
 
