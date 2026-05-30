@@ -218,7 +218,7 @@ func (h *HomebrewHandler) UpdateStatus(status *Status, records []ExecutionRecord
 // ensureBrewShellConfig adds brew's shellenv to the user's shell config file
 // so brew binaries are available on PATH. Idempotent — checks for the line
 // before adding it.
-func ensureBrewShellConfig() error {
+func ensureBrewShellConfig() (err error) {
 	brewPath := brewCmd()
 
 	// Build the standard shellenv eval line. The brew binary is guaranteed
@@ -267,11 +267,15 @@ func ensureBrewShellConfig() error {
 	}
 
 	// Append with a comment header.
-	f, err := os.OpenFile(configPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(configPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return fmt.Errorf("opening %s: %w", configPath, err)
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	header := "\n# Homebrew PATH setup\n"
 	if _, err := f.WriteString(header); err != nil {
