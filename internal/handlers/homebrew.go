@@ -352,6 +352,12 @@ func brewCmd() string {
 	return brewCmdFunc()
 }
 
+// BrewCmd returns the brew command path for the current environment.
+// Exported for use by the engine doctor check.
+func BrewCmd() string {
+	return brewCmd()
+}
+
 func realBrewCmd() string {
 	brewCmdCache.once.Do(func() {
 		brewCmdCache.val = detectBrewCmd()

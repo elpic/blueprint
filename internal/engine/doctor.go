@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
@@ -560,6 +562,157 @@ func checkMissingDownloadFiles(status *handlerskg.Status) []doctorIssue {
 	}
 }
 
+// brewListInstalled runs "brew list --versions" once and returns a set of
+// formula names that are currently installed. Uses exec.Command directly to
+// avoid the overhead of executing brew once per formula.
+func brewListInstalled() (map[string]bool, map[string]bool) {
+	formulas := map[string]bool{}
+	casks := map[string]bool{}
+
+	brew := handlerskg.BrewCmd()
+
+	// Get all installed formulas.
+	out, err := exec.Command("sh", "-c", brew+" list --versions 2>/dev/null").Output()
+	if err == nil {
+		for _, line := range strings.Split(string(out), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) > 0 {
+				formulas[fields[0]] = true // "opencode 1.0.0" → "opencode"
+			}
+		}
+	}
+
+	// Get all installed casks.
+	out, err = exec.Command("sh", "-c", brew+" list --cask --versions 2>/dev/null").Output()
+	if err == nil {
+		for _, line := range strings.Split(string(out), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) > 0 {
+				casks[fields[0]] = true
+			}
+		}
+	}
+
+	return formulas, casks
+}
+
+// checkStaleHomebrewEntries scans all HomebrewStatus entries and reports formulas
+// that the status file claims are installed but brew says are not. This catches
+// stale status entries caused by manual brew uninstalls, prefix changes, or
+// brew reinstall wiping formula state.
+func checkStaleHomebrewEntries(status *handlerskg.Status) []doctorIssue {
+	if len(status.Brews) == 0 {
+		return nil
+	}
+
+	installedFormulas, installedCasks := brewListInstalled()
+	if len(installedFormulas) == 0 && len(installedCasks) == 0 {
+		// brew list failed entirely — can't check. Skip silently.
+		return nil
+	}
+
+	var missing []handlerskg.HomebrewStatus
+	for _, entry := range status.Brews {
+		if strings.HasPrefix(entry.Formula, "cask:") {
+			name := strings.TrimPrefix(entry.Formula, "cask:")
+			if !installedCasks[name] {
+				missing = append(missing, entry)
+			}
+		} else if !installedFormulas[entry.Formula] {
+			missing = append(missing, entry)
+		}
+	}
+
+	if len(missing) == 0 {
+		return nil
+	}
+
+	// Build set of formula keys to remove.
+	remove := make(map[string]bool)
+	for _, m := range missing {
+		remove[m.Formula] = true
+	}
+
+	fixFn := func() {
+		var kept []handlerskg.HomebrewStatus
+		for _, entry := range status.Brews {
+			if !remove[entry.Formula] {
+				kept = append(kept, entry)
+			}
+		}
+		status.Brews = kept
+	}
+
+	examples := make([]string, 0, 3)
+	for i, m := range missing {
+		if i >= 3 {
+			break
+		}
+		examples = append(examples, m.Formula)
+	}
+
+	return []doctorIssue{
+		{
+			description: fmt.Sprintf("%d homebrew formula(s) in status but not installed by brew", len(missing)),
+			count:       len(missing),
+			examples:    examples,
+			fix:         fixFn,
+			hint:        "Run 'blueprint apply' to reinstall, or 'blueprint doctor --fix' to clean up stale status entries.",
+		},
+	}
+}
+
+// checkStaleMkdirEntries scans all MkdirStatus entries and reports directories
+// that the status file claims exist but are missing from disk.
+func checkStaleMkdirEntries(status *handlerskg.Status) []doctorIssue {
+	var missing []handlerskg.MkdirStatus
+
+	for _, entry := range status.Mkdirs {
+		expanded := expandHomedir(entry.Path)
+		if _, err := os.Stat(expanded); os.IsNotExist(err) {
+			missing = append(missing, entry)
+		}
+	}
+
+	if len(missing) == 0 {
+		return nil
+	}
+
+	// Build set of paths to remove.
+	remove := make(map[string]bool)
+	for _, m := range missing {
+		remove[m.Path] = true
+	}
+
+	fixFn := func() {
+		var kept []handlerskg.MkdirStatus
+		for _, entry := range status.Mkdirs {
+			if !remove[entry.Path] {
+				kept = append(kept, entry)
+			}
+		}
+		status.Mkdirs = kept
+	}
+
+	examples := make([]string, 0, 3)
+	for i, m := range missing {
+		if i >= 3 {
+			break
+		}
+		examples = append(examples, m.Path)
+	}
+
+	return []doctorIssue{
+		{
+			description: fmt.Sprintf("%d mkdir director(ies) in status but missing from disk", len(missing)),
+			count:       len(missing),
+			examples:    examples,
+			fix:         fixFn,
+			hint:        "Run 'blueprint apply' to recreate, or 'blueprint doctor --fix' to clean up stale status entries.",
+		},
+	}
+}
+
 // checkOrphans detects status entries whose resource no longer exists in the
 // blueprint file they were installed from. Uses status.BlueprintSHA to check
 // against the exact version that was applied.
@@ -570,14 +723,14 @@ func checkOrphans(status *handlerskg.Status) []doctorIssue {
 		if !fetched[norm] {
 			fetched[norm] = true
 			if sha != "" {
-				fmt.Printf("  Fetching blueprint %s @ %s...\n", norm, sha[:8])
+				fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("Fetching %s @ %s...", norm, sha[:8])))
 			} else {
-				fmt.Printf("  Fetching blueprint %s...\n", norm)
+				fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("Fetching %s...", norm)))
 			}
 		}
 		rules, err := rulesForBlueprint(norm, sha)
 		if err != nil {
-			fmt.Printf("  %s\n", ui.FormatError(fmt.Sprintf("could not fetch %s: %v", norm, err)))
+			fmt.Printf("    %s\n", ui.FormatError(fmt.Sprintf("Could not fetch %s: %v", norm, err)))
 			return nil
 		}
 		return rules
@@ -589,9 +742,9 @@ func checkOrphans(status *handlerskg.Status) []doctorIssue {
 // Exits with code 1 if issues are found and fix is false.
 func DoctorCheck(fix bool) {
 	if fix {
-		fmt.Printf("\n%s\n", ui.FormatHighlight("=== Blueprint Doctor (fix mode) ==="))
+		fmt.Printf("\n%s\n\n", ui.FormatHeader("═══ Blueprint Doctor (fix mode) ═══"))
 	} else {
-		fmt.Printf("\n%s\n", ui.FormatHighlight("=== Blueprint Doctor ==="))
+		fmt.Printf("\n%s\n", ui.FormatHeader("═══ Blueprint Doctor ═══"))
 	}
 
 	statusPath, err := getStatusPath()
@@ -600,13 +753,10 @@ func DoctorCheck(fix bool) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("\nChecking status file...\n")
-
 	data, err := readBlueprintFile(statusPath)
 	if err != nil {
-		// No status file yet — nothing to check.
-		fmt.Printf("  %s\n", ui.FormatSuccess("no status file found — nothing to check"))
-		fmt.Printf("\n%s\n\n", ui.FormatSuccess("No issues found."))
+		fmt.Printf("  %s\n", ui.FormatDim("No status file found — nothing to check."))
+		fmt.Printf("\n  %s\n\n", ui.FormatSuccess("No issues found."))
 		return
 	}
 
@@ -616,28 +766,34 @@ func DoctorCheck(fix bool) {
 		os.Exit(1)
 	}
 
+	// Run all checks. Long-running checks (orphans) print their own progress.
 	issues := checkBlueprintURLs(&status)
 	issues = append(issues, checkDuplicates(&status)...)
 	issues = append(issues, checkBranchDuplicates(&status)...)
-	fmt.Printf("\nChecking for orphaned entries...\n")
+	fmt.Printf("  %s\n", ui.FormatDim("Checking for orphaned entries..."))
 	issues = append(issues, checkOrphans(&status)...)
-	fmt.Printf("\nChecking for stale symlinks...\n")
 	issues = append(issues, checkStaleSymlinks(&status)...)
-	fmt.Printf("\nChecking for missing clone directories...\n")
 	issues = append(issues, checkMissingCloneDirs(&status)...)
-	fmt.Printf("\nChecking for missing downloaded files...\n")
 	issues = append(issues, checkMissingDownloadFiles(&status)...)
+	issues = append(issues, checkStaleHomebrewEntries(&status)...)
+	issues = append(issues, checkStaleMkdirEntries(&status)...)
 
 	if len(issues) == 0 {
-		fmt.Printf("  %s\n", ui.FormatSuccess("blueprint URLs are normalized"))
-		fmt.Printf("  %s\n", ui.FormatSuccess("no duplicate entries"))
-		fmt.Printf("  %s\n", ui.FormatSuccess("no branch-duplicate entries"))
-		fmt.Printf("  %s\n", ui.FormatSuccess("no orphaned entries"))
-		fmt.Printf("  %s\n", ui.FormatSuccess("no stale symlinks"))
-		fmt.Printf("  %s\n", ui.FormatSuccess("no missing clone directories"))
-		fmt.Printf("  %s\n", ui.FormatSuccess("no missing downloaded files"))
-		fmt.Printf("\n%s\n\n", ui.FormatSuccess("No issues found."))
+		fmt.Printf("\n  %s\n\n", ui.FormatSuccess("All checks passed — no issues found."))
 		return
+	}
+
+	// Print grouped issues.
+	fmt.Printf("\n")
+	for _, issue := range issues {
+		fmt.Printf("  %s\n", ui.FormatError(issue.description))
+		for _, ex := range issue.examples {
+			fmt.Printf("    %s\n", ui.FormatDim(ex))
+		}
+		if issue.hint != "" {
+			fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("→ %s", issue.hint)))
+		}
+		fmt.Printf("\n")
 	}
 
 	if fix {
@@ -660,31 +816,29 @@ func DoctorCheck(fix bool) {
 			os.Exit(1)
 		}
 
+		fmt.Printf("%s\n", ui.FormatDim("─────────────────────────────────────────────────────"))
+		var fixedCount, skippedCount int
 		for _, issue := range issues {
 			if issue.fix != nil {
+				fixedCount++
 				fmt.Printf("  %s\n", ui.FormatSuccess(fmt.Sprintf("Fixed: %s", issue.description)))
 			} else {
+				skippedCount++
 				fmt.Printf("  %s\n", ui.FormatInfo(fmt.Sprintf("Cannot auto-fix: %s", issue.description)))
 			}
 			if issue.hint != "" {
-				fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("Hint: %s", issue.hint)))
+				fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("→ %s", issue.hint)))
 			}
 		}
-		fmt.Printf("\n%s\n\n", ui.FormatSuccess("All auto-fixable issues repaired."))
+		fmt.Printf("\n  %s", ui.FormatSuccess("Done."))
+		if skippedCount > 0 {
+			fmt.Printf(" %s", ui.FormatInfo(fmt.Sprintf("%d issue(s) require manual action.", skippedCount)))
+		}
+		fmt.Printf("\n\n")
 		return
 	}
 
-	// Report mode: print issues and exit 1.
-	for _, issue := range issues {
-		fmt.Printf("  %s\n", ui.FormatError(issue.description))
-		for _, ex := range issue.examples {
-			fmt.Printf("    %s\n", ui.FormatDim(ex))
-		}
-		if issue.hint != "" {
-			fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("Hint: %s", issue.hint)))
-		}
-	}
-
+	fmt.Printf("%s\n", ui.FormatDim("─────────────────────────────────────────────────────"))
 	issueWord := "issue"
 	if len(issues) != 1 {
 		issueWord = "issues"
