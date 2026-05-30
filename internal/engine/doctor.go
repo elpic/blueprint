@@ -800,7 +800,7 @@ func DoctorCheck(fix bool, verbose bool) {
 	runCheck := func(msg string, fn func() []doctorIssue) []doctorIssue {
 		issues := fn()
 		if verbose {
-			fmt.Printf("  %s %s\n", ui.FormatSuccess("✓"), ui.FormatInfo(msg))
+			fmt.Printf("  %s %s\n", ui.FormatSuccess(""), ui.FormatInfo(msg))
 		}
 		return issues
 	}
