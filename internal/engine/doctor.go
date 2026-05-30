@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
@@ -727,32 +726,12 @@ func checkOrphans(status *handlerskg.Status) []doctorIssue {
 	})
 }
 
-// spinnerChars are animated frames used to show progress in verbose mode.
-var spinnerChars = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-
-// startSpinner starts an animated spinner with the given message on the current
-// terminal line. Returns a done function that must be called when the operation
-// finishes (prints ✓ and advances to the next line).
+// startSpinner prints a "in progress" indicator and returns a done function
+// that replaces it with a checkmark. No goroutines — purely synchronous.
 func startSpinner(msg string) func() {
-	stop := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(80 * time.Millisecond)
-		defer ticker.Stop()
-		i := 0
-		for {
-			select {
-			case <-ticker.C:
-				fmt.Printf("\r  %s %s", ui.FormatInfo(spinnerChars[i%len(spinnerChars)]), ui.FormatInfo(msg))
-				i++
-			case <-stop:
-				time.Sleep(40 * time.Millisecond) // let the last frame render
-				fmt.Printf("\r  %s %s\n", ui.FormatSuccess("✓"), ui.FormatInfo(msg))
-				return
-			}
-		}
-	}()
+	fmt.Printf("  %s %s", ui.FormatInfo("⋯"), ui.FormatInfo(msg))
 	return func() {
-		close(stop)
+		fmt.Printf("\r  %s %s\n", ui.FormatSuccess("✓"), ui.FormatInfo(msg))
 	}
 }
 
