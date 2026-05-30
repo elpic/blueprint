@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
@@ -726,18 +727,38 @@ func checkOrphans(status *handlerskg.Status) []doctorIssue {
 	})
 }
 
-// checkLog prints a progress message for a check when verbose mode is on.
-func checkLog(verbose bool, format string, args ...interface{}) {
-	if !verbose {
-		return
+// spinnerChars are animated frames used to show progress in verbose mode.
+var spinnerChars = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+// startSpinner starts an animated spinner with the given message on the current
+// terminal line. Returns a done function that must be called when the operation
+// finishes (prints ✓ and advances to the next line).
+func startSpinner(msg string) func() {
+	stop := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(80 * time.Millisecond)
+		defer ticker.Stop()
+		i := 0
+		for {
+			select {
+			case <-ticker.C:
+				fmt.Printf("\r  %s %s", ui.FormatInfo(spinnerChars[i%len(spinnerChars)]), ui.FormatInfo(msg))
+				i++
+			case <-stop:
+				time.Sleep(40 * time.Millisecond) // let the last frame render
+				fmt.Printf("\r  %s %s\n", ui.FormatSuccess("✓"), ui.FormatInfo(msg))
+				return
+			}
+		}
+	}()
+	return func() {
+		close(stop)
 	}
-	fmt.Printf("  %s\n", ui.FormatInfo(fmt.Sprintf("○ "+format, args...)))
 }
 
 // prefetchBlueprints fetches all blueprint repos referenced in status entries
-// so the subsequent checks can run without network delays. Prints progress
-// messages in verbose mode.
-func prefetchBlueprints(verbose bool, status *handlerskg.Status) {
+// so the subsequent checks can run without network delays.
+func prefetchBlueprints(status *handlerskg.Status) {
 	seen := map[string]bool{}
 	var urls []string
 	for _, e := range status.AllEntries() {
@@ -750,18 +771,19 @@ func prefetchBlueprints(verbose bool, status *handlerskg.Status) {
 	if len(urls) == 0 {
 		return
 	}
-		checkLog(verbose, "Fetching blueprints...")
+	done := startSpinner("Fetching blueprints...")
 	for _, u := range urls {
 		if !gitpkg.IsGitURL(u) {
 			continue
 		}
-		fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("Fetching %s...", u)))
+		fmt.Printf("\n    %s\n", ui.FormatDim(fmt.Sprintf("Fetching %s...", u)))
 		localPath := blueprintRepoPath(u)
 		params := gitpkg.ParseGitURL(u)
 		if _, _, _, err := gitpkg.CloneOrUpdateRepository(params.URL, localPath, params.Branch); err != nil {
 			fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("  Could not fetch %s: %v", u, err)))
 		}
 	}
+	done()
 }
 
 // DoctorCheck reads ~/.blueprint/status.json, reports all issues found, and
@@ -801,29 +823,46 @@ func DoctorCheck(fix bool, verbose bool) {
 	// per-check progress isn't interleaved with network operations.
 	if verbose {
 		fmt.Printf("\n")
-		prefetchBlueprints(verbose, &status)
+		prefetchBlueprints(&status)
 		fmt.Printf("\n")
 	}
 
 	// Run all checks. After pre-fetching, orphan checks are fast.
-	checkLog(verbose, "Checking blueprint URLs...")
-	issues := checkBlueprintURLs(&status)
-	checkLog(verbose, "Checking for duplicate entries...")
-	issues = append(issues, checkDuplicates(&status)...)
-	checkLog(verbose, "Checking for branch duplicates...")
-	issues = append(issues, checkBranchDuplicates(&status)...)
-	checkLog(verbose, "Checking for orphaned entries...")
-	issues = append(issues, checkOrphans(&status)...)
-	checkLog(verbose, "Checking for stale symlinks...")
-	issues = append(issues, checkStaleSymlinks(&status)...)
-	checkLog(verbose, "Checking for missing clone directories...")
-	issues = append(issues, checkMissingCloneDirs(&status)...)
-	checkLog(verbose, "Checking for missing downloaded files...")
-	issues = append(issues, checkMissingDownloadFiles(&status)...)
-	checkLog(verbose, "Checking for stale homebrew entries...")
-	issues = append(issues, checkStaleHomebrewEntries(&status)...)
-	checkLog(verbose, "Checking for stale mkdir entries...")
-	issues = append(issues, checkStaleMkdirEntries(&status)...)
+	runCheck := func(msg string, fn func() []doctorIssue) []doctorIssue {
+		if verbose {
+			done := startSpinner(msg)
+			defer done()
+		}
+		return fn()
+	}
+	var issues []doctorIssue
+	issues = append(issues, runCheck("Checking blueprint URLs...", func() []doctorIssue {
+		return checkBlueprintURLs(&status)
+	})...)
+	issues = append(issues, runCheck("Checking for duplicate entries...", func() []doctorIssue {
+		return checkDuplicates(&status)
+	})...)
+	issues = append(issues, runCheck("Checking for branch duplicates...", func() []doctorIssue {
+		return checkBranchDuplicates(&status)
+	})...)
+	issues = append(issues, runCheck("Checking for orphaned entries...", func() []doctorIssue {
+		return checkOrphans(&status)
+	})...)
+	issues = append(issues, runCheck("Checking for stale symlinks...", func() []doctorIssue {
+		return checkStaleSymlinks(&status)
+	})...)
+	issues = append(issues, runCheck("Checking for missing clone directories...", func() []doctorIssue {
+		return checkMissingCloneDirs(&status)
+	})...)
+	issues = append(issues, runCheck("Checking for missing downloaded files...", func() []doctorIssue {
+		return checkMissingDownloadFiles(&status)
+	})...)
+	issues = append(issues, runCheck("Checking for stale homebrew entries...", func() []doctorIssue {
+		return checkStaleHomebrewEntries(&status)
+	})...)
+	issues = append(issues, runCheck("Checking for stale mkdir entries...", func() []doctorIssue {
+		return checkStaleMkdirEntries(&status)
+	})...)
 
 	if len(issues) == 0 {
 		fmt.Printf("\n  %s\n\n", ui.FormatSuccess("All checks passed — no issues found."))
