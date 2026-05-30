@@ -749,10 +749,10 @@ func prefetchBlueprints(status *handlerskg.Status) {
 		fmt.Printf("  %s %s\n", ui.FormatDim("⟳"), ui.FormatDim(fmt.Sprintf("Fetching %s...", u)))
 		localPath := blueprintRepoPath(u)
 		params := gitpkg.ParseGitURL(u)
-		_, newSHA, status, err := gitpkg.CloneOrUpdateRepository(params.URL, localPath, params.Branch)
+		_, newSHA, _, err := gitpkg.CloneOrUpdateRepository(params.URL, localPath, params.Branch)
 		if err != nil {
 			fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("  Could not fetch %s: %v", u, err)))
-		} else if newSHA != "" && status != "Already up to date" {
+		} else if newSHA != "" {
 			shortSHA := newSHA
 			if len(shortSHA) > 8 {
 				shortSHA = shortSHA[:8]
