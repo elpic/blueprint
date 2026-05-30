@@ -717,20 +717,9 @@ func checkStaleMkdirEntries(status *handlerskg.Status) []doctorIssue {
 // blueprint file they were installed from. Uses status.BlueprintSHA to check
 // against the exact version that was applied.
 func checkOrphans(status *handlerskg.Status) []doctorIssue {
-	fetched := map[string]bool{}
-	sha := status.BlueprintSHA
 	return checkOrphansWithLoader(status, func(norm string) []parser.Rule {
-		if !fetched[norm] {
-			fetched[norm] = true
-			if sha != "" {
-				fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("Fetching %s @ %s...", norm, sha[:8])))
-			} else {
-				fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("Fetching %s...", norm)))
-			}
-		}
-		rules, err := rulesForBlueprint(norm, sha)
+		rules, err := rulesForBlueprint(norm, status.BlueprintSHA)
 		if err != nil {
-			fmt.Printf("    %s\n", ui.FormatError(fmt.Sprintf("Could not fetch %s: %v", norm, err)))
 			return nil
 		}
 		return rules
@@ -742,7 +731,37 @@ func checkLog(verbose bool, format string, args ...interface{}) {
 	if !verbose {
 		return
 	}
-	fmt.Printf("  %s\n", ui.FormatDim(fmt.Sprintf("○ "+format, args...)))
+	fmt.Printf("  %s\n", ui.FormatInfo(fmt.Sprintf("○ "+format, args...)))
+}
+
+// prefetchBlueprints fetches all blueprint repos referenced in status entries
+// so the subsequent checks can run without network delays. Prints progress
+// messages in verbose mode.
+func prefetchBlueprints(verbose bool, status *handlerskg.Status) {
+	seen := map[string]bool{}
+	var urls []string
+	for _, e := range status.AllEntries() {
+		bp := e.GetBlueprint()
+		if bp != "" && !seen[bp] {
+			seen[bp] = true
+			urls = append(urls, bp)
+		}
+	}
+	if len(urls) == 0 {
+		return
+	}
+		checkLog(verbose, "Fetching blueprints...")
+	for _, u := range urls {
+		if !gitpkg.IsGitURL(u) {
+			continue
+		}
+		fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("Fetching %s...", u)))
+		localPath := blueprintRepoPath(u)
+		params := gitpkg.ParseGitURL(u)
+		if _, _, _, err := gitpkg.CloneOrUpdateRepository(params.URL, localPath, params.Branch); err != nil {
+			fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("  Could not fetch %s: %v", u, err)))
+		}
+	}
 }
 
 // DoctorCheck reads ~/.blueprint/status.json, reports all issues found, and
@@ -750,20 +769,23 @@ func checkLog(verbose bool, format string, args ...interface{}) {
 // When verbose is true, prints progress messages for each check as it runs.
 // Exits with code 1 if issues are found and fix is false.
 func DoctorCheck(fix bool, verbose bool) {
+	mode := ""
 	if fix {
-		fmt.Printf("\n%s\n\n", ui.FormatHeader("═══ Blueprint Doctor (fix mode) ═══"))
-	} else {
-		fmt.Printf("\n%s\n", ui.FormatHeader("═══ Blueprint Doctor ═══"))
+		mode = " (fix mode)"
 	}
+	fmt.Printf("\n%s\n", ui.FormatHeader("═══ Blueprint Doctor"+mode+" ═══"))
 
 	statusPath, err := getStatusPath()
 	if err != nil {
-		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error getting status path: %v", err)))
+		fmt.Printf("  %s\n", ui.FormatError(fmt.Sprintf("Error getting status path: %v", err)))
 		os.Exit(1)
 	}
 
 	data, err := readBlueprintFile(statusPath)
 	if err != nil {
+		if verbose {
+			fmt.Printf("\n")
+		}
 		fmt.Printf("  %s\n", ui.FormatDim("No status file found — nothing to check."))
 		fmt.Printf("\n  %s\n\n", ui.FormatSuccess("No issues found."))
 		return
@@ -771,11 +793,19 @@ func DoctorCheck(fix bool, verbose bool) {
 
 	var status handlerskg.Status
 	if err := json.Unmarshal(data, &status); err != nil {
-		fmt.Printf("%s\n", ui.FormatError(fmt.Sprintf("Error parsing status file: %v", err)))
+		fmt.Printf("  %s\n", ui.FormatError(fmt.Sprintf("Error parsing status file: %v", err)))
 		os.Exit(1)
 	}
 
-	// Run all checks. Long-running checks (orphans) print their own progress.
+	// In verbose mode, pre-fetch all blueprint repos first so the
+	// per-check progress isn't interleaved with network operations.
+	if verbose {
+		fmt.Printf("\n")
+		prefetchBlueprints(verbose, &status)
+		fmt.Printf("\n")
+	}
+
+	// Run all checks. After pre-fetching, orphan checks are fast.
 	checkLog(verbose, "Checking blueprint URLs...")
 	issues := checkBlueprintURLs(&status)
 	checkLog(verbose, "Checking for duplicate entries...")
