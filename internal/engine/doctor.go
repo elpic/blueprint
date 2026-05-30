@@ -726,18 +726,9 @@ func checkOrphans(status *handlerskg.Status) []doctorIssue {
 	})
 }
 
-// startSpinner prints a "in progress" indicator and returns a done function
-// that replaces it with a checkmark. No goroutines — purely synchronous.
-func startSpinner(msg string) func() {
-	fmt.Printf("  %s %s", ui.FormatInfo("⋯"), ui.FormatInfo(msg))
-	return func() {
-		fmt.Printf("\r  %s %s\n", ui.FormatSuccess("✓"), ui.FormatInfo(msg))
-	}
-}
-
 // prefetchBlueprints fetches all blueprint repos referenced in status entries
 // so the subsequent checks can run without network delays. In verbose mode,
-// prints a simple message — no spinner, since this is setup, not a check.
+// prints a message per blueprint being fetched.
 func prefetchBlueprints(status *handlerskg.Status) {
 	seen := map[string]bool{}
 	var urls []string
@@ -751,11 +742,11 @@ func prefetchBlueprints(status *handlerskg.Status) {
 	if len(urls) == 0 {
 		return
 	}
-	fmt.Printf("  %s\n", ui.FormatDim("Fetching blueprints..."))
 	for _, u := range urls {
 		if !gitpkg.IsGitURL(u) {
 			continue
 		}
+		fmt.Printf("  %s %s\n", ui.FormatDim("⟳"), ui.FormatDim(fmt.Sprintf("Fetching %s...", u)))
 		localPath := blueprintRepoPath(u)
 		params := gitpkg.ParseGitURL(u)
 		if _, _, _, err := gitpkg.CloneOrUpdateRepository(params.URL, localPath, params.Branch); err != nil {
@@ -807,11 +798,11 @@ func DoctorCheck(fix bool, verbose bool) {
 
 	// Run all checks. After pre-fetching, orphan checks are fast.
 	runCheck := func(msg string, fn func() []doctorIssue) []doctorIssue {
+		issues := fn()
 		if verbose {
-			done := startSpinner(msg)
-			defer done()
+			fmt.Printf("  %s %s\n", ui.FormatSuccess("✓"), ui.FormatInfo(msg))
 		}
-		return fn()
+		return issues
 	}
 	var issues []doctorIssue
 	issues = append(issues, runCheck("Checking blueprint URLs...", func() []doctorIssue {
