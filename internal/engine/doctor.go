@@ -737,10 +737,19 @@ func checkOrphans(status *handlerskg.Status) []doctorIssue {
 	})
 }
 
+// checkLog prints a progress message for a check when verbose mode is on.
+func checkLog(verbose bool, format string, args ...interface{}) {
+	if !verbose {
+		return
+	}
+	fmt.Printf("  %s\n", ui.FormatDim(fmt.Sprintf("○ "+format, args...)))
+}
+
 // DoctorCheck reads ~/.blueprint/status.json, reports all issues found, and
 // optionally rewrites the file with issues fixed when fix is true.
+// When verbose is true, prints progress messages for each check as it runs.
 // Exits with code 1 if issues are found and fix is false.
-func DoctorCheck(fix bool) {
+func DoctorCheck(fix bool, verbose bool) {
 	if fix {
 		fmt.Printf("\n%s\n\n", ui.FormatHeader("═══ Blueprint Doctor (fix mode) ═══"))
 	} else {
@@ -767,15 +776,23 @@ func DoctorCheck(fix bool) {
 	}
 
 	// Run all checks. Long-running checks (orphans) print their own progress.
+	checkLog(verbose, "Checking blueprint URLs...")
 	issues := checkBlueprintURLs(&status)
+	checkLog(verbose, "Checking for duplicate entries...")
 	issues = append(issues, checkDuplicates(&status)...)
+	checkLog(verbose, "Checking for branch duplicates...")
 	issues = append(issues, checkBranchDuplicates(&status)...)
-	fmt.Printf("  %s\n", ui.FormatDim("Checking for orphaned entries..."))
+	checkLog(verbose, "Checking for orphaned entries...")
 	issues = append(issues, checkOrphans(&status)...)
+	checkLog(verbose, "Checking for stale symlinks...")
 	issues = append(issues, checkStaleSymlinks(&status)...)
+	checkLog(verbose, "Checking for missing clone directories...")
 	issues = append(issues, checkMissingCloneDirs(&status)...)
+	checkLog(verbose, "Checking for missing downloaded files...")
 	issues = append(issues, checkMissingDownloadFiles(&status)...)
+	checkLog(verbose, "Checking for stale homebrew entries...")
 	issues = append(issues, checkStaleHomebrewEntries(&status)...)
+	checkLog(verbose, "Checking for stale mkdir entries...")
 	issues = append(issues, checkStaleMkdirEntries(&status)...)
 
 	if len(issues) == 0 {
