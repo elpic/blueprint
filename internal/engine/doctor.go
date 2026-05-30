@@ -757,7 +757,8 @@ func startSpinner(msg string) func() {
 }
 
 // prefetchBlueprints fetches all blueprint repos referenced in status entries
-// so the subsequent checks can run without network delays.
+// so the subsequent checks can run without network delays. In verbose mode,
+// prints a simple message — no spinner, since this is setup, not a check.
 func prefetchBlueprints(status *handlerskg.Status) {
 	seen := map[string]bool{}
 	var urls []string
@@ -771,19 +772,17 @@ func prefetchBlueprints(status *handlerskg.Status) {
 	if len(urls) == 0 {
 		return
 	}
-	done := startSpinner("Fetching blueprints...")
+	fmt.Printf("  %s\n", ui.FormatDim("Fetching blueprints..."))
 	for _, u := range urls {
 		if !gitpkg.IsGitURL(u) {
 			continue
 		}
-		fmt.Printf("\n    %s\n", ui.FormatDim(fmt.Sprintf("Fetching %s...", u)))
 		localPath := blueprintRepoPath(u)
 		params := gitpkg.ParseGitURL(u)
 		if _, _, _, err := gitpkg.CloneOrUpdateRepository(params.URL, localPath, params.Branch); err != nil {
 			fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("  Could not fetch %s: %v", u, err)))
 		}
 	}
-	done()
 }
 
 // DoctorCheck reads ~/.blueprint/status.json, reports all issues found, and
