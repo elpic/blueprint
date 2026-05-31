@@ -295,11 +295,13 @@ Description:
 
 Flags:
   --fix               Automatically fix detected issues
+  --verbose, -v       Show detailed progress for each check
   --help, -h          Show this help message
 
 Examples:
   blueprint doctor
   blueprint doctor --fix
+  blueprint doctor --verbose
 `)
 }
 
@@ -667,12 +669,16 @@ func main() {
 			os.Exit(0)
 		}
 		fix := false
+		verbose := false
 		for _, arg := range os.Args[2:] {
 			if arg == "--fix" {
 				fix = true
 			}
+			if arg == "--verbose" || arg == "-v" {
+				verbose = true
+			}
 		}
-		engine.DoctorCheck(fix)
+		engine.DoctorCheck(fix, verbose)
 	case "validate":
 		if hasHelpFlag(os.Args[2:]) {
 			printValidateHelp()

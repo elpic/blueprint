@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -214,6 +215,79 @@ func (h *HomebrewHandler) UpdateStatus(status *Status, records []ExecutionRecord
 	return nil
 }
 
+// ensureBrewShellConfig adds brew's shellenv to the user's shell config file
+// so brew binaries are available on PATH. Idempotent — checks for the line
+// before adding it.
+func ensureBrewShellConfig() (err error) {
+	brewPath := brewCmd()
+
+	// Build the standard shellenv eval line. The brew binary is guaranteed
+	// to exist since this is called after install or from ensureHomebrewInstalled.
+	shellEnvLine := fmt.Sprintf(`eval "$(%s shellenv)"`, brewPath)
+
+	// Determine which shell config file to use.
+	shell := os.Getenv("SHELL")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	var candidates []string
+	switch {
+	case strings.HasSuffix(shell, "/zsh"):
+		candidates = []string{".zshrc", ".zshenv"}
+	case strings.HasSuffix(shell, "/bash"):
+		candidates = []string{".bashrc", ".bash_profile", ".profile"}
+	default:
+		candidates = []string{".profile"}
+	}
+
+	// Pick the first existing config file, falling back to the first candidate.
+	configPath := ""
+	for _, c := range candidates {
+		p := filepath.Join(home, c)
+		if _, err := os.Stat(p); err == nil {
+			configPath = p
+			break
+		}
+	}
+	if configPath == "" {
+		configPath = filepath.Join(home, candidates[0])
+	}
+
+	// Read existing content.
+	data, err := os.ReadFile(configPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reading %s: %w", configPath, err)
+	}
+
+	// Check if the shellenv line is already present.
+	if strings.Contains(string(data), shellEnvLine) {
+		return nil // already set up
+	}
+
+	// Append with a comment header.
+	f, err := os.OpenFile(configPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return fmt.Errorf("opening %s: %w", configPath, err)
+	}
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
+
+	header := "\n# Homebrew PATH setup\n"
+	if _, err := f.WriteString(header); err != nil {
+		return fmt.Errorf("writing %s: %w", configPath, err)
+	}
+	if _, err := f.WriteString(shellEnvLine + "\n"); err != nil {
+		return fmt.Errorf("writing %s: %w", configPath, err)
+	}
+
+	return nil
+}
+
 // caskKey returns a storage key that distinguishes casks from formulas with the same name
 func caskKey(name string) string {
 	return "cask:" + name
@@ -226,11 +300,55 @@ func formulaName(s string) string {
 	return parts[len(parts)-1]
 }
 
-// ensureHomebrewInstalled ensures homebrew is installed on the system
-// Uses mutex to prevent concurrent installation attempts that could cause conflicts
+// realIsBrewFormulaInstalled checks if a formula is already installed.
+// Uses sh -c to support multi-word brew invocations (e.g. under Rosetta 2).
+var realIsBrewFormulaInstalled = func(brew, formula string) bool {
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("%s list --versions %s", brew, formula))
+	cmd.Stdin = nil
+	return cmd.Run() == nil
+}
+
+// realIsBrewCaskInstalled checks if a cask is already installed.
+// Uses sh -c to support multi-word brew invocations (e.g. under Rosetta 2).
+var realIsBrewCaskInstalled = func(brew, cask string) bool {
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("%s list --cask %s", brew, cask))
+	cmd.Stdin = nil
+	return cmd.Run() == nil
+}
+
+// isBrewFormulaInstalled is overridable for testing.
+var isBrewFormulaInstalled = realIsBrewFormulaInstalled
+
+// isBrewCaskInstalled is overridable for testing.
+var isBrewCaskInstalled = realIsBrewCaskInstalled
+
+// knownBrewPaths are the standard install locations for homebrew on each platform.
+var knownBrewPaths = []string{
+	"/opt/homebrew/bin/brew",              // macOS Apple Silicon
+	"/usr/local/bin/brew",                 // macOS Intel
+	"/home/linuxbrew/.linuxbrew/bin/brew", // Linux (system-wide)
+}
+
+// isHomebrewInstalled checks if homebrew is installed by checking known paths
+// and falling back to PATH lookup. On Linux, brew is often not on PATH even
+// when installed, so the path check is essential.
+func (h *HomebrewHandler) isHomebrewInstalled() bool {
+	for _, p := range knownBrewPaths {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return exec.Command("which", "brew").Run() == nil
+}
+
+// ensureHomebrewInstalled ensures homebrew is installed on the system.
+// Uses mutex to prevent concurrent installation attempts that could cause conflicts.
 func (h *HomebrewHandler) ensureHomebrewInstalled() error {
 	// Check if homebrew is already installed (fast path without lock)
 	if h.isHomebrewInstalled() {
+		// Best-effort: ensure brew shellenv is in the user's shell config.
+		// This handles existing installs that predate this feature.
+		_ = ensureBrewShellConfig()
 		return nil
 	}
 
@@ -259,43 +377,6 @@ func (h *HomebrewHandler) ensureHomebrewInstalled() error {
 	}
 }
 
-// isBrewFormulaInstalled checks if a formula is already installed.
-// Uses sh -c to support multi-word brew invocations (e.g. under Rosetta 2).
-// Overridable for testing.
-var isBrewFormulaInstalled = func(brew, formula string) bool {
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("%s list --versions %s", brew, formula))
-	cmd.Stdin = nil
-	return cmd.Run() == nil
-}
-
-// isBrewCaskInstalled checks if a cask is already installed.
-// Uses sh -c to support multi-word brew invocations (e.g. under Rosetta 2).
-// Overridable for testing.
-var isBrewCaskInstalled = func(brew, cask string) bool {
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("%s list --cask %s", brew, cask))
-	cmd.Stdin = nil
-	return cmd.Run() == nil
-}
-
-// knownBrewPaths are the standard install locations for homebrew on each platform.
-var knownBrewPaths = []string{
-	"/opt/homebrew/bin/brew",              // macOS Apple Silicon
-	"/usr/local/bin/brew",                 // macOS Intel
-	"/home/linuxbrew/.linuxbrew/bin/brew", // Linux (system-wide)
-}
-
-// isHomebrewInstalled checks if homebrew is installed by checking known paths
-// and falling back to PATH lookup. On Linux, brew is often not on PATH even
-// when installed, so the path check is essential.
-func (h *HomebrewHandler) isHomebrewInstalled() bool {
-	for _, p := range knownBrewPaths {
-		if _, err := os.Stat(p); err == nil {
-			return true
-		}
-	}
-	return exec.Command("which", "brew").Run() == nil
-}
-
 // installHomebrewMacOS installs homebrew on macOS using the official script
 func (h *HomebrewHandler) installHomebrewMacOS() error {
 	// Use the official Homebrew installation script
@@ -303,6 +384,11 @@ func (h *HomebrewHandler) installHomebrewMacOS() error {
 
 	if _, err := executeCommandWithCache(installCmd); err != nil {
 		return fmt.Errorf("failed to install homebrew on macOS: %w", err)
+	}
+
+	// Set up shell config so brew binaries are on PATH.
+	if err := ensureBrewShellConfig(); err != nil {
+		return fmt.Errorf("failed to configure brew shellenv: %w", err)
 	}
 
 	return nil
@@ -324,6 +410,11 @@ func (h *HomebrewHandler) installHomebrewLinux() error {
 	installCmd := `curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | bash`
 	if _, err := executeCommandWithCache(installCmd); err != nil {
 		return fmt.Errorf("failed to install homebrew on Linux: %w", err)
+	}
+
+	// Set up shell config so brew binaries are on PATH.
+	if err := ensureBrewShellConfig(); err != nil {
+		return fmt.Errorf("failed to configure brew shellenv: %w", err)
 	}
 
 	return nil
@@ -348,6 +439,12 @@ func brewCmd() string {
 	return brewCmdFunc()
 }
 
+// BrewCmd returns the brew command path for the current environment.
+// Exported for use by the engine doctor check.
+func BrewCmd() string {
+	return brewCmd()
+}
+
 func realBrewCmd() string {
 	brewCmdCache.once.Do(func() {
 		brewCmdCache.val = detectBrewCmd()
@@ -362,6 +459,11 @@ func detectBrewCmd() string {
 			if _, err := os.Stat(p); err == nil {
 				return p
 			}
+		}
+		// Fall back to PATH lookup for per-user Linuxbrew (~/.linuxbrew/bin/brew)
+		// or other custom install locations.
+		if path, err := exec.LookPath("brew"); err == nil {
+			return path
 		}
 		return "brew"
 	}
@@ -387,6 +489,26 @@ func ResetBrewCmd() {
 		once sync.Once
 		val  string
 	}{}
+}
+
+// SetBrewFormulaInstalledFunc sets the brew formula installed check function (for testing)
+func SetBrewFormulaInstalledFunc(fn func(brew, formula string) bool) {
+	isBrewFormulaInstalled = fn
+}
+
+// ResetBrewFormulaInstalled resets the brew formula installed check to default
+func ResetBrewFormulaInstalled() {
+	isBrewFormulaInstalled = realIsBrewFormulaInstalled
+}
+
+// SetBrewCaskInstalledFunc sets the brew cask installed check function (for testing)
+func SetBrewCaskInstalledFunc(fn func(brew, cask string) bool) {
+	isBrewCaskInstalled = fn
+}
+
+// ResetBrewCaskInstalled resets the brew cask installed check to default
+func ResetBrewCaskInstalled() {
+	isBrewCaskInstalled = realIsBrewCaskInstalled
 }
 
 // buildCommand builds the install command for formulas and/or casks
@@ -564,7 +686,10 @@ func (h *HomebrewHandler) FindUninstallRules(status *Status, currentRules []pars
 	return rules
 }
 
-// IsInstalled returns true if all homebrew formulas and casks in this rule are already in status.
+// IsInstalled returns true if all homebrew formulas and casks in this rule are
+// both recorded in status AND confirmed installed on the system via brew.
+// The system-level check is necessary because the status file can get out of
+// sync with reality (e.g. brew was reinstalled, packages manually removed).
 func (h *HomebrewHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
 	normalizedBlueprint := normalizeBlueprint(blueprintFile)
 
@@ -576,6 +701,7 @@ func (h *HomebrewHandler) IsInstalled(status *Status, blueprintFile, osName stri
 		}
 	}
 
+	// Fast path: if not even recorded in status, definitely not installed.
 	for _, formulaStr := range h.Rule.HomebrewPackages {
 		parts := strings.Split(formulaStr, "@")
 		if !stored[formulaName(parts[0])] {
@@ -587,6 +713,23 @@ func (h *HomebrewHandler) IsInstalled(status *Status, blueprintFile, osName stri
 			return false
 		}
 	}
+
+	// Verified path: confirm each package is actually installed on the system.
+	// This catches stale status entries that would otherwise cause blueprint to
+	// skip installation of packages that are missing.
+	brew := brewCmd()
+	for _, f := range h.Rule.HomebrewPackages {
+		name := formulaName(strings.Split(f, "@")[0])
+		if !isBrewFormulaInstalled(brew, name) && !isBrewCaskInstalled(brew, name) {
+			return false
+		}
+	}
+	for _, c := range h.Rule.HomebrewCasks {
+		if !isBrewCaskInstalled(brew, c) {
+			return false
+		}
+	}
+
 	return true
 }
 

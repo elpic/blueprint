@@ -417,6 +417,14 @@ func TestHomebrewHandler_GetState_Pure(t *testing.T) {
 }
 
 func TestHomebrewHandler_IsInstalled_Pure(t *testing.T) {
+	// Mock brew system checks so they always return true for formulas/casks
+	// that appear in the test status fixture (the status.json fast path catches
+	// "not installed" cases before reaching the brew check).
+	handlers.SetBrewFormulaInstalledFunc(func(brew, formula string) bool { return true })
+	handlers.SetBrewCaskInstalledFunc(func(brew, cask string) bool { return true })
+	defer handlers.ResetBrewFormulaInstalled()
+	defer handlers.ResetBrewCaskInstalled()
+
 	// Create test status with various homebrew packages
 	status := &handlers.Status{
 		Brews: []handlers.HomebrewStatus{
