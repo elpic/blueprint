@@ -54,7 +54,7 @@ func TestRenderTemplate_BasicSubstitution(t *testing.T) {
 	writeFile(t, tmpl, `FROM python:{{ mise "python" }}-slim`)
 
 	rules := miseRules("python", "3.13")
-	out, err := RenderTemplate(tmpl, rules, nil)
+	out, err := RenderTemplate(tmpl, rules, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestRenderTemplate_CLIVarOverride(t *testing.T) {
 	writeFile(t, tmpl, `APP={{ var "NAME" }}`)
 
 	rules := varRules("NAME", "default-app")
-	out, err := RenderTemplate(tmpl, rules, map[string]string{"NAME": "overridden"})
+	out, err := RenderTemplate(tmpl, rules, map[string]string{"NAME": "overridden"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestRenderTemplate_EmptyTemplate(t *testing.T) {
 	tmpl := filepath.Join(dir, "empty.tmpl")
 	writeFile(t, tmpl, "")
 
-	out, err := RenderTemplate(tmpl, nil, nil)
+	out, err := RenderTemplate(tmpl, nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestRenderTemplate_EmptyTemplate(t *testing.T) {
 }
 
 func TestRenderTemplate_FileNotFound(t *testing.T) {
-	_, err := RenderTemplate("/nonexistent/path.tmpl", nil, nil)
+	_, err := RenderTemplate("/nonexistent/path.tmpl", nil, nil, "")
 	if err == nil {
 		t.Error("expected error for missing template file")
 	}
@@ -107,7 +107,7 @@ func TestRenderTemplate_ParseError(t *testing.T) {
 	tmpl := filepath.Join(dir, "bad.tmpl")
 	writeFile(t, tmpl, `{{ .Unclosed`)
 
-	_, err := RenderTemplate(tmpl, nil, nil)
+	_, err := RenderTemplate(tmpl, nil, nil, "")
 	if err == nil {
 		t.Error("expected template parse error")
 	}
@@ -121,7 +121,7 @@ func TestRenderTemplate_MissingMiseTool(t *testing.T) {
 	tmpl := filepath.Join(dir, "t.tmpl")
 	writeFile(t, tmpl, `{{ mise "ruby" }}`)
 
-	_, err := RenderTemplate(tmpl, nil, nil)
+	_, err := RenderTemplate(tmpl, nil, nil, "")
 	if err == nil {
 		t.Error("expected error for missing mise tool")
 	}
@@ -137,7 +137,7 @@ func TestRenderTemplate_RequiredVarMissing(t *testing.T) {
 		VarName:     "REQUIRED",
 		VarRequired: true,
 	}}
-	_, err := RenderTemplate(tmpl, rules, nil)
+	_, err := RenderTemplate(tmpl, rules, nil, "")
 	if err == nil {
 		t.Error("expected error for missing required var")
 	}

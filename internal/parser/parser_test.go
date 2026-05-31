@@ -2566,5 +2566,6 @@ func TestSetupBPMultilineParsesIdentically(t *testing.T) {
 		if !cloneRule.CloneWorkdir {
 			t.Error("CloneWorkdir is false, want true")
 		}
-	})
+		})
 }
+

@@ -35,6 +35,11 @@ var CHECKS \
       "file": "setup.bp", \
       "template": "@github:elpic/templates@main:actions/github/drift-check", \
       "against": ".github/workflows" \
+    }, \
+    { \
+      "file": "setup.bp", \
+      "template": ".blueprint/go.mod.tmpl", \
+      "against": "go.mod" \
     } \
   ]
 
@@ -72,5 +77,11 @@ render @github:elpic/templates@main:actions/github/integration/go \
 
 render @github:elpic/templates@main:actions/github/drift-check \
   output: ${WORKSPACE}/${REPO_NAME}/.github/workflows \
+  after: blueprint-repo \
+  on: [mac, linux]
+
+# ---- Keep go.mod Go version in sync with setup.bp ----
+render .blueprint/go.mod.tmpl \
+  output: ${WORKSPACE}/${REPO_NAME}/go.mod \
   after: blueprint-repo \
   on: [mac, linux]

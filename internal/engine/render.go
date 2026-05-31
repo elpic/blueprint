@@ -74,7 +74,7 @@ func Check(file, tmplPath, against string, preferSSH bool, cliVars map[string]st
 
 	drifted := false
 	for _, p := range pairs {
-		rendered := mustRenderTemplate(p.tmpl, rules, cliVars)
+		rendered := mustRenderTemplate(p.tmpl, rules, cliVars, p.target)
 		existing, err := os.ReadFile(p.target) // #nosec G304 -- user-supplied path, intentional
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: cannot read %s: %v\n", p.target, err)
@@ -182,8 +182,9 @@ func loadRulesForRender(file string, preferSSH bool) []parser.Rule {
 }
 
 // mustRenderTemplate renders a single template file, exiting on any error.
-func mustRenderTemplate(tmplPath string, rules []parser.Rule, cliVars map[string]string) string {
-	result, err := renderer.RenderTemplate(tmplPath, rules, cliVars)
+// outputPath is the resolved target file, needed by {{ content }} in the template.
+func mustRenderTemplate(tmplPath string, rules []parser.Rule, cliVars map[string]string, outputPath string) string {
+	result, err := renderer.RenderTemplate(tmplPath, rules, cliVars, outputPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)

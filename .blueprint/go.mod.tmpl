@@ -1,0 +1,1 @@
+{{ content | regexReplaceAll `go [0-9]+\.[0-9]+(\.[0-9]+)?` (printf "go %s" (var "GO_VERSION")) }}
