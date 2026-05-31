@@ -62,13 +62,13 @@ func NewReplaceHandlerLegacy(rule parser.Rule, basePath string) *ReplaceHandler 
 	return NewReplaceHandler(rule, basePath, platform.NewContainer())
 }
 
-// Up performs the find-and-replace in the target file
+// Up performs the find-and-replace in the target file.
+// Idempotent: if the "with" text is already present in the file, it skips.
 func (h *ReplaceHandler) Up() (string, error) {
 	filePath := expandPath(h.Rule.ReplaceFile)
 	match := h.Rule.ReplaceMatch
 	with := h.Rule.ReplaceWith
 
-	// Read the file content
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read file %s: %w", filePath, err)
@@ -76,16 +76,23 @@ func (h *ReplaceHandler) Up() (string, error) {
 
 	text := string(content)
 
-	// Find the first occurrence
+	// Idempotency check: if "with" is already present AND "match" is absent,
+	// the replacement is already in effect.
+	if strings.Contains(text, with) && !strings.Contains(text, match) {
+		return fmt.Sprintf("Already replaced %q with %q in %s", match, with, filePath), nil
+	}
+
+	// Find the first occurrence of match
 	idx := strings.Index(text, match)
 	if idx < 0 {
-		return "", fmt.Errorf("match %q not found in %s", match, filePath)
+		// If match is not found but with was also not found above,
+		// the file changed unexpectedly.
+		return "", fmt.Errorf("match %q not found in %s — the file may have changed externally", match, filePath)
 	}
 
 	// Replace only the first occurrence
 	newText := text[:idx] + with + text[idx+len(match):]
 
-	// Write back to file
 	if err := os.WriteFile(filePath, []byte(newText), 0644); err != nil {
 		return "", fmt.Errorf("failed to write file %s: %w", filePath, err)
 	}
@@ -93,7 +100,8 @@ func (h *ReplaceHandler) Up() (string, error) {
 	return fmt.Sprintf("Replaced %q with %q in %s", match, with, filePath), nil
 }
 
-// Down reverses the find-and-replace (finds the "with" text and replaces back with "match")
+// Down reverses the find-and-replace (finds the "with" text and replaces back with "match").
+// Idempotent: if "match" is already present, the undo was already applied.
 func (h *ReplaceHandler) Down() (string, error) {
 	filePath := expandPath(h.Rule.ReplaceFile)
 	match := h.Rule.ReplaceMatch
@@ -109,10 +117,16 @@ func (h *ReplaceHandler) Down() (string, error) {
 
 	text := string(content)
 
+	// Idempotency check: if "match" is already present AND "with" is absent,
+	// the undo was already applied.
+	if strings.Contains(text, match) && !strings.Contains(text, with) {
+		return fmt.Sprintf("Already restored %q from %q in %s", match, with, filePath), nil
+	}
+
 	// Find the first occurrence of the "with" text (what we previously replaced)
 	idx := strings.Index(text, with)
 	if idx < 0 {
-		return "", fmt.Errorf("cannot undo: %q not found in %s", with, filePath)
+		return "", fmt.Errorf("cannot undo: %q not found in %s — the file may have changed externally", with, filePath)
 	}
 
 	// Replace back to the original text
@@ -248,18 +262,55 @@ func (h *ReplaceHandler) FindUninstallRules(status *Status, currentRules []parse
 	return rules
 }
 
-// IsInstalled returns true if the replace entry for (file, match) is already in status
+// IsInstalled returns true if the replace entry exists in status AND the
+// replacement content is still in effect. This catches drift from manual
+// edits: if someone reverts the file, IsInstalled returns false and the
+// engine re-runs Up() to restore the expected state.
+//
+// Best-effort check: reads the file and verifies the "with" text is present.
+// Known limitation: if "with" text appears elsewhere in the file or "match"
+// text appears in unrelated sections, the check may be imprecise. For
+// critical files, pair with a line-match rule.
 func (h *ReplaceHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
 	normalizedBlueprint := normalizeBlueprint(blueprintFile)
+
+	// First, check if we have a status record for this rule
+	found := false
 	for _, replace := range status.Replaces {
 		if replace.File == h.Rule.ReplaceFile &&
 			replace.Match == h.Rule.ReplaceMatch &&
 			normalizeBlueprint(replace.Blueprint) == normalizedBlueprint &&
 			replace.OS == osName {
-			return true
+			found = true
+			break
 		}
 	}
-	return false
+	if !found {
+		return false
+	}
+
+	// Now verify the file content — read the file and check that the "with"
+	// text is present (the replacement is in effect) and "match" is absent
+	// (the original text was replaced).
+	// This catches manual reverts that remove the status entry from drift
+	// detection.
+	filePath := expandPath(h.Rule.ReplaceFile)
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		// If the file doesn't exist or can't be read, assume not installed
+		// so the engine will try to run Up().
+		return false
+	}
+
+	text := string(content)
+
+	// If "with" text is present AND "match" is absent, the replacement is
+	// still in effect → no drift.
+	// If "match" IS present, someone might have reverted the file → drift.
+	hasWith := strings.Contains(text, h.Rule.ReplaceWith)
+	hasMatch := strings.Contains(text, h.Rule.ReplaceMatch)
+
+	return hasWith && !hasMatch
 }
 
 // DisplayStatus displays replace status information

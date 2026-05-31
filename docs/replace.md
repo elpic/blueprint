@@ -73,17 +73,26 @@ replace ~/.config/git/config match: name = with: name = ${USER_NAME}
 ```
 
 **Drift Detection:**
-Since `replace` only modifies the first occurrence, detecting external changes (drift) is inherently limited. The current implementation checks the status database only — if there's a record saying the replacement was performed, `IsInstalled` returns `true` regardless of the file's actual content.
+The `replace` action detects external changes (drift) by checking the actual file content, not just the status database. During `blueprint apply`, `IsInstalled()`:
 
-If someone manually reverts the file, the replacement won't be re-applied automatically. To detect drift reliably, pair `replace` with a `line-match` rule (coming in a separate PR) that independently asserts a specific line exists:
+1. Reads the file and checks if the `with:` text is present
+2. If `with:` IS present and `match:` is absent → the replacement is still in effect → skip
+3. If `match:` IS present → the file may have been reverted → re-run the replacement
+
+This is analogous to how `elpic/actions/github/drift-check` works for templates: re-render and compare. For `replace`, the rule definition (`match:` → `with:`) is the source of truth, and the file content is checked against it.
 
 ```blueprint
-# Perform the initial replacement
+# After initial apply, the file contains "enabled=true"
 replace ~/.config/app.conf match: enabled=false with: enabled=true
 
-# Independently assert the result — catches manual reverts
-# line-match ~/.config/app.conf contains: enabled=true
+# If someone manually reverts to "enabled=false":
+# Next apply → IsInstalled finds "enabled=false" (match) → returns false
+# Engine calls Up() → re-applies the replacement → "enabled=true" restored
 ```
+
+The `Up()` method is also idempotent — if the `with:` text is already in place and `match:` is absent, it skips without error. This makes repeated applies safe.
+
+**Known limitation:** The content check is best-effort. If `match:` text appears elsewhere in the file (e.g., a second occurrence that was never the first), the check may falsely detect drift. For critical files, pair `replace` with a `line-match` rule for an independent assertion.
 
 **Security Note:**
 Since `replace` modifies files in-place, be careful with the `match:` text:
