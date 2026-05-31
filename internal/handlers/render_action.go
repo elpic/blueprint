@@ -75,7 +75,15 @@ func (h *RenderActionHandler) Up() (string, error) {
 		output = "."
 	}
 
-	if err := renderer.RenderWithRules(rules, h.Rule.RenderTemplate, output, false, cliVars, false, h.BasePath); err != nil {
+	// Resolve relative template paths against the blueprint's directory.
+	// This lets render rules use paths like ".blueprint/go.mod.tmpl" that
+	// are relative to the blueprint file regardless of the working directory.
+	tmplPath := h.Rule.RenderTemplate
+	if !filepath.IsAbs(tmplPath) && !strings.HasPrefix(tmplPath, "@") {
+		tmplPath = filepath.Join(h.BasePath, tmplPath)
+	}
+
+	if err := renderer.RenderWithRules(rules, tmplPath, output, false, cliVars, false, h.BasePath); err != nil {
 		return "", fmt.Errorf("render: %w", err)
 	}
 

@@ -74,3 +74,9 @@ render @github:elpic/templates@main:actions/github/drift-check \
   output: ${WORKSPACE}/${REPO_NAME}/.github/workflows \
   after: blueprint-repo \
   on: [mac, linux]
+
+# ---- Keep go.mod Go version in sync with setup.bp ----
+render .blueprint/go.mod.tmpl \
+  output: ${WORKSPACE}/${REPO_NAME}/go.mod \
+  after: blueprint-repo \
+  on: [mac, linux]

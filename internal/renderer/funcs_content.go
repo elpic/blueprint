@@ -15,7 +15,9 @@ func init() {
 	})
 }
 
-// content reads the current file at OutputPath and returns its content.
+// content reads the current file at OutputPath and returns its content
+// without trailing newlines. This works with the trailing newline that
+// .tmpl files naturally have — the template provides the canonical \n.
 // If OutputPath is empty or the file doesn't exist, returns "" (first run).
 func (d *TemplateData) content() (string, error) {
 	if d.OutputPath == "" {
@@ -28,7 +30,7 @@ func (d *TemplateData) content() (string, error) {
 		}
 		return "", fmt.Errorf("content: cannot read %s: %w", d.OutputPath, err)
 	}
-	return string(b), nil
+	return strings.TrimRight(string(b), "\n"), nil
 }
 
 // regexReplaceAll replaces all matches of a regex pattern with a replacement string.
