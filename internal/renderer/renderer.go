@@ -62,8 +62,9 @@ func RegisterGetHandler(action string, handler func(d *TemplateData, key string)
 // TemplateData holds all values extractable from a parsed blueprint for use
 // in templates and blueprint get queries.
 type TemplateData struct {
-	rules   []parser.Rule
-	cliVars map[string]string
+	rules      []parser.Rule
+	cliVars    map[string]string
+	OutputPath string // Resolved output path; set before rendering so {{ content }} can read the current file
 }
 
 // BuildTemplateData constructs a TemplateData from a slice of rules.
@@ -135,7 +136,7 @@ func RenderWithRules(rules []parser.Rule, tmplPath, output string, preferSSH boo
 
 	if len(templates) == 1 && !isDir(tmplPath) {
 		// Single-file mode — respect output / stdout
-		result, err := RenderTemplate(templates[0], rules, cliVars)
+		result, err := RenderTemplate(templates[0], rules, cliVars, output)
 		if err != nil {
 			return err
 		}
@@ -157,29 +158,60 @@ func RenderWithRules(rules []parser.Rule, tmplPath, output string, preferSSH boo
 	}
 
 	// Directory mode — validate all templates first, then write.
-	rendered := make(map[string]string, len(templates))
-	for _, t := range templates {
-		src := t
-		if override := findOverride(t); override != "" {
-			src = override
-		}
-		result, err := RenderTemplate(src, rules, cliVars)
-		if err != nil {
-			return fmt.Errorf("%s: %w", t, err)
-		}
-		rendered[t] = result
+	// Compute output paths before rendering so {{ content }} can read the
+	// target file during template execution.
+	type tmplJob struct {
+		src        string // template file to render
+		outputPath string // resolved output file path
 	}
-	for _, t := range templates {
-		out := ResolveOutput(t, tmplRoot, output)
-		override := findOverride(t)
+	var jobs []tmplJob
+
+	if output != "" {
+		// Directory mode — compute output for each template
+		jobs = make([]tmplJob, 0, len(templates))
+		for _, t := range templates {
+			src := t
+			if override := findOverride(t); override != "" {
+				src = override
+			}
+			out := ResolveOutput(t, tmplRoot, output)
+			jobs = append(jobs, tmplJob{src: src, outputPath: out})
+		}
+	} else {
+		// Single-template mode — output will be written later
+		jobs = make([]tmplJob, 0, len(templates))
+		for _, t := range templates {
+			src := t
+			if override := findOverride(t); override != "" {
+				src = override
+			}
+			jobs = append(jobs, tmplJob{src: src, outputPath: output})
+		}
+	}
+
+	rendered := make(map[string]string, len(templates))
+	for _, j := range jobs {
+		result, err := RenderTemplate(j.src, rules, cliVars, j.outputPath)
+		if err != nil {
+			return fmt.Errorf("%s: %w", j.src, err)
+		}
+		rendered[j.src] = result
+	}
+	for _, j := range jobs {
+		out := j.outputPath
+		if out == "" {
+			// stdout mode — just print
+			fmt.Print(rendered[j.src])
+			continue
+		}
 		if err := os.MkdirAll(filepath.Dir(out), 0o750); err != nil { // #nosec G301 -- output directories must be group-readable
 			return fmt.Errorf("cannot create directory for %s: %w", out, err)
 		}
-		if err := os.WriteFile(out, []byte(rendered[t]), 0o644); err != nil { // #nosec G306 -- rendered template files must be world-readable
+		if err := os.WriteFile(out, []byte(rendered[j.src]), 0o644); err != nil { // #nosec G306 -- rendered template files must be world-readable
 			return fmt.Errorf("cannot write %s: %w", out, err)
 		}
 		if verbose {
-			if override != "" {
+			if j.src != j.outputPath && findOverride(j.src) != "" {
 				fmt.Printf("rendered  %s (local override)\n", out)
 			} else {
 				fmt.Printf("rendered  %s\n", out)
@@ -190,14 +222,17 @@ func RenderWithRules(rules []parser.Rule, tmplPath, output string, preferSSH boo
 }
 
 // RenderTemplate renders a single .tmpl file against rules and cliVars.
+// outputPath is the resolved output path for this template, needed by
+// {{ content }} to read the current file on disk. Pass "" when not needed.
 // Returns the rendered string or an error.
-func RenderTemplate(tmplPath string, rules []parser.Rule, cliVars map[string]string) (string, error) {
+func RenderTemplate(tmplPath string, rules []parser.Rule, cliVars map[string]string, outputPath string) (string, error) {
 	tmplContent, err := os.ReadFile(tmplPath) // #nosec G304 -- user-supplied path, intentional
 	if err != nil {
 		return "", fmt.Errorf("cannot read template %s: %w", tmplPath, err)
 	}
 
 	data := BuildTemplateData(rules, cliVars)
+	data.OutputPath = outputPath
 
 	tmpl, err := template.New(filepath.Base(tmplPath)).
 		Option("missingkey=error").

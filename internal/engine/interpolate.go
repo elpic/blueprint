@@ -56,9 +56,6 @@ func interpolateRule(rule parser.Rule, vars map[string]string) parser.Rule {
 	rule.RenderTemplate = expand(rule.RenderTemplate)
 	rule.RenderOutput = expand(rule.RenderOutput)
 	rule.KnownHosts = expand(rule.KnownHosts)
-	rule.ReplaceFile = expand(rule.ReplaceFile)
-	rule.ReplaceMatch = expand(rule.ReplaceMatch)
-	rule.ReplaceWith = expand(rule.ReplaceWith)
 
 	// Expand variables in []string fields (MisePackages, AsdfPackages, HomebrewPackages, etc.)
 	for i, pkg := range rule.MisePackages {
