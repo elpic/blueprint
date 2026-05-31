@@ -35,6 +35,11 @@ var CHECKS \
       "file": "setup.bp", \
       "template": "@github:elpic/templates@main:actions/github/drift-check", \
       "against": ".github/workflows" \
+    }, \
+    { \
+      "file": "setup.bp", \
+      "template": ".blueprint/go.mod.tmpl", \
+      "against": "go.mod" \
     } \
   ]
 
