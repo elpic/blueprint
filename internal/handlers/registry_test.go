@@ -27,6 +27,7 @@ func TestRegistryAllActionsRegistered(t *testing.T) {
 		"schedule",
 		"shell",
 		"authorized_keys",
+		"replace",
 	}
 
 	for _, name := range canonicalNames {
@@ -66,6 +67,7 @@ func TestRegistryNewHandlerViaRegistry(t *testing.T) {
 		{"schedule", parser.Rule{Action: "schedule"}},
 		{"shell", parser.Rule{Action: "shell"}},
 		{"authorized_keys", parser.Rule{Action: "authorized_keys"}},
+		{"replace", parser.Rule{Action: "replace"}},
 	}
 
 	for _, tt := range actions {
@@ -102,6 +104,7 @@ func TestRegistryDetectRuleTypeViaRegistry(t *testing.T) {
 		{"schedule", parser.Rule{ScheduleSource: "https://github.com/user/bp"}, "schedule"},
 		{"shell", parser.Rule{ShellName: "zsh"}, "shell"},
 		{"authorized_keys", parser.Rule{AuthorizedKeysFile: "~/.ssh/id_rsa.pub"}, "authorized_keys"},
+		{"replace", parser.Rule{ReplaceFile: "/some/file", ReplaceMatch: "old"}, "replace"},
 		{"empty", parser.Rule{}, ""},
 	}
 

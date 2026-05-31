@@ -108,6 +108,11 @@ type Rule struct {
 	RenderTemplate string   // Template file or directory (local path or @github: shorthand)
 	RenderOutput   string   // Output destination (defaults to ".")
 	RenderVars     []string // KEY=VALUE variable overrides
+
+	// Replace-specific fields
+	ReplaceFile  string // File path to perform replacement in
+	ReplaceMatch string // Exact string to search for
+	ReplaceWith  string // Replacement string (supports ${VAR} interpolation)
 }
 
 type parseEntry struct {
@@ -138,6 +143,7 @@ var parsers = []parseEntry{
 	{"authorized_keys ", ParseAuthorizedKeysRule},
 	{"var ", ParseVarRule},
 	{"render ", ParseRenderRule},
+	{"replace ", ParseReplaceRule},
 }
 
 // Parse parses content without include support
@@ -832,5 +838,30 @@ func ParseVarRule(line string) (*Rule, error) {
 		VarName:     name,
 		VarDefault:  defaultVal,
 		VarRequired: required,
+	}, nil
+}
+
+func ParseReplaceRule(line string) (*Rule, error) {
+	f := parseFields(strings.TrimPrefix(line, "replace "))
+	tokens := f.tokens
+	if len(tokens) == 0 {
+		return nil, lineError(line, "replace requires a file path")
+	}
+	match := f.multiword("match:")
+	if match == "" {
+		return nil, lineError(line, "replace requires match:<text>")
+	}
+	with := f.multiword("with:")
+	if with == "" {
+		return nil, lineError(line, "replace requires with:<text>")
+	}
+	return &Rule{
+		ID:           f.word("id:"),
+		Action:       "replace",
+		ReplaceFile:  tokens[0],
+		ReplaceMatch: match,
+		ReplaceWith:  with,
+		OSList:       f.osFilter,
+		After:        f.list("after:"),
 	}, nil
 }

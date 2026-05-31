@@ -166,6 +166,16 @@ type ShellStatus struct {
 	OS            string `json:"os"`
 }
 
+// ReplaceStatus tracks a replace (find-and-replace) operation
+type ReplaceStatus struct {
+	File       string `json:"file"`
+	Match      string `json:"match"`
+	With       string `json:"with"`
+	ReplacedAt string `json:"replaced_at"`
+	Blueprint  string `json:"blueprint"`
+	OS         string `json:"os"`
+}
+
 // DotfilesStatus tracks a managed dotfiles repository
 type DotfilesStatus struct {
 	URL       string   `json:"url"`
@@ -295,6 +305,12 @@ func (v *ShellStatus) GetResourceKey() string { return v.User }
 func (v *ShellStatus) GetOS() string          { return v.OS }
 func (v *ShellStatus) GetAction() string      { return "shell" }
 
+func (v *ReplaceStatus) GetBlueprint() string   { return v.Blueprint }
+func (v *ReplaceStatus) SetBlueprint(s string)  { v.Blueprint = s }
+func (v *ReplaceStatus) GetResourceKey() string { return v.File + "\x00" + v.Match }
+func (v *ReplaceStatus) GetOS() string          { return v.OS }
+func (v *ReplaceStatus) GetAction() string      { return "replace" }
+
 // Status represents the current blueprint state
 type Status struct {
 	BlueprintSHA   string                 `json:"blueprint_sha,omitempty"` // git SHA of the blueprint repo at last apply
@@ -315,6 +331,7 @@ type Status struct {
 	Schedules      []ScheduleStatus       `json:"schedules"`
 	Shells         []ShellStatus          `json:"shells"`
 	AuthorizedKeys []AuthorizedKeysStatus `json:"authorized_keys"`
+	Replaces       []ReplaceStatus        `json:"replaces"`
 }
 
 // AllEntries returns all status entries across every typed slice as a flat
@@ -372,6 +389,9 @@ func (s *Status) AllEntries() []StatusEntry {
 	}
 	for i := range s.AuthorizedKeys {
 		entries = append(entries, &s.AuthorizedKeys[i])
+	}
+	for i := range s.Replaces {
+		entries = append(entries, &s.Replaces[i])
 	}
 	return entries
 }
@@ -646,6 +666,7 @@ func (s *Status) FilterEntries(keep func(StatusEntry) bool) {
 	s.Schedules = filterSlice[ScheduleStatus, *ScheduleStatus](s.Schedules, keep)
 	s.Shells = filterSlice[ShellStatus, *ShellStatus](s.Shells, keep)
 	s.AuthorizedKeys = filterSlice[AuthorizedKeysStatus, *AuthorizedKeysStatus](s.AuthorizedKeys, keep)
+	s.Replaces = filterSlice[ReplaceStatus, *ReplaceStatus](s.Replaces, keep)
 }
 
 // DeduplicateStatus removes duplicate entries from each status slice.

@@ -20,6 +20,8 @@ var multiwordKeys = map[string]bool{
 	"undo:":   true,
 	"after:":  true, // comma-separated list which may contain spaces: "after: a, b, c"
 	"var:":    true, // comma-separated KEY=VALUE pairs: "var: KEY1=VAL1, KEY2=VAL2"
+	"match:":  true, // replace — search text (may contain spaces)
+	"with:":   true, // replace — replacement text (may contain spaces)
 }
 
 // bracketKeys are keywords whose value is a bracket-delimited list: "key: [a, b, c]".

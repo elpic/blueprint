@@ -2568,3 +2568,132 @@ func TestSetupBPMultilineParsesIdentically(t *testing.T) {
 		}
 	})
 }
+
+// TestParseReplaceRule tests replace rule parsing
+func TestParseReplaceRule(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    *Rule
+		wantErr bool
+	}{
+		{
+			name:  "basic replace with single-word match and with",
+			input: "replace /tmp/file match: old with: new",
+			want: &Rule{
+				Action:       "replace",
+				ReplaceFile:  "/tmp/file",
+				ReplaceMatch: "old",
+				ReplaceWith:  "new",
+			},
+			wantErr: false,
+		},
+		{
+			name:  "replace with multi-word match and with",
+			input: "replace /tmp/file match: hello world with: goodbye world",
+			want: &Rule{
+				Action:       "replace",
+				ReplaceFile:  "/tmp/file",
+				ReplaceMatch: "hello world",
+				ReplaceWith:  "goodbye world",
+			},
+			wantErr: false,
+		},
+		{
+			name:  "replace with id and after",
+			input: "replace /tmp/file match: foo with: bar id: my-replace after: [setup, config]",
+			want: &Rule{
+				ID:           "my-replace",
+				Action:       "replace",
+				ReplaceFile:  "/tmp/file",
+				ReplaceMatch: "foo",
+				ReplaceWith:  "bar",
+				After:        []string{"setup", "config"},
+			},
+			wantErr: false,
+		},
+		{
+			name:  "replace with OS filter",
+			input: "replace /tmp/file match: old with: new on: [linux]",
+			want: &Rule{
+				Action:       "replace",
+				ReplaceFile:  "/tmp/file",
+				ReplaceMatch: "old",
+				ReplaceWith:  "new",
+				OSList:       []string{"linux"},
+			},
+			wantErr: false,
+		},
+		{
+			name:    "replace with no file path",
+			input:   "replace match: old with: new",
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name:    "replace with no match",
+			input:   "replace /tmp/file with: new",
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name:    "replace with no with",
+			input:   "replace /tmp/file match: old",
+			want:    nil,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseReplaceRule(tt.input)
+
+			if tt.wantErr {
+				if err == nil && got != nil {
+					t.Errorf("ParseReplaceRule() = %v, want error", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("ParseReplaceRule() unexpected error: %v", err)
+				return
+			}
+			if got == nil {
+				t.Errorf("ParseReplaceRule() got nil, want %v", tt.want)
+				return
+			}
+
+			if got.Action != tt.want.Action {
+				t.Errorf("Action: got %q, want %q", got.Action, tt.want.Action)
+			}
+			if got.ReplaceFile != tt.want.ReplaceFile {
+				t.Errorf("ReplaceFile: got %q, want %q", got.ReplaceFile, tt.want.ReplaceFile)
+			}
+			if got.ReplaceMatch != tt.want.ReplaceMatch {
+				t.Errorf("ReplaceMatch: got %q, want %q", got.ReplaceMatch, tt.want.ReplaceMatch)
+			}
+			if got.ReplaceWith != tt.want.ReplaceWith {
+				t.Errorf("ReplaceWith: got %q, want %q", got.ReplaceWith, tt.want.ReplaceWith)
+			}
+			if got.ID != tt.want.ID {
+				t.Errorf("ID: got %q, want %q", got.ID, tt.want.ID)
+			}
+			if len(got.OSList) != len(tt.want.OSList) {
+				t.Errorf("OSList: got %v, want %v", got.OSList, tt.want.OSList)
+			}
+			for i := range got.OSList {
+				if got.OSList[i] != tt.want.OSList[i] {
+					t.Errorf("OSList[%d]: got %q, want %q", i, got.OSList[i], tt.want.OSList[i])
+				}
+			}
+			if len(got.After) != len(tt.want.After) {
+				t.Errorf("After: got %v, want %v", got.After, tt.want.After)
+			}
+			for i := range got.After {
+				if got.After[i] != tt.want.After[i] {
+					t.Errorf("After[%d]: got %q, want %q", i, got.After[i], tt.want.After[i])
+				}
+			}
+		})
+	}
+}
