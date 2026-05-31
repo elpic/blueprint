@@ -72,6 +72,19 @@ var USER_NAME
 replace ~/.config/git/config match: name = with: name = ${USER_NAME}
 ```
 
+**Drift Detection:**
+Since `replace` only modifies the first occurrence, detecting external changes (drift) is inherently limited. The current implementation checks the status database only — if there's a record saying the replacement was performed, `IsInstalled` returns `true` regardless of the file's actual content.
+
+If someone manually reverts the file, the replacement won't be re-applied automatically. To detect drift reliably, pair `replace` with a `line-match` rule (coming in a separate PR) that independently asserts a specific line exists:
+
+```blueprint
+# Perform the initial replacement
+replace ~/.config/app.conf match: enabled=false with: enabled=true
+
+# Independently assert the result — catches manual reverts
+# line-match ~/.config/app.conf contains: enabled=true
+```
+
 **Security Note:**
 Since `replace` modifies files in-place, be careful with the `match:` text:
 - Use specific enough `match:` text to avoid false positives
