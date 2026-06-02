@@ -52,6 +52,7 @@ var knownCommands = map[string]bool{
 	"status": true, "history": true, "ps": true, "slow": true, "diff": true,
 	"version": true, "doctor": true, "validate": true,
 	"render": true, "check": true, "get": true,
+	"template": true,
 }
 
 // isHelpFlag returns true if the argument is --help or -h.
@@ -81,9 +82,10 @@ Commands:
   validate  <file.bp>   Parse and semantically check a blueprint
   diff      <file.bp>   Show rules that differ from current status
   export    <file.bp>   Generate a shell script or Dockerfile from a blueprint
-  render    <file.bp>   Render Go templates using blueprint data
-  check     <file.bp>   Compare rendered output against existing files
-  get       <file.bp>   Extract a value from a blueprint
+  render    <file.bp>       Render Go templates using blueprint data
+  check     <file.bp>       Compare rendered output against existing files
+  get       <file.bp>       Extract a value from a blueprint
+  template  <template-path>  Scaffold a project from a template directory (interactive)
   encrypt   <file>      Encrypt a file with AES-256-GCM
   status                Show installed resource state
   history               View execution history
@@ -366,6 +368,36 @@ Examples:
 `)
 }
 
+func printTemplateHelp() {
+	fmt.Print(`blueprint template - scaffold a project from a template directory
+
+Usage:
+  blueprint template <template-path> --output <output-dir> [flags]
+
+Arguments:
+  <template-path>      Path to a template directory (local path, @github: shorthand, or git URL)
+
+Flags:
+  --output <dir>      Output directory where rendered files are written (required)
+  --prefer-ssh        Prefer SSH over HTTPS for git operations
+  --help, -h          Show this help message
+
+Description:
+  Scans the template directory for .tmpl files, discovers all required variables
+  via {{ var "NAME" }} calls, prompts you interactively for each one, and renders
+  the full template tree into the output directory.
+
+  If the template directory contains a setup.bp with var rules, their default
+  values are pre-filled and shown in the prompt. Variables without defaults
+  are required.
+
+Examples:
+  blueprint template ./my-template --output ./my-project
+  blueprint template @github:user/templates@main:python-service --output ./my-api
+  blueprint template ~/templates/web-app --output ./frontend --prefer-ssh
+`)
+}
+
 func printGetHelp() {
 	fmt.Print(`blueprint get - extract a value from a blueprint
 
@@ -431,7 +463,7 @@ func isKnownCommand(cmd string) bool {
 }
 
 func unknownCommandMessage(cmd string) string {
-	return fmt.Sprintf("unknown command: %q\nUsage: blueprint <plan|apply|encrypt|export|status|history|ps|slow|diff|doctor|validate|version> [<file>]", cmd)
+	return fmt.Sprintf("unknown command: %q\nUsage: blueprint <plan|apply|encrypt|export|status|history|ps|slow|diff|doctor|validate|version|render|check|get|template> [<file>]", cmd)
 }
 
 // parseNonNegativeInt parses s as a non-negative integer. On any error it
@@ -750,6 +782,32 @@ func main() {
 		}
 		cliVars := parseVarFlags(os.Args[3:])
 		engine.Check(file, tmplPath, against, preferSSH, cliVars)
+	case "template":
+		if hasHelpFlag(os.Args[2:]) {
+			printTemplateHelp()
+			os.Exit(0)
+		}
+		if len(os.Args) < 3 {
+			printTemplateHelp()
+			os.Exit(1)
+		}
+		tmplPath := os.Args[2]
+		output := ""
+		_, _, _, _, preferSSH, _ := parseFlags(os.Args[3:])
+		for i := 3; i < len(os.Args); i++ {
+			switch os.Args[i] {
+			case "--output":
+				if i+1 < len(os.Args) {
+					output = os.Args[i+1]
+					i++
+				}
+			}
+		}
+		if output == "" {
+			fmt.Fprintln(os.Stderr, "error: --output <dir> is required")
+			os.Exit(1)
+		}
+		engine.Template(tmplPath, output, preferSSH)
 	case "get":
 		if hasHelpFlag(os.Args[2:]) {
 			printGetHelp()
