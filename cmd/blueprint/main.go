@@ -379,6 +379,7 @@ Arguments:
 
 Flags:
   --output <dir>      Output directory where rendered files are written (required)
+  --var KEY=VALUE     Pre-set a template variable (repeatable) — skips the prompt for that variable
   --prefer-ssh        Prefer SSH over HTTPS for git operations
   --help, -h          Show this help message
 
@@ -391,9 +392,13 @@ Description:
   values are pre-filled and shown in the prompt. Variables without defaults
   are required.
 
+  Use --var to skip prompting for known values. Useful for complex variables
+  like JSON arrays or when automating from scripts.
+
 Examples:
   blueprint template ./my-template --output ./my-project
   blueprint template @github:user/templates@main:python-service --output ./my-api
+  blueprint template @github:user/templates@main:python-service --output ./my-api --var PORT=9000
   blueprint template ~/templates/web-app --output ./frontend --prefer-ssh
 `)
 }
@@ -807,7 +812,8 @@ func main() {
 			fmt.Fprintln(os.Stderr, "error: --output <dir> is required")
 			os.Exit(1)
 		}
-		engine.Template(tmplPath, output, preferSSH)
+		cliVars := parseVarFlags(os.Args[3:])
+		engine.Template(tmplPath, output, preferSSH, cliVars)
 	case "get":
 		if hasHelpFlag(os.Args[2:]) {
 			printGetHelp()

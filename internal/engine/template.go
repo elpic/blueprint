@@ -36,7 +36,8 @@ var templateFuncCall = regexp.MustCompile(`(?:^|[^A-Za-z])(var|toValue|default)\
 // Template prompts for variables and renders a template directory.
 // tmplPath can be a local path, @github: shorthand, or git URL.
 // output is the destination directory (required).
-func Template(tmplPath, output string, preferSSH bool) {
+// cliVars are pre-set values from --var flags; variables in this map skip the prompt.
+func Template(tmplPath, output string, preferSSH bool, cliVars map[string]string) {
 	// 1. Resolve template source to a local directory
 	localTmpl, _, cleanup, err := renderer.ResolveTemplatePath(tmplPath, preferSSH)
 	if err != nil {
@@ -59,11 +60,11 @@ func Template(tmplPath, output string, preferSSH bool) {
 	// 4. Discover variables from template files
 	varDefs := discoverTemplateVars(templates, rules)
 
-	// 5. Interactive prompt
-	cliVars := promptForVars(varDefs)
+	// 5. Interactive prompt — merge CLI vars with prompted values
+	values := promptForVars(varDefs, cliVars)
 
 	// 6. Render all templates with the collected values
-	if err := renderer.RenderWithRules(rules, tmplPath, output, preferSSH, cliVars, true); err != nil {
+	if err := renderer.RenderWithRules(rules, tmplPath, output, preferSSH, values, true); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -191,10 +192,23 @@ func sortedKeys[V any](m map[string]V) []string {
 }
 
 // promptForVars interactively asks the user for each variable value.
-// Returns a map suitable for use as cliVars in the renderer.
-func promptForVars(vars []TemplateVar) map[string]string {
-	if len(vars) == 0 {
-		return nil
+// existing contains values already provided via --var flags — these skip the prompt.
+// Returns a merged map of all variable values.
+func promptForVars(vars []TemplateVar, existing map[string]string) map[string]string {
+	if existing == nil {
+		existing = map[string]string{}
+	}
+
+	// Filter out variables already provided via --var
+	var pending []TemplateVar
+	for _, v := range vars {
+		if _, ok := existing[v.Name]; !ok {
+			pending = append(pending, v)
+		}
+	}
+
+	if len(pending) == 0 {
+		return existing
 	}
 
 	fmt.Fprintln(os.Stderr, "")
@@ -202,9 +216,9 @@ func promptForVars(vars []TemplateVar) map[string]string {
 	fmt.Fprintln(os.Stderr, "")
 
 	reader := bufio.NewReader(os.Stdin)
-	values := make(map[string]string, len(vars))
+	values := existing
 
-	for _, v := range vars {
+	for _, v := range pending {
 		for {
 			var prompt string
 			if v.HasDefault {

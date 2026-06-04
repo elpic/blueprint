@@ -5,7 +5,7 @@ Scaffold a project from a template directory — interactively prompts for all v
 Unlike `blueprint render` (which requires you to pass `--var KEY=VALUE` for every variable), `blueprint template` discovers the variables automatically and asks you for each one. It is designed for **scaffolding** — creating a new project from a shared template repository.
 
 ```
-blueprint template <template-path> --output <output-dir> [--prefer-ssh]
+blueprint template <template-path> --output <output-dir> [--var KEY=VALUE] [--prefer-ssh]
 ```
 
 ## Arguments
@@ -14,6 +14,7 @@ blueprint template <template-path> --output <output-dir> [--prefer-ssh]
 |----------|-------------|
 | `<template-path>` | Path to a template directory — local path, `@github:` shorthand, or git URL |
 | `--output <dir>` | Output directory where rendered files are written (**required**) |
+| `--var KEY=VALUE` | Pre-set a template variable (repeatable) — skips the prompt for that variable |
 | `--prefer-ssh` | Prefer SSH over HTTPS for git operations |
 
 ## How It Works
@@ -59,6 +60,14 @@ Each variable is presented one at a time:
 
 Press **Enter** to accept the default for optional variables. Required variables loop until you provide a value.
 
+Variables passed via `--var KEY=VALUE` on the command line skip the prompt entirely. Use this to provide complex values (JSON arrays, long strings) or to automate from scripts.
+
+```bash
+blueprint template @github:org/templates@main:drift-check \
+  --output ./my-api \
+  --var CHECKS='[{"file":"setup.bp","template":"@github:org/templates@main:go","against":"."}]'
+```
+
 ### 5. Render
 
 Once all variables are collected, every `.tmpl` file in the template directory is rendered into `--output`. The `.tmpl` extension is stripped from output filenames, and the directory structure is preserved.
@@ -77,6 +86,17 @@ blueprint template ./my-template --output ./my-project
 blueprint template @github:org/templates@main:python-service \
   --output ./my-new-api
 ```
+
+### Scaffold with pre-set variables
+
+```bash
+blueprint template @github:org/templates@main:drift-check \
+  --output ./my-api \
+  --var CHECKS='[{"file":"setup.bp","template":"@github:org/templates@main:go","against":"."}]' \
+  --var TIMEOUT_MINUTES=15
+```
+
+Variables passed with `--var` are not prompted — useful for complex values or automation.
 
 ### Scaffold using SSH for git operations
 
@@ -130,4 +150,4 @@ This means templates own sensible defaults, template authors can pin custom valu
 | Requires a `.bp` file | Yes | No (optional for defaults) |
 | Variables | Pass via `--var` | Interactive prompts |
 | Use case | Updating existing projects | Scaffolding new projects |
-| Remote templates | ✅ | ✅ |
+| `--var` support | Yes | Yes (skips prompt) |
