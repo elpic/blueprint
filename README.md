@@ -160,6 +160,13 @@ Actions that cannot be exported (like `decrypt`) are shown as skipped with guida
 
 Use your blueprint as a single source of truth for generated files — Dockerfiles, CI configs, Makefiles, shell scripts — and catch drift before it causes problems.
 
+**Interactive scaffolding** — discover variables and prompt for each one:
+```bash
+blueprint template @github:org/templates@main:python-service \
+  --output ./my-new-api
+```
+See [`docs/template.md`](docs/template.md) for details.
+
 **Render a single template:**
 ```bash
 blueprint render setup.bp --template Dockerfile.tmpl --output Dockerfile
