@@ -85,13 +85,9 @@ For **private repositories**, set `GITHUB_TOKEN` (and optionally `GITHUB_USER`) 
 
 ## Uninstall
 
-Clone rules support automatic uninstall. When a clone rule is removed from a blueprint, running `blueprint apply --prune` removes the target directory.
+Clone rules support automatic uninstall. When a clone rule is removed from your blueprint, the next `blueprint apply` will detect the removed rule and delete the target directory.
 
-You can also manually uninstall:
-
-```bash
-blueprint apply setup.bp uninstall clone https://github.com/user/repo.git to: ~/projects/repo
-```
+Simply remove the `clone` line from your `.bp` file and re-apply — blueprint handles the rest.
 
 ## Examples
 
