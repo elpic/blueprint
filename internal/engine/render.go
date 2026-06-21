@@ -182,7 +182,6 @@ func loadRulesForRender(file string, preferSSH bool) []parser.Rule {
 }
 
 // mustRenderTemplate renders a single template file, exiting on any error.
-// outputPath is the resolved target file, needed by {{ content }} in the template.
 func mustRenderTemplate(tmplPath string, rules []parser.Rule, cliVars map[string]string, outputPath string) string {
 	result, err := renderer.RenderTemplate(tmplPath, rules, cliVars, outputPath)
 	if err != nil {
