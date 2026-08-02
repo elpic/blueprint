@@ -16,7 +16,9 @@ import (
 	"time"
 
 	"github.com/elpic/blueprint/internal"
+	cryptopkg "github.com/elpic/blueprint/internal/crypto"
 	gitpkg "github.com/elpic/blueprint/internal/git"
+	"github.com/go-git/go-git/v5"
 )
 
 // container implements the Container interface and manages all platform dependencies.
@@ -588,42 +590,296 @@ func (n *realNetworkProvider) IsReachable(host string, port int, timeout time.Du
 type realGitProvider struct{}
 
 func (g *realGitProvider) Clone(url, path, branch string) (*GitResult, error) {
-	panic("not implemented")
+	oldSHA, newSHA, status, err := gitpkg.CloneOrUpdateRepository(url, path, branch)
+	if err != nil {
+		return nil, err
+	}
+	return &GitResult{Status: status, OldSHA: oldSHA, NewSHA: newSHA}, nil
 }
-func (g *realGitProvider) Update(path, branch string) (*GitResult, error) { panic("not implemented") }
+
+func (g *realGitProvider) Update(path, branch string) (*GitResult, error) {
+	// Update has no URL argument, so read the "origin" remote URL from the
+	// existing local repository first. Use repo.Remote("origin") rather than
+	// iterating Remotes() — it returns a direct error when origin is absent.
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open repository at %s: %w", path, err)
+	}
+	origin, err := repo.Remote("origin")
+	if err != nil || len(origin.Config().URLs) == 0 {
+		return nil, fmt.Errorf("no origin remote found in repository: %s", path)
+	}
+
+	oldSHA, newSHA, status, err := gitpkg.CloneOrUpdateRepository(origin.Config().URLs[0], path, branch)
+	if err != nil {
+		return nil, err
+	}
+	return &GitResult{Status: status, OldSHA: oldSHA, NewSHA: newSHA}, nil
+}
+
 func (g *realGitProvider) GetLocalSHA(path string) (string, error) {
 	return gitpkg.LocalSHAWithError(path)
 }
+
 func (g *realGitProvider) GetRemoteHeadSHA(url, branch string) (string, error) {
 	return gitpkg.RemoteHeadSHAWithError(url, branch)
 }
-func (g *realGitProvider) IsRepository(path string) bool { panic("not implemented") }
+
+// IsRepository reports whether path looks like a git repository.
+// The path itself must be a directory, and it must contain a .git entry.
+// The .git entry may be a directory (standard and bare repositories) or a
+// regular file (worktrees and gitfiles such as submodules), so its mere
+// existence is the check rather than requiring a directory.
+func (g *realGitProvider) IsRepository(path string) bool {
+	pathInfo, err := os.Stat(path)
+	if err != nil || !pathInfo.IsDir() {
+		return false
+	}
+	gitEntry, err := os.Stat(filepath.Join(path, ".git"))
+	if err != nil {
+		return false
+	}
+	return gitEntry.IsDir() || gitEntry.Mode().IsRegular()
+}
 
 type realCryptoProvider struct{}
 
-func (c *realCryptoProvider) Decrypt(inputPath, outputPath, password string) error {
-	panic("not implemented")
-}
-func (c *realCryptoProvider) Encrypt(inputPath, outputPath, password string) error {
-	panic("not implemented")
-}
-func (c *realCryptoProvider) IsEncrypted(path string) bool { panic("not implemented") }
+// minEncryptedFileSize is the minimum plausible size of an EncryptFile output:
+// 32-byte salt + 12-byte GCM nonce + 16-byte GCM tag = 60 bytes. Anything
+// smaller cannot have been produced by EncryptFile.
+const minEncryptedFileSize = 60
 
-type realPackageManagerProvider struct{}
+func (c *realCryptoProvider) Encrypt(inputPath, outputPath, password string) error {
+	plaintext, err := os.ReadFile(inputPath)
+	if err != nil {
+		return fmt.Errorf("failed to read input file: %w", err)
+	}
+	encrypted, err := cryptopkg.EncryptFile(plaintext, password)
+	if err != nil {
+		return fmt.Errorf("encryption failed: %w", err)
+	}
+	if dir := filepath.Dir(outputPath); dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, internal.SensitiveDirectoryPermission); err != nil {
+			return fmt.Errorf("failed to create output directory: %w", err)
+		}
+	}
+	if err := os.WriteFile(outputPath, encrypted, internal.FilePermission); err != nil { // #nosec G703 -- outputPath is a caller-supplied path
+		return fmt.Errorf("failed to write encrypted file: %w", err)
+	}
+	return nil
+}
+
+func (c *realCryptoProvider) Decrypt(inputPath, outputPath, password string) error {
+	encrypted, err := os.ReadFile(inputPath)
+	if err != nil {
+		return fmt.Errorf("failed to read input file: %w", err)
+	}
+	decrypted, err := cryptopkg.DecryptFile(encrypted, password)
+	if err != nil {
+		return fmt.Errorf("decryption failed: %w", err)
+	}
+	if dir := filepath.Dir(outputPath); dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, internal.SensitiveDirectoryPermission); err != nil {
+			return fmt.Errorf("failed to create output directory: %w", err)
+		}
+	}
+	if err := os.WriteFile(outputPath, decrypted, internal.FilePermission); err != nil { // #nosec G703 -- outputPath is a caller-supplied path
+		return fmt.Errorf("failed to write decrypted file: %w", err)
+	}
+	return nil
+}
+
+// IsEncrypted uses a size heuristic: EncryptFile output is always at least
+// minEncryptedFileSize bytes (salt + nonce + GCM tag) and is indistinguishable
+// from random data. A file that exists and is at least that large is treated
+// as encrypted; anything smaller, or unreadable, is not.
+func (c *realCryptoProvider) IsEncrypted(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return info.Size() >= minEncryptedFileSize
+}
+
+type realPackageManagerProvider struct {
+	// osDetector is injected for testability; when nil the real detector is used.
+	osDetector OSDetector
+}
+
+// os returns the configured OS detector, falling back to the real one.
+func (p *realPackageManagerProvider) os() OSDetector {
+	if p.osDetector != nil {
+		return p.osDetector
+	}
+	return &realOSDetector{}
+}
+
+// shouldAddSudo reports whether apt commands need the sudo prefix.
+// Mirrors install.go's logic: Linux requires sudo unless running as root.
+func (p *realPackageManagerProvider) shouldAddSudo() bool {
+	return p.os().Name() == "linux" && !p.os().IsRoot()
+}
+
+// probeCommand returns the command used to probe a package's presence/version,
+// or "" for unsupported package managers.
+func (p *realPackageManagerProvider) probeCommand(packageName, manager string) string {
+	switch manager {
+	case "brew", "homebrew":
+		return "brew list --versions " + packageName
+	case "apt", "apt-get":
+		return "dpkg -s " + packageName
+	default:
+		return ""
+	}
+}
+
+// installCommand builds the install command for the given packages and manager
+// without executing anything.
+func (p *realPackageManagerProvider) installCommand(packages []string, manager string) (string, error) {
+	if len(packages) == 0 {
+		return "", fmt.Errorf("no packages specified")
+	}
+	pkgStr := strings.Join(packages, " ")
+	switch manager {
+	case "brew", "homebrew":
+		return fmt.Sprintf("brew install %s", pkgStr), nil
+	case "apt", "apt-get":
+		cmd := fmt.Sprintf("apt-get install -y %s", pkgStr)
+		if p.shouldAddSudo() {
+			cmd = "sudo " + cmd
+		}
+		return cmd, nil
+	default:
+		return "", fmt.Errorf("unsupported package manager: %s", manager)
+	}
+}
+
+// uninstallCommand builds the uninstall command for the given packages and
+// manager without executing anything.
+func (p *realPackageManagerProvider) uninstallCommand(packages []string, manager string) (string, error) {
+	if len(packages) == 0 {
+		return "", fmt.Errorf("no packages specified")
+	}
+	pkgStr := strings.Join(packages, " ")
+	switch manager {
+	case "brew", "homebrew":
+		return fmt.Sprintf("brew uninstall -y %s", pkgStr), nil
+	case "apt", "apt-get":
+		cmd := fmt.Sprintf("apt-get remove -y %s", pkgStr)
+		if p.shouldAddSudo() {
+			cmd = "sudo " + cmd
+		}
+		return cmd, nil
+	default:
+		return "", fmt.Errorf("unsupported package manager: %s", manager)
+	}
+}
+
+// runCommand executes a probe command and reports success (exit 0).
+func (p *realPackageManagerProvider) runCommand(cmd string) bool {
+	result, err := (&realProcessExecutor{}).Execute(cmd, ExecuteOptions{})
+	return err == nil && result.Success
+}
+
+// parseBrewVersion extracts the version from "brew list --versions <pkg>"
+// output, e.g. "git 2.43.0" → "2.43.0".
+func parseBrewVersion(output string) (string, error) {
+	fields := strings.Fields(output)
+	if len(fields) < 2 {
+		return "", fmt.Errorf("unable to parse version from brew output: %q", output)
+	}
+	return fields[len(fields)-1], nil
+}
+
+// parseDpkgVersion extracts the version from "dpkg -s <pkg>" output by finding
+// the "Version: x.y.z" line.
+func parseDpkgVersion(output string) (string, error) {
+	for _, line := range strings.Split(output, "\n") {
+		if trimmed, ok := strings.CutPrefix(line, "Version:"); ok {
+			if version := strings.TrimSpace(trimmed); version != "" {
+				return version, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("unable to find version line in dpkg output")
+}
 
 func (p *realPackageManagerProvider) Install(packages []string, manager string) (*ExecuteResult, error) {
-	panic("not implemented")
+	cmd, err := p.installCommand(packages, manager)
+	if err != nil {
+		return nil, err
+	}
+	return (&realProcessExecutor{}).Execute(cmd, ExecuteOptions{})
 }
+
 func (p *realPackageManagerProvider) Uninstall(packages []string, manager string) (*ExecuteResult, error) {
-	panic("not implemented")
+	cmd, err := p.uninstallCommand(packages, manager)
+	if err != nil {
+		return nil, err
+	}
+	return (&realProcessExecutor{}).Execute(cmd, ExecuteOptions{})
 }
+
 func (p *realPackageManagerProvider) IsInstalled(packageName, manager string) bool {
-	panic("not implemented")
+	cmd := p.probeCommand(packageName, manager)
+	if cmd == "" {
+		return false
+	}
+	return p.runCommand(cmd)
 }
+
 func (p *realPackageManagerProvider) GetInstalledVersion(packageName, manager string) (string, error) {
-	panic("not implemented")
+	cmd := p.probeCommand(packageName, manager)
+	if cmd == "" {
+		return "", fmt.Errorf("unsupported package manager: %s", manager)
+	}
+	result, err := (&realProcessExecutor{}).Execute(cmd, ExecuteOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to determine installed version of %s: %w", packageName, err)
+	}
+	switch manager {
+	case "brew", "homebrew":
+		version, parseErr := parseBrewVersion(result.Stdout)
+		if parseErr != nil {
+			return "", fmt.Errorf("failed to parse version for %s: %w", packageName, parseErr)
+		}
+		return version, nil
+	case "apt", "apt-get":
+		version, parseErr := parseDpkgVersion(result.Stdout)
+		if parseErr != nil {
+			return "", fmt.Errorf("failed to parse version for %s: %w", packageName, parseErr)
+		}
+		return version, nil
+	default:
+		return "", fmt.Errorf("unsupported package manager: %s", manager)
+	}
 }
+
 func (p *realPackageManagerProvider) IsManagerAvailable(manager string) bool {
-	panic("not implemented")
+	switch manager {
+	case "brew", "homebrew":
+		_, err := exec.LookPath("brew")
+		return err == nil
+	case "apt", "apt-get":
+		// Install/uninstall commands are built around apt-get, so accept either
+		// the "apt" or "apt-get" binary being present.
+		if _, err := exec.LookPath("apt-get"); err == nil {
+			return true
+		}
+		_, err := exec.LookPath("apt")
+		return err == nil
+	default:
+		return false
+	}
 }
-func (p *realPackageManagerProvider) GetDefaultManager() string { panic("not implemented") }
+
+func (p *realPackageManagerProvider) GetDefaultManager() string {
+	switch p.os().Name() {
+	case "mac":
+		return "brew"
+	case "linux":
+		return "apt"
+	default:
+		return ""
+	}
+}
