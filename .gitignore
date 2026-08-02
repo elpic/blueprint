@@ -6,6 +6,9 @@
 # Agent brain (local agent data, task tracking)
 .brain/
 
+# CodeGraph (local code intelligence index data)
+.codegraph/
+
 # IDE and Editor files
 .vscode/
 .idea/
