@@ -43,12 +43,14 @@ jobs:
           FEATURE=false
           BUGFIX=false
 
-          # Check for breaking changes, features, and fixes
-          # Note: use scope-aware patterns (e.g. "feat(install):") to match
-          # conventional commits; a bare "^feat:" misses scoped subjects.
+          # Check for breaking changes, features, and fixes.
+          # Check BOTH bare ("feat:") and scoped ("feat(install):")
+          # conventional commit subjects so neither format is missed.
           echo "$COMMITS" | grep -q "BREAKING CHANGE:" && BREAKING=true || true
-          echo "$COMMITS" | grep -qE "^feat(\(.*\))?:" && FEATURE=true || true
-          echo "$COMMITS" | grep -qE "^fix(\(.*\))?:" && BUGFIX=true || true
+          echo "$COMMITS" | grep -q "^feat:" && FEATURE=true || true
+          echo "$COMMITS" | grep -qE "^feat\(.*\):" && FEATURE=true || true
+          echo "$COMMITS" | grep -q "^fix:" && BUGFIX=true || true
+          echo "$COMMITS" | grep -qE "^fix\(.*\):" && BUGFIX=true || true
 
           # Check if manual version was provided
           if [ -n "${{ github.event.inputs.version }}" ]; then
