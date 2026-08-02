@@ -5,6 +5,7 @@
 
 # Agent brain (local agent data, task tracking)
 .brain/
+.backlog/
 
 # CodeGraph (local code intelligence index data)
 .codegraph/
