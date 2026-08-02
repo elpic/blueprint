@@ -60,6 +60,54 @@ get_latest_version() {
 	VERSION=$(echo "$VERSION" | sed 's/^v//')
 }
 
+# Verify a downloaded binary against its SHA-256 checksum file
+verify_checksum() {
+	BINARY_PATH=$1
+	CHECKSUM_FILE=$2
+
+	# Extract the expected digest (first whitespace-separated field of the checksum file)
+	EXPECTED=$(awk '{print $1}' "$CHECKSUM_FILE")
+	if [ -z "$EXPECTED" ]; then
+		printf "${RED}Error: Could not read checksum from %s${NC}\n" "$CHECKSUM_FILE"
+		return 1
+	fi
+
+	# Select the platform checksum tool
+	case "$OS" in
+		macos)
+			if ! command -v shasum >/dev/null 2>&1; then
+				printf "${RED}Error: 'shasum' not found, cannot verify checksum${NC}\n"
+				return 1
+			fi
+			ACTUAL=$(shasum -a 256 "$BINARY_PATH" 2>/dev/null | awk '{print $1}')
+			;;
+		linux)
+			if ! command -v sha256sum >/dev/null 2>&1; then
+				printf "${RED}Error: 'sha256sum' not found, cannot verify checksum${NC}\n"
+				return 1
+			fi
+			ACTUAL=$(sha256sum "$BINARY_PATH" 2>/dev/null | awk '{print $1}')
+			;;
+		*)
+			printf "${RED}Error: Unsupported OS for checksum verification: %s${NC}\n" "$OS"
+			return 1
+			;;
+	esac
+
+	# Compare digests case-insensitively
+	EXPECTED_LC=$(printf '%s' "$EXPECTED" | tr '[:upper:]' '[:lower:]')
+	ACTUAL_LC=$(printf '%s' "$ACTUAL" | tr '[:upper:]' '[:lower:]')
+
+	if [ "$EXPECTED_LC" != "$ACTUAL_LC" ]; then
+		printf "${RED}Error: Checksum mismatch for %s${NC}\n" "$BINARY_PATH"
+		printf "${RED}  Expected: %s${NC}\n" "$EXPECTED"
+		printf "${RED}  Actual:   %s${NC}\n" "$ACTUAL"
+		return 1
+	fi
+
+	return 0
+}
+
 # Download and install the binary
 install_binary() {
 	BINARY_NAME="blueprint-${OS}-${ARCH}"
@@ -68,9 +116,10 @@ install_binary() {
 
 	printf "${YELLOW}Downloading blueprint %s for %s/%s...${NC}\n" "$VERSION" "$OS" "$ARCH"
 
-	# Create temporary file
+	# Create temporary files for the binary and its checksum
 	TMP_FILE=$(mktemp)
-	trap "rm -f $TMP_FILE" EXIT
+	TMP_CHECKSUM=$(mktemp)
+	trap 'rm -f "$TMP_FILE" "$TMP_CHECKSUM"' EXIT
 
 	# Download the binary
 	if ! curl -fsSL -o "$TMP_FILE" "$DOWNLOAD_URL"; then
@@ -81,6 +130,18 @@ install_binary() {
 	# Check if download was successful
 	if [ ! -s "$TMP_FILE" ]; then
 		printf "${RED}Error: Downloaded file is empty${NC}\n"
+		exit 1
+	fi
+
+	# Download the checksum file
+	if ! curl -fsSL -o "$TMP_CHECKSUM" "${DOWNLOAD_URL}.sha256"; then
+		printf "${RED}Error: Failed to download checksum from %s${NC}\n" "${DOWNLOAD_URL}.sha256"
+		exit 1
+	fi
+
+	# Verify the binary against the checksum
+	if ! verify_checksum "$TMP_FILE" "$TMP_CHECKSUM"; then
+		printf "${RED}Error: Checksum verification failed — the downloaded binary may be tampered with or corrupted${NC}\n"
 		exit 1
 	fi
 
@@ -120,7 +181,7 @@ verify_installation() {
 		return 1
 	fi
 
-	INSTALLED_VERSION=$("$INSTALL_PATH" --version 2>/dev/null | grep -o 'v[0-9.]*' | head -1 || echo "unknown")
+	INSTALLED_VERSION=$("$INSTALL_PATH" version --short 2>/dev/null || echo "unknown")
 	printf "${GREEN}✓ Installed version: %s${NC}\n" "$INSTALLED_VERSION"
 }
 
