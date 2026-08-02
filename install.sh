@@ -181,7 +181,7 @@ verify_installation() {
 		return 1
 	fi
 
-	INSTALLED_VERSION=$("$INSTALL_PATH" --version 2>/dev/null | grep -o 'v[0-9.]*' | head -1 || echo "unknown")
+	INSTALLED_VERSION=$("$INSTALL_PATH" version --short 2>/dev/null || echo "unknown")
 	printf "${GREEN}✓ Installed version: %s${NC}\n" "$INSTALLED_VERSION"
 }
 
