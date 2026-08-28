@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -1031,4 +1032,334 @@ func CloneOrUpdateRepositoryDirect(url, targetPath, branch string) (string, stri
 
 	// Directory already exists with .git — fetch and reset instead of re-clone.
 	return CloneOrUpdateRepository(url, expanded, branch)
+}
+
+// fullFetchRefspec fetches every branch. `git clone --bare` stores branches
+// under refs/heads/* but writes no fetch refspec, so without this a later
+// fetch only updates FETCH_HEAD and the repository never learns about new
+// branches or commits.
+const fullFetchRefspec = "+refs/heads/*:refs/remotes/origin/*"
+
+// CloneOrUpdateRepositoryBare clones url as a bare repository into
+// <targetPath>/.git and checks out branch (or the remote default branch) as a
+// worktree at <targetPath>/<branch>. This is the layout git worktree managers
+// such as worktrunk expect: the bare repository holds no working tree, so every
+// branch — including the default — is a linked worktree at an equal path:
+//
+//	targetPath/
+//	├── .git/    # bare repository
+//	├── main/    # default branch worktree
+//	└── feature/ # feature branch worktree
+//
+// Later runs fetch into the bare repository so new branches and commits become
+// visible to `wt switch`, and recreate the branch worktree if it is missing.
+// Existing worktrees are never reset — they may hold uncommitted work.
+//
+// The reported SHA is the tip of the tracked remote branch, not the bare
+// repository's HEAD: a fetch only advances refs/remotes/origin/*, because
+// moving refs/heads/<branch> would yank the branch out from under whichever
+// worktree has it checked out.
+//
+// Returns (oldSHA, newSHA, status, error) — same contract as CloneOrUpdateRepository.
+func CloneOrUpdateRepositoryBare(url, targetPath, branch string) (string, string, string, error) {
+	url = ExpandShorthand(url)
+
+	expanded, err := expandHomePath(targetPath)
+	if err != nil {
+		return "", "", "", err
+	}
+	if err := os.MkdirAll(expanded, 0o750); err != nil {
+		return "", "", "", fmt.Errorf("failed to create target directory: %w", err)
+	}
+
+	gitDir := filepath.Join(expanded, ".git")
+
+	cloned := true
+	oldSHA := ""
+	if info, statErr := os.Stat(gitDir); statErr == nil && info.IsDir() {
+		// A clone made without bare: keeps its repository here too. Converting
+		// it in place would rewrite a directory that may hold real work, so
+		// ask the user to move it out of the way.
+		if !IsBareRepository(gitDir) {
+			return "", "", "", fmt.Errorf(
+				"cannot clone bare into %s: %s already holds a non-bare repository, remove it first",
+				expanded, gitDir)
+		}
+		cloned = false
+		oldSHA = bareTrackedSHA(gitDir, branch)
+	}
+
+	if cloned {
+		if err := bareClone(url, gitDir, branch); err != nil {
+			return "", "", "", err
+		}
+	}
+
+	// Skip the fetch when the repository already matches the remote, the way
+	// the other clone strategies do — it keeps `blueprint apply` working
+	// offline and avoids a needless round trip.
+	ref := "HEAD"
+	if branch != "" {
+		ref = "refs/heads/" + branch
+	}
+	upToDate := !cloned && oldSHA != "" && remoteRef(url, ref) == oldSHA
+
+	if cloned || !upToDate {
+		// Keep refs/remotes/origin/* populated so every branch is available to
+		// `git worktree add` / `wt switch`, not just the ones cloned initially.
+		if err := ensureFetchRefspec(gitDir); err != nil {
+			return oldSHA, "", "", err
+		}
+		if err := bareFetch(gitDir); err != nil {
+			return oldSHA, "", "", err
+		}
+	}
+
+	// Drop registrations for worktrees deleted outside git, so their branch can
+	// be checked out again.
+	_, _ = runGitIn(gitDir, "worktree", "prune")
+
+	worktreeBranch := bareDefaultBranch(gitDir, branch)
+	added, err := ensureBareWorktree(gitDir, filepath.Join(expanded, worktreeBranch), worktreeBranch)
+	if err != nil {
+		return oldSHA, "", "", err
+	}
+
+	newSHA := bareTrackedSHA(gitDir, branch)
+	switch {
+	case cloned:
+		return "", newSHA, "Cloned", nil
+	case added || oldSHA != newSHA:
+		return oldSHA, newSHA, "Updated", nil
+	default:
+		return oldSHA, newSHA, "Already up to date", nil
+	}
+}
+
+// bareClone clones url into gitDir as a bare repository. Tries go-git first and
+// falls back to the system git binary, mirroring CloneOrUpdateRepository.
+func bareClone(url, gitDir, branch string) error {
+	cloneOpts := &git.CloneOptions{
+		URL:      url,
+		Progress: io.Discard,
+	}
+
+	// A bare clone keeps every branch, so never request a single branch —
+	// worktrees are the point, and they may be for any branch.
+	if branch != "" {
+		cloneOpts.ReferenceName = plumbing.ReferenceName("refs/heads/" + branch)
+	}
+	if strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://") {
+		if auth := httpsAuth(); auth != nil {
+			cloneOpts.Auth = auth
+		}
+	} else if strings.HasPrefix(url, "git@") {
+		if auth, authErr := sshAuth(); authErr == nil {
+			cloneOpts.Auth = auth
+		}
+	}
+
+	if _, err := git.PlainClone(gitDir, true, cloneOpts); err == nil {
+		return nil
+	}
+
+	_ = os.RemoveAll(gitDir) // clean up any partial clone
+	args := []string{"clone", "--bare", "--quiet"}
+	if branch != "" {
+		args = append(args, "--branch", branch)
+	}
+	args = append(args, url, gitDir)
+	if _, err := runGit(args...); err != nil {
+		return fmt.Errorf("failed to clone: %w", err)
+	}
+	return nil
+}
+
+// ensureFetchRefspec makes the bare repository fetch all branches.
+func ensureFetchRefspec(gitDir string) error {
+	if out, err := runGitIn(gitDir, "config", "--get", "remote.origin.fetch"); err == nil &&
+		strings.TrimSpace(out) == fullFetchRefspec {
+		return nil
+	}
+	if _, err := runGitIn(gitDir, "config", "remote.origin.fetch", fullFetchRefspec); err != nil {
+		return fmt.Errorf("failed to configure remote.origin.fetch: %w", err)
+	}
+	return nil
+}
+
+// bareFetch updates the bare repository from origin.
+func bareFetch(gitDir string) error {
+	if _, err := runGitIn(gitDir, "fetch", "--prune", "--quiet", "origin"); err != nil {
+		return fmt.Errorf("failed to fetch: %w", err)
+	}
+	return nil
+}
+
+// bareDefaultBranch resolves the branch to check out as the first worktree:
+// branch when set, otherwise the bare repository's HEAD (the remote default),
+// falling back to origin/HEAD and then any existing local branch.
+func bareDefaultBranch(gitDir, branch string) string {
+	if branch != "" {
+		return branch
+	}
+
+	var candidates []string
+	if out, err := runGitIn(gitDir, "symbolic-ref", "--short", "HEAD"); err == nil {
+		candidates = append(candidates, strings.TrimSpace(out))
+	}
+	if out, err := runGitIn(gitDir, "rev-parse", "--abbrev-ref", "origin/HEAD"); err == nil {
+		candidates = append(candidates, strings.TrimPrefix(strings.TrimSpace(out), "origin/"))
+	}
+	if out, err := runGitIn(gitDir, "branch", "--list", "--format=%(refname:short)"); err == nil {
+		for _, line := range strings.Split(out, "\n") {
+			if name := strings.TrimSpace(line); name != "" {
+				candidates = append(candidates, name)
+			}
+		}
+	}
+	candidates = append(candidates, "main", "master")
+
+	for _, name := range candidates {
+		if name == "" || strings.Contains(name, "HEAD") {
+			continue
+		}
+		if bareRefResolves(gitDir, name) {
+			return name
+		}
+	}
+	return "main"
+}
+
+// bareRefResolves reports whether branch can be checked out — either as a local
+// branch or, after a fetch, as a remote-tracking branch.
+func bareRefResolves(gitDir, branch string) bool {
+	for _, ref := range []string{"refs/heads/" + branch, "refs/remotes/origin/" + branch} {
+		if _, err := runGitIn(gitDir, "rev-parse", "--verify", "--quiet", ref); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// ensureBareWorktree creates the worktree for branch at worktreePath unless one
+// is already there. Returns true when a new worktree was created. Existing
+// worktrees are left untouched — they may hold uncommitted work.
+func ensureBareWorktree(gitDir, worktreePath, branch string) (bool, error) {
+	// Already a worktree (or a repository) at that path.
+	if gitInfo, err := os.Stat(filepath.Join(worktreePath, ".git")); err == nil &&
+		(gitInfo.IsDir() || gitInfo.Mode().IsRegular()) {
+		return false, nil
+	}
+
+	// Checked out in another worktree — git refuses a second checkout.
+	if bareWorktreeHasBranch(gitDir, branch) {
+		return false, nil
+	}
+
+	// Nothing to check out (e.g. the remote default branch hasn't landed yet).
+	if !bareRefResolves(gitDir, branch) {
+		return false, nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(worktreePath), 0o750); err != nil {
+		return false, fmt.Errorf("failed to create parent directory for worktree: %w", err)
+	}
+	if entries, err := os.ReadDir(worktreePath); err == nil && len(entries) > 0 {
+		return false, fmt.Errorf("refusing to create worktree at %s: directory is not empty", worktreePath)
+	}
+	// worktree add refuses an existing directory, even an empty one.
+	if err := os.RemoveAll(worktreePath); err != nil {
+		return false, fmt.Errorf("failed to prepare worktree path %s: %w", worktreePath, err)
+	}
+
+	if _, err := runGitIn(gitDir, "worktree", "add", worktreePath, branch); err != nil {
+		return false, fmt.Errorf("failed to create worktree for %s: %w", branch, err)
+	}
+	return true, nil
+}
+
+// bareWorktreeHasBranch reports whether branch is already checked out in a
+// worktree of gitDir.
+func bareWorktreeHasBranch(gitDir, branch string) bool {
+	out, err := runGitIn(gitDir, "worktree", "list", "--porcelain")
+	if err != nil {
+		return false
+	}
+	want := "branch refs/heads/" + branch
+	for _, line := range strings.Split(out, "\n") {
+		if strings.TrimSpace(line) == want {
+			return true
+		}
+	}
+	return false
+}
+
+// bareTrackedSHA returns the SHA a bare (worktree) repository is synced to: the
+// tip of the remote branch it tracks — origin/<branch>, or origin/HEAD when no
+// branch is requested. Local branches are only a fallback: they stay pinned to
+// whatever each worktree has checked out, so they don't move on fetch.
+func bareTrackedSHA(gitDir, branch string) string {
+	var refs []string
+	if branch != "" {
+		refs = append(refs, "refs/remotes/origin/"+branch, "refs/heads/"+branch)
+	}
+	refs = append(refs, "refs/remotes/origin/HEAD", "HEAD")
+
+	for _, ref := range refs {
+		out, err := runGitIn(gitDir, "rev-parse", "--verify", "--quiet", ref)
+		if err != nil {
+			continue
+		}
+		if sha := strings.TrimSpace(out); len(sha) == 40 {
+			return sha
+		}
+	}
+	return ""
+}
+
+// BareRepositorySHA returns the SHA a bare (worktree) clone at path is synced
+// to, for the given branch ("" for the remote default). It is the value to
+// compare against the remote HEAD to decide whether the clone is current.
+func BareRepositorySHA(path, branch string) string {
+	return bareTrackedSHA(filepath.Join(path, ".git"), branch)
+}
+
+// IsBareRepository reports whether path holds a bare git repository. Bare
+// (worktree) clones keep their repository in <clone path>/.git, so this is how
+// a clone rule recognises that layout on disk — including uninstall rules,
+// which are rebuilt from status and don't carry the bare flag.
+func IsBareRepository(path string) bool {
+	out, err := runGitIn(path, "rev-parse", "--is-bare-repository")
+	return err == nil && strings.TrimSpace(out) == "true"
+}
+
+// runGit runs git with the standard git timeout and returns its stdout.
+func runGit(args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout())
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return stdout.String(), nil
+}
+
+// runGitIn runs git with -C dir so it operates on the given repository.
+func runGitIn(dir string, args ...string) (string, error) {
+	return runGit(append([]string{"-C", dir}, args...)...)
+}
+
+// expandHomePath expands a leading ~/ to the user's home directory.
+func expandHomePath(path string) (string, error) {
+	if !strings.HasPrefix(path, "~/") {
+		return path, nil
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+	return filepath.Join(homeDir, path[2:]), nil
 }

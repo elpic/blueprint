@@ -29,6 +29,7 @@ type Rule struct {
 	ClonePath    string // Destination path for cloned repository
 	Branch       string // Branch to clone (optional, defaults to repo default)
 	CloneWorkdir bool   // If true, clone with .git intact (for active development repos)
+	CloneBare    bool   // If true, clone bare into <path>/.git with branches as worktrees (git worktree / worktrunk layout)
 
 	// ASDF-specific fields
 	AsdfPackages []string // List of "plugin@version" for asdf (e.g., "nodejs@21.4.0")
@@ -421,13 +422,19 @@ func ParseCloneRule(line string) (*Rule, error) {
 	if id == "" {
 		id = "clone-" + cloneURL
 	}
+	cloneBare := f.word("bare:") == "true"
+	cloneWorkdir := f.word("workdir:") == "true"
+	if cloneBare && cloneWorkdir {
+		return nil, lineError(line, "clone accepts either bare: or workdir:, not both")
+	}
 	return &Rule{
 		ID:           id,
 		Action:       "clone",
 		CloneURL:     cloneURL,
 		ClonePath:    clonePath,
 		Branch:       f.word("branch:"),
-		CloneWorkdir: f.word("workdir:") == "true",
+		CloneWorkdir: cloneWorkdir,
+		CloneBare:    cloneBare,
 		OSList:       f.osFilter,
 		After:        f.list("after:"),
 	}, nil
