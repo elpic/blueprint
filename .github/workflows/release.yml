@@ -142,8 +142,26 @@ jobs:
           go-version-file: 'go.mod'
 
       - name: Build binary
+        env:
+          RELEASE_VERSION: ${{ needs.release.outputs.version }}
         run: |
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o ${{ matrix.artifact }} ./cmd/blueprint
+          # version/commit are declared in cmd/blueprint/main.go and only ever set
+          # via -ldflags; without this the released binaries report "dev"/"none".
+          COMMIT=$(printf '%s' "$GITHUB_SHA" | cut -c1-7)
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build \
+            -ldflags "-X main.version=${RELEASE_VERSION} -X main.commit=${COMMIT}" \
+            -o ${{ matrix.artifact }} ./cmd/blueprint
+
+      - name: Verify embedded version
+        env:
+          RELEASE_VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          # The artifacts are cross-compiled, so they can't always be executed
+          # here — check the version string is embedded instead.
+          if ! grep -aq "${RELEASE_VERSION}" ${{ matrix.artifact }}; then
+            echo "Error: version ${RELEASE_VERSION} is not embedded in ${{ matrix.artifact }}"
+            exit 1
+          fi
 
       - name: Generate checksum
         run: |

@@ -183,6 +183,15 @@ verify_installation() {
 
 	INSTALLED_VERSION=$("$INSTALL_PATH" version --short 2>/dev/null || echo "unknown")
 	printf "${GREEN}✓ Installed version: %s${NC}\n" "$INSTALLED_VERSION"
+
+	# A binary built without -ldflags reports "dev", which means the release
+	# artifact wasn't stamped with its version — say so instead of leaving the
+	# reader to notice the mismatch with the "✓ Version:" line above.
+	if [ "$INSTALLED_VERSION" != "$VERSION" ]; then
+		printf "${YELLOW}Warning: expected %s but the binary reports %s${NC}\n" "$VERSION" "$INSTALLED_VERSION"
+		printf "${YELLOW}The release artifact is missing version information. Report this at${NC}\n"
+		printf "${YELLOW}https://github.com/elpic/blueprint/issues${NC}\n"
+	fi
 }
 
 # Main installation flow
