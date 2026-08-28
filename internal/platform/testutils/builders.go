@@ -77,6 +77,18 @@ func (b *RuleBuilder) WithClone(url, path string) *RuleBuilder {
 	return b
 }
 
+// WithCloneBare marks the clone as a bare (worktree) clone.
+func (b *RuleBuilder) WithCloneBare(bare bool) *RuleBuilder {
+	b.rule.CloneBare = bare
+	return b
+}
+
+// WithCloneWorkdir marks the clone as keeping its .git directory.
+func (b *RuleBuilder) WithCloneWorkdir(workdir bool) *RuleBuilder {
+	b.rule.CloneWorkdir = workdir
+	return b
+}
+
 // WithBranch sets the git branch and returns the builder for chaining.
 func (b *RuleBuilder) WithBranch(branch string) *RuleBuilder {
 	b.rule.Branch = branch

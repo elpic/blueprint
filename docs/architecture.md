@@ -106,7 +106,11 @@ Each handler (InstallHandler, CloneHandler, DecryptHandler, DotfilesHandler, etc
 
 ### Git Module (`internal/git/git.go`)
 
-- Clones repositories using pure Go (no git CLI required)
+- Clones repositories using pure Go (no git CLI required), falling back to the git CLI
+  when go-git can't complete the operation (e.g. SSH agent issues)
+- Clone strategies: two-stage cache-and-copy (default), direct clone keeping `.git`
+  (`workdir: true`), and bare clone with branches as worktrees (`bare: true`)
+- Bare clones delegate `git worktree` to the git CLI — go-git has no worktree support
 - Supports HTTPS and SSH authentication
 - Handles temporary directory management
 - Auto-cleanup of cloned repositories

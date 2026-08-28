@@ -2,6 +2,7 @@ package parser
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/elpic/blueprint/internal/git"
@@ -1842,6 +1843,74 @@ func TestParseCloneRule_Workdir(t *testing.T) {
 		}
 		if !rules[0].CloneWorkdir {
 			t.Errorf("CloneWorkdir should be true when workdir: is at end of line")
+		}
+	})
+}
+
+func TestParseCloneRule_Bare(t *testing.T) {
+	t.Run("bare flag sets CloneBare true", func(t *testing.T) {
+		rules, err := Parse("clone git@github.com:org/repo.git to: ~/workspace/repo bare: true on: [mac, linux]")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(rules) != 1 {
+			t.Fatalf("expected 1 rule, got %d", len(rules))
+		}
+		r := rules[0]
+		if !r.CloneBare {
+			t.Error("CloneBare should be true when bare: is present")
+		}
+		if r.CloneWorkdir {
+			t.Error("CloneWorkdir should stay false when only bare: is present")
+		}
+		if r.CloneURL != "git@github.com:org/repo.git" {
+			t.Errorf("unexpected CloneURL: %q", r.CloneURL)
+		}
+		if r.ClonePath != "~/workspace/repo" {
+			t.Errorf("unexpected ClonePath: %q", r.ClonePath)
+		}
+	})
+
+	t.Run("no bare flag leaves CloneBare false", func(t *testing.T) {
+		rules, err := Parse("clone git@github.com:org/repo.git to: ~/workspace/repo on: [mac]")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if rules[0].CloneBare {
+			t.Error("CloneBare should be false when bare: is absent")
+		}
+	})
+
+	t.Run("bare with branch", func(t *testing.T) {
+		rules, err := Parse("clone @github:org/repo to: ~/ws/repo branch: develop bare: true")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !rules[0].CloneBare {
+			t.Error("CloneBare should be true")
+		}
+		if rules[0].Branch != "develop" {
+			t.Errorf("Branch = %q, want %q", rules[0].Branch, "develop")
+		}
+	})
+
+	t.Run("bare: false is not bare", func(t *testing.T) {
+		rules, err := Parse("clone @github:org/repo to: ~/ws/repo bare: false")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if rules[0].CloneBare {
+			t.Error("CloneBare should be false when bare: false")
+		}
+	})
+
+	t.Run("bare and workdir are mutually exclusive", func(t *testing.T) {
+		_, err := Parse("clone git@github.com:org/repo.git to: ~/ws/repo bare: true workdir: true")
+		if err == nil {
+			t.Fatal("expected an error when both bare: and workdir: are set")
+		}
+		if !strings.Contains(err.Error(), "not both") {
+			t.Errorf("error = %v, want it to explain the options are exclusive", err)
 		}
 	})
 }

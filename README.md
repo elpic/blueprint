@@ -51,7 +51,7 @@ Each line in a `.bp` file maps to an action. Full documentation for each action 
 | Action | Description | Platforms |
 |--------|-------------|-----------|
 | [`install`](docs/install.md) | Install packages via the system package manager | mac, linux |
-| [`clone`](docs/clone.md) | Clone and keep a git repository up to date | mac, linux |
+| [`clone`](docs/clone.md) | Clone and keep a git repository up to date — plain copy, working copy, or bare + worktrees | mac, linux |
 | [`asdf`](docs/asdf.md) | Install the asdf version manager with plugins and versions | mac, linux |
 | [`mise`](docs/mise.md) | Install the mise version manager globally or scoped to a project | mac, linux |
 | [`homebrew`](docs/homebrew.md) | Install Homebrew formulas and casks | mac, linux |

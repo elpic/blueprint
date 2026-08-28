@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 
 	gitpkg "github.com/elpic/blueprint/internal/git"
@@ -30,6 +31,31 @@ func init() {
 			index(rule.ClonePath)
 		},
 		ShellExport: func(rule parser.Rule, _, _ string) []string {
+			// Bare layout: <path>/.git plus a worktree per branch.
+			if rule.CloneBare {
+				gitDir := shellHome(rule.ClonePath) + "/.git"
+				branchFlag := ""
+				branch := `"$(git -C "$GIT_DIR" symbolic-ref --short HEAD 2>/dev/null)"`
+				if rule.Branch != "" {
+					branchFlag = " -b " + shellQ(rule.Branch)
+					branch = shellQ(rule.Branch)
+				}
+				return []string{
+					fmt.Sprintf(`GIT_DIR=%s`, gitDir),
+					`if [ ! -d "$GIT_DIR" ]; then`,
+					fmt.Sprintf("  git clone --bare%s %s \"$GIT_DIR\" -q", branchFlag, shellQ(rule.CloneURL)),
+					`fi`,
+					`git -C "$GIT_DIR" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'`,
+					`git -C "$GIT_DIR" fetch --prune -q origin`,
+					`git -C "$GIT_DIR" worktree prune`,
+					fmt.Sprintf(`BRANCH=%s`, branch),
+					`WORKTREE="$(dirname "$GIT_DIR")/$BRANCH"`,
+					`if [ ! -e "$WORKTREE/.git" ]; then`,
+					`  git -C "$GIT_DIR" worktree add "$WORKTREE" "$BRANCH" 2>/dev/null || true`,
+					`fi`,
+				}
+			}
+
 			path := shellHome(rule.ClonePath)
 			branchFlag := ""
 			if rule.Branch != "" {
@@ -98,6 +124,8 @@ func NewCloneHandlerLegacy(rule parser.Rule, basePath string) *CloneHandler {
 }
 
 // Up clones or updates the repository.
+// When CloneBare is true a bare clone is used — <path>/.git plus a worktree per
+// branch — the layout git worktree managers such as worktrunk expect.
 // When CloneWorkdir is true a direct git clone is used so the .git directory is
 // preserved — the target becomes a fully functional working copy.
 // Otherwise the default two-stage approach is used: clone to clean storage then
@@ -105,13 +133,20 @@ func NewCloneHandlerLegacy(rule parser.Rule, basePath string) *CloneHandler {
 func (h *CloneHandler) Up() (string, error) {
 	var oldSHA, newSHA, status string
 	var err error
-	if h.Rule.CloneWorkdir {
+	switch {
+	case h.Rule.CloneBare:
+		oldSHA, newSHA, status, err = gitpkg.CloneOrUpdateRepositoryBare(
+			h.Rule.CloneURL,
+			h.Rule.ClonePath,
+			h.Rule.Branch,
+		)
+	case h.Rule.CloneWorkdir:
 		oldSHA, newSHA, status, err = gitpkg.CloneOrUpdateRepositoryDirect(
 			h.Rule.CloneURL,
 			h.Rule.ClonePath,
 			h.Rule.Branch,
 		)
-	} else {
+	default:
 		oldSHA, newSHA, status, err = gitpkg.CloneOrUpdateRepositoryTwoStage(
 			h.Rule.CloneURL,
 			h.Rule.ClonePath,
@@ -181,6 +216,13 @@ func (h *CloneHandler) GetCommand() string {
 	}
 
 	// Clone action - use go-git, so return descriptive command
+	if h.Rule.CloneBare {
+		if h.Rule.Branch != "" {
+			return fmt.Sprintf("git clone --bare -b %s %s %s/.git", h.Rule.Branch, h.Rule.CloneURL, h.Rule.ClonePath)
+		}
+		return fmt.Sprintf("git clone --bare %s %s/.git", h.Rule.CloneURL, h.Rule.ClonePath)
+	}
+
 	if h.Rule.Branch != "" {
 		return fmt.Sprintf("git clone -b %s %s %s", h.Rule.Branch, h.Rule.CloneURL, h.Rule.ClonePath)
 	}
@@ -309,6 +351,9 @@ func (h *CloneHandler) GetState(isUninstall bool) map[string]string {
 	if h.Rule.Branch != "" {
 		state["branch"] = h.Rule.Branch
 	}
+	if h.Rule.CloneBare {
+		state["layout"] = "bare"
+	}
 	return state
 }
 
@@ -371,6 +416,16 @@ func (h *CloneHandler) IsInstalled(status *Status, blueprintFile, osName string)
 		if remoteSHA == "" {
 			// Cannot reach remote — trust the status entry as-is.
 			return true
+		}
+
+		// Bare clones track the remote branch tip, not the pinned local branch
+		// (moving it would disturb whichever worktree has it checked out).
+		// The layout is also detected on disk because uninstall rules are
+		// rebuilt from status and don't carry the bare flag.
+		expandedPath := h.Container.SystemProvider().Filesystem().ExpandPath(h.Rule.ClonePath)
+		if h.Rule.CloneBare || gitpkg.IsBareRepository(filepath.Join(expandedPath, ".git")) {
+			hasGit := h.Container.SystemProvider().Filesystem().Exists(filepath.Join(expandedPath, ".git"))
+			return hasGit && gitpkg.BareRepositorySHA(expandedPath, h.Rule.Branch) == remoteSHA
 		}
 
 		// When workdir is set, we only care about the target directory — skip the
