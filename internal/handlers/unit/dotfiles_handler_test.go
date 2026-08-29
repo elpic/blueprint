@@ -6,6 +6,7 @@ import (
 
 	"github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
 )
 
 // TestDotfilesHandler_GetCommand_Pure tests command generation - pure function, no I/O.
@@ -60,7 +61,7 @@ func TestDotfilesHandler_GetCommand_Pure(t *testing.T) {
 			}
 
 			// Create handler
-			handler := handlers.NewDotfilesHandler(rule, "/test/path")
+			handler := handlers.NewDotfilesHandler(rule, "/test/path", platform.NewContainer())
 
 			// Test command generation (pure function - no I/O)
 			cmd := handler.GetCommand()
@@ -121,7 +122,7 @@ func TestDotfilesHandler_GetDependencyKey_Pure(t *testing.T) {
 			}
 
 			// Test dependency key generation
-			handler := handlers.NewDotfilesHandler(rule, "/test")
+			handler := handlers.NewDotfilesHandler(rule, "/test", platform.NewContainer())
 			key := handler.GetDependencyKey()
 
 			duration := time.Since(start)
@@ -171,7 +172,7 @@ func TestDotfilesHandler_GetDisplayDetails_Pure(t *testing.T) {
 				DotfilesURL: tt.url,
 			}
 
-			handler := handlers.NewDotfilesHandler(rule, "/test")
+			handler := handlers.NewDotfilesHandler(rule, "/test", platform.NewContainer())
 
 			details := handler.GetDisplayDetails(false)
 			duration := time.Since(start)
@@ -216,7 +217,7 @@ func TestDotfilesHandler_GetState_Pure(t *testing.T) {
 				DotfilesPath: tt.path,
 			}
 
-			handler := handlers.NewDotfilesHandler(rule, "/test")
+			handler := handlers.NewDotfilesHandler(rule, "/test", platform.NewContainer())
 			state := handler.GetState(false)
 
 			duration := time.Since(start)

@@ -9,6 +9,7 @@ import (
 
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
 	"github.com/elpic/blueprint/internal/ui"
 )
 
@@ -17,7 +18,7 @@ func init() {
 		Name:   "dotfiles",
 		Prefix: "dotfiles ",
 		NewHandler: func(rule parser.Rule, basePath string, passwordCache map[string]string) Handler {
-			return NewDotfilesHandler(rule, basePath)
+			return NewDotfilesHandler(rule, basePath, platform.NewContainer())
 		},
 		RuleKey: func(rule parser.Rule) string {
 			return rule.DotfilesURL
@@ -87,11 +88,12 @@ type DotfilesHandler struct {
 }
 
 // NewDotfilesHandler creates a new dotfiles handler
-func NewDotfilesHandler(rule parser.Rule, basePath string) *DotfilesHandler {
+func NewDotfilesHandler(rule parser.Rule, basePath string, container platform.Container) *DotfilesHandler {
 	return &DotfilesHandler{
 		BaseHandler: BaseHandler{
-			Rule:     rule,
-			BasePath: basePath,
+			Rule:      rule,
+			BasePath:  basePath,
+			Container: container,
 		},
 	}
 }
@@ -146,11 +148,14 @@ func (h *DotfilesHandler) Up() (string, error) {
 	_, statErr := os.Stat(clonePath)
 	isUpdate := statErr == nil
 
-	_, _, _, err := gitpkg.CloneOrUpdateRepository(
-		h.Rule.DotfilesURL,
-		clonePath,
-		h.Rule.DotfilesBranch,
-	)
+	// Direct clone: the dotfiles repo lives as a real working copy at the
+	// clone path so its files can be symlinked into ~.
+	_, err := h.Container.GitProvider().Clone(platform.CloneSpec{
+		URL:    h.Rule.DotfilesURL,
+		Path:   clonePath,
+		Branch: h.Rule.DotfilesBranch,
+		Mode:   platform.ModeDirect,
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to clone/update dotfiles repository: %w", err)
 	}
@@ -386,8 +391,11 @@ func (h *DotfilesHandler) UpdateStatus(status *Status, records []ExecutionRecord
 			if err == nil {
 				clonePath := h.expandedDotfilesPath()
 
-				// Get current SHA of the cloned repository
-				currentSHA = gitpkg.LocalSHA(clonePath)
+				// Get current SHA of the cloned repository; an error means
+				// no readable HEAD — unknown, not a failure.
+				if sha, shaErr := h.Container.GitProvider().LocalSHA(platform.RepoPath(clonePath)); shaErr == nil {
+					currentSHA = string(sha)
+				}
 
 				collectManaged := func(linkPath string) {
 					info, lerr := os.Lstat(linkPath)
@@ -643,10 +651,10 @@ func (h *DotfilesHandler) IsInstalled(status *Status, blueprintFile, osName stri
 		if normalizedStatusURL == normalizedRuleURL && normalizeBlueprint(d.Blueprint) == normalizedBlueprint && d.OS == osName {
 			// Check if remote has new commits
 			clonePath := h.expandedDotfilesPath()
-			localSHA := gitpkg.LocalSHA(clonePath)
-			if localSHA != "" {
-				remoteSHA := gitpkg.RemoteHeadSHA(h.Rule.DotfilesURL, "")
-				if remoteSHA != "" && remoteSHA != localSHA {
+			provider := h.Container.GitProvider()
+			if localSHA, shaErr := provider.LocalSHA(platform.RepoPath(clonePath)); shaErr == nil && localSHA != "" {
+				remoteSHA, remoteErr := provider.RemoteSHA(platform.RepoID{URL: h.Rule.DotfilesURL})
+				if remoteErr == nil && remoteSHA != "" && remoteSHA != localSHA {
 					return false
 				}
 			}
