@@ -16,7 +16,12 @@ import (
 
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
 )
+
+// Git is the git seam used by the renderer. Package var (not injected) —
+// the renderer is function-organized; reassign in tests.
+var Git platform.GitProvider = platform.NewContainer().GitProvider()
 
 // TemplateFuncEntry pairs a template function name with a factory that binds
 // the function to a specific *TemplateData instance.
@@ -268,7 +273,13 @@ func ResolveTemplatePath(tmplPath string, preferSSH bool) (local, root string, c
 	params := gitpkg.ParseGitURL(expanded)
 	localRepo := blueprintRepoPath(expanded)
 
-	if _, _, _, cloneErr := gitpkg.CloneOrUpdateRepository(params.URL, localRepo, params.Branch); cloneErr != nil {
+	// Direct clone: the cache is a working copy whose files the renderer reads.
+	if _, cloneErr := Git.Clone(platform.CloneSpec{
+		URL:    params.URL,
+		Path:   localRepo,
+		Branch: params.Branch,
+		Mode:   platform.ModeDirect,
+	}); cloneErr != nil {
 		return "", "", cleanup, fmt.Errorf("error cloning template repository: %w", cloneErr)
 	}
 
