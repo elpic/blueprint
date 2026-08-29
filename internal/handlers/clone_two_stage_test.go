@@ -6,29 +6,17 @@ import (
 	"testing"
 	"time"
 
-	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
+	"github.com/elpic/blueprint/internal/platform/mocks"
 )
 
 // TestCloneTwoStageApproach tests the two-stage clone implementation
 func TestCloneTwoStageApproach(t *testing.T) {
-	// Store original functions to restore later
-	origLocal := localSHA
-	origRemote := remoteHeadSHA
-	defer func() {
-		localSHA = origLocal
-		remoteHeadSHA = origRemote
-	}()
-
 	t.Run("Two stage clone prevents pollution", func(t *testing.T) {
 		// Create a temporary directory for testing
 		tmpDir := t.TempDir()
 		targetPath := filepath.Join(tmpDir, "test-repo")
-
-		// Mock consistent SHAs
-		testSHA := "abc123456789"
-		localSHA = func(string) string { return testSHA }
-		remoteHeadSHA = func(string, string) string { return testSHA }
 
 		rule := parser.Rule{
 			ID:        "test-repo",
@@ -38,9 +26,15 @@ func TestCloneTwoStageApproach(t *testing.T) {
 			Branch:    "",
 		}
 
-		handler := NewCloneHandlerLegacy(rule, tmpDir)
+		// Configure the seam's clone outcome for the two-stage spec. The
+		// exact SHA in the output proves the handler resolved the rule to
+		// ModeTwoStage — any other mode would hit the mock's default result.
+		testSHA := "abc123456789"
+		spec := platform.CloneSpec{URL: rule.CloneURL, Path: targetPath, Branch: "", Mode: platform.ModeTwoStage}
+		gitMock := mocks.NewMockGitProvider().
+			WithCloneResult(spec, platform.CloneResult{Status: platform.StatusCloned, NewSHA: platform.SHA(testSHA)})
+		handler := NewCloneHandler(rule, tmpDir, newTestGitContainer(gitMock))
 
-		// First: simulate a clone that would create files
 		// Create target directory and add a user file to simulate pollution
 		err := os.MkdirAll(targetPath, 0755)
 		if err != nil {
@@ -58,25 +52,14 @@ func TestCloneTwoStageApproach(t *testing.T) {
 			t.Fatal("User file should exist before clone")
 		}
 
-		// Mock the git operations to avoid actual network calls
-		originalCloneFunc := gitpkg.CloneOrUpdateRepositoryTwoStage
-		gitpkg.CloneOrUpdateRepositoryTwoStage = func(url, targetPath, branch string) (string, string, string, error) {
-			// Simulate successful clone but preserve existing files
-			return "", testSHA, "Cloned", nil
-		}
-		defer func() {
-			gitpkg.CloneOrUpdateRepositoryTwoStage = originalCloneFunc
-		}()
-
 		// Execute clone
 		output, err := handler.Up()
 		if err != nil {
 			t.Fatalf("Clone failed: %v", err)
 		}
 
-		// Verify output indicates success
-		if output == "" {
-			t.Error("Expected non-empty output from clone")
+		if want := "Cloned (SHA: " + testSHA + ")"; output != want {
+			t.Errorf("Up() = %q, want %q", output, want)
 		}
 
 		// In a real implementation, the user file would be preserved
@@ -85,20 +68,6 @@ func TestCloneTwoStageApproach(t *testing.T) {
 
 	t.Run("IsInstalled uses clean repository SHA", func(t *testing.T) {
 		testSHA := "clean123456"
-		remoteSHA := "clean123456"
-
-		// Mock functions to simulate clean repository
-		localSHA = func(string) string { return "polluted456789" } // Simulate polluted target
-		remoteHeadSHA = func(string, string) string { return remoteSHA }
-
-		// Mock GetCleanRepositorySHA to return clean SHA
-		originalGetCleanSHA := gitpkg.GetCleanRepositorySHA
-		gitpkg.GetCleanRepositorySHA = func(url, branch string) string {
-			return testSHA // Clean repository SHA
-		}
-		defer func() {
-			gitpkg.GetCleanRepositorySHA = originalGetCleanSHA
-		}()
 
 		rule := parser.Rule{
 			ID:        "test-repo",
@@ -106,8 +75,14 @@ func TestCloneTwoStageApproach(t *testing.T) {
 			CloneURL:  "https://github.com/test/repo.git",
 			ClonePath: "~/.test-repo",
 		}
+		id := platform.RepoID{URL: rule.CloneURL}
 
-		handler := NewCloneHandlerLegacy(rule, "/tmp")
+		// Simulate a polluted target whose clean-storage copy matches the remote
+		gitMock := mocks.NewMockGitProvider().
+			WithLocalSHA(platform.RepoPath("/home/testuser/.test-repo"), "polluted456789").
+			WithRemoteSHA(id, platform.SHA(testSHA)).
+			WithStorageSHA(id, platform.SHA(testSHA))
+		handler := NewCloneHandler(rule, "/tmp", newTestGitContainer(gitMock))
 
 		status := &Status{
 			Clones: []CloneStatus{
@@ -132,18 +107,19 @@ func TestCloneTwoStageApproach(t *testing.T) {
 	t.Run("IsInstalled handles network failure gracefully", func(t *testing.T) {
 		testSHA := "abc123456789"
 
-		// Mock network failure (empty remote SHA)
-		localSHA = func(string) string { return testSHA }
-		remoteHeadSHA = func(string, string) string { return "" } // Network failure
-
 		rule := parser.Rule{
 			ID:        "test-repo",
 			Action:    "clone",
 			CloneURL:  "https://github.com/test/repo.git",
 			ClonePath: "~/.test-repo",
 		}
+		id := platform.RepoID{URL: rule.CloneURL}
 
-		handler := NewCloneHandlerLegacy(rule, "/tmp")
+		// Simulate network failure: the remote SHA cannot be fetched
+		gitMock := mocks.NewMockGitProvider().
+			WithLocalSHA(platform.RepoPath("/home/testuser/.test-repo"), platform.SHA(testSHA)).
+			WithUnreachableRemote(id)
+		handler := NewCloneHandler(rule, "/tmp", newTestGitContainer(gitMock))
 
 		status := &Status{
 			Clones: []CloneStatus{
@@ -167,23 +143,8 @@ func TestCloneTwoStageApproach(t *testing.T) {
 
 	t.Run("Multiple clones should use same storage", func(t *testing.T) {
 		// Test that multiple clone operations for the same repo use consistent storage
-		// This test validates that our ID generation is working without accessing private functions
 		testSHA1 := "first123456"
 		testSHA2 := "second67890"
-
-		// Mock the two-stage clone to verify it's called consistently
-		callCount := 0
-		originalTwoStage := gitpkg.CloneOrUpdateRepositoryTwoStage
-		gitpkg.CloneOrUpdateRepositoryTwoStage = func(url, targetPath, branch string) (string, string, string, error) {
-			callCount++
-			if callCount == 1 {
-				return "", testSHA1, "Cloned", nil
-			}
-			return testSHA1, testSHA2, "Updated", nil
-		}
-		defer func() {
-			gitpkg.CloneOrUpdateRepositoryTwoStage = originalTwoStage
-		}()
 
 		rule := parser.Rule{
 			ID:        "test-repo",
@@ -192,7 +153,13 @@ func TestCloneTwoStageApproach(t *testing.T) {
 			ClonePath: "/tmp/test-repo",
 		}
 
-		handler := NewCloneHandlerLegacy(rule, "/tmp")
+		// Both runs go through the seam with the same two-stage spec
+		spec := platform.CloneSpec{URL: rule.CloneURL, Path: rule.ClonePath, Mode: platform.ModeTwoStage}
+		counting := &countingGitProvider{
+			GitProvider: mocks.NewMockGitProvider().
+				WithCloneResult(spec, platform.CloneResult{Status: platform.StatusUpdated, OldSHA: platform.SHA(testSHA1), NewSHA: platform.SHA(testSHA2)}),
+		}
+		handler := NewCloneHandler(rule, "/tmp", newTestGitContainer(counting))
 
 		// First clone
 		output1, err1 := handler.Up()
@@ -212,38 +179,20 @@ func TestCloneTwoStageApproach(t *testing.T) {
 			t.Error("Expected non-empty output from second clone")
 		}
 
-		// Verify both operations used the two-stage approach
-		if callCount != 2 {
-			t.Errorf("Expected 2 calls to two-stage clone, got %d", callCount)
+		// Verify both operations used the two-stage approach through the seam
+		if counting.cloneCalls != 2 {
+			t.Errorf("Expected 2 clone calls through the seam, got %d", counting.cloneCalls)
+		}
+		if counting.lastSpec.Mode != platform.ModeTwoStage {
+			t.Errorf("Expected two-stage mode, got %v", counting.lastSpec.Mode)
 		}
 	})
 }
 
 // TestCloneHandlerBackwardCompatibility ensures existing clones continue to work
 func TestCloneHandlerBackwardCompatibility(t *testing.T) {
-	// Store original functions
-	origLocal := localSHA
-	origRemote := remoteHeadSHA
-	defer func() {
-		localSHA = origLocal
-		remoteHeadSHA = origRemote
-	}()
-
 	t.Run("Existing clones work with new implementation", func(t *testing.T) {
 		testSHA := "existing123"
-		localSHA = func(string) string { return testSHA }
-		remoteHeadSHA = func(string, string) string { return testSHA }
-
-		// Mock GetCleanRepositorySHA to handle case where clean storage doesn't exist yet
-		originalGetCleanSHA := gitpkg.GetCleanRepositorySHA
-		gitpkg.GetCleanRepositorySHA = func(url, branch string) string {
-			// For existing installations, clean storage might not exist
-			// In this case, we'd need to migrate or handle gracefully
-			return testSHA // Assume it matches for compatibility
-		}
-		defer func() {
-			gitpkg.GetCleanRepositorySHA = originalGetCleanSHA
-		}()
 
 		rule := parser.Rule{
 			ID:        "existing-repo",
@@ -251,8 +200,14 @@ func TestCloneHandlerBackwardCompatibility(t *testing.T) {
 			CloneURL:  "https://github.com/existing/repo.git",
 			ClonePath: "~/.existing-repo",
 		}
+		id := platform.RepoID{URL: rule.CloneURL}
 
-		handler := NewCloneHandlerLegacy(rule, "/tmp")
+		// For existing installations, clean storage might not exist yet; when
+		// it exists and matches the remote, they are still considered installed.
+		gitMock := mocks.NewMockGitProvider().
+			WithRemoteSHA(id, platform.SHA(testSHA)).
+			WithStorageSHA(id, platform.SHA(testSHA))
+		handler := NewCloneHandler(rule, "/tmp", newTestGitContainer(gitMock))
 
 		status := &Status{
 			Clones: []CloneStatus{

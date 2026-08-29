@@ -10,7 +10,52 @@ import (
 	"testing"
 
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
+	"github.com/elpic/blueprint/internal/platform/mocks"
 )
+
+// newTestGitContainer builds a handler container whose git provider is the
+// given mock and whose filesystem expands ~ deterministically to
+// /home/testuser — the seam replacement for the old localSHA/remoteHeadSHA
+// function-var stubs.
+func newTestGitContainer(git platform.GitProvider) platform.Container {
+	return platform.NewTestContainer().
+		WithSystemProvider(mocks.NewMockSystemProvider().WithUser("testuser", "1001", "1001", "/home/testuser")).
+		WithGitProvider(git).
+		Build()
+}
+
+// countingGitProvider counts Clone calls and records the last spec, for tests
+// that assert which mode the handler selected.
+type countingGitProvider struct {
+	platform.GitProvider
+	cloneCalls int
+	lastSpec   platform.CloneSpec
+}
+
+func (c *countingGitProvider) Clone(spec platform.CloneSpec) (platform.CloneResult, error) {
+	c.cloneCalls++
+	c.lastSpec = spec
+	return c.GitProvider.Clone(spec)
+}
+
+// sequencedCloneProvider scripts Clone results in call order (falling back to
+// the wrapped mock once the script is exhausted) and records every spec.
+type sequencedCloneProvider struct {
+	*mocks.MockGitProvider
+	results  []platform.CloneResult
+	calls    int
+	lastSpec platform.CloneSpec
+}
+
+func (s *sequencedCloneProvider) Clone(spec platform.CloneSpec) (platform.CloneResult, error) {
+	s.calls++
+	s.lastSpec = spec
+	if s.calls <= len(s.results) {
+		return s.results[s.calls-1], nil
+	}
+	return s.MockGitProvider.Clone(spec)
+}
 
 func TestCloneHandlerGetCommand(t *testing.T) {
 	tests := []struct {
@@ -446,13 +491,6 @@ func TestCloneHandlerDisplayStatusURLPreservation(t *testing.T) {
 }
 
 func TestCloneIsInstalledMatchesSHA(t *testing.T) {
-	origLocal := localSHA
-	origRemote := remoteHeadSHA
-	defer func() {
-		localSHA = origLocal
-		remoteHeadSHA = origRemote
-	}()
-
 	status := Status{
 		Clones: []CloneStatus{
 			{Path: "~/projects/repo", Blueprint: "/tmp/test.bp", OS: "mac"},
@@ -463,29 +501,41 @@ func TestCloneIsInstalledMatchesSHA(t *testing.T) {
 		CloneURL:  "https://github.com/user/repo.git",
 		ClonePath: "~/projects/repo",
 	}
-	h := NewCloneHandlerLegacy(rule, "")
+	id := platform.RepoID{URL: rule.CloneURL}
+	// "~" expands to /home/testuser in the mock filesystem; no clean storage
+	// configured, so IsInstalled falls back to the local SHA.
+	localPath := platform.RepoPath("/home/testuser/projects/repo")
+
+	gitMock := mocks.NewMockGitProvider().
+		WithLocalSHA(localPath, "abc123").
+		WithRemoteSHA(id, "abc123")
+	h := NewCloneHandler(rule, "", newTestGitContainer(gitMock))
 
 	// SHAs match → installed
-	localSHA = func(string) string { return "abc123" }
-	remoteHeadSHA = func(string, string) string { return "abc123" }
 	if !h.IsInstalled(&status, "/tmp/test.bp", "mac") {
 		t.Error("IsInstalled() = false, want true when SHAs match")
 	}
 
 	// SHAs differ → not installed (stale)
-	remoteHeadSHA = func(string, string) string { return "def456" }
+	gitMock.WithRemoteSHA(id, "def456")
 	if h.IsInstalled(&status, "/tmp/test.bp", "mac") {
 		t.Error("IsInstalled() = true, want false when SHAs differ")
 	}
 
-	// Remote unreachable → trust status entry
-	remoteHeadSHA = func(string, string) string { return "" }
+	// Remote reports unknown SHA → trust status entry
+	gitMock.WithRemoteSHA(id, "")
 	if !h.IsInstalled(&status, "/tmp/test.bp", "mac") {
 		t.Error("IsInstalled() = false, want true when remote SHA unavailable")
 	}
 
+	// Remote unreachable (network error) → also trust status entry
+	gitMock.WithUnreachableRemote(id)
+	if !h.IsInstalled(&status, "/tmp/test.bp", "mac") {
+		t.Error("IsInstalled() = false, want true when remote is unreachable")
+	}
+
 	// Not in status → false regardless
-	remoteHeadSHA = func(string, string) string { return "abc123" }
+	gitMock.WithRemoteSHA(id, "abc123")
 	if h.IsInstalled(&Status{}, "/tmp/test.bp", "mac") {
 		t.Error("IsInstalled() = true, want false when not in status")
 	}
