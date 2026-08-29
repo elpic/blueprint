@@ -552,8 +552,14 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 		}
 		remoteSHA := remoteRef(url, ref)
 
-		// If local HEAD already matches remote, skip fetch entirely
+		// If local HEAD already matches remote, skip fetch entirely.
+		// The worktree can still be missing tracked files, and nothing below
+		// would notice — put them back here so the clone can self-heal. Only
+		// deletions are repaired; uncommitted edits are the user's to keep.
 		if remoteSHA != "" && oldSHA == remoteSHA {
+			if err := repairDeletedFiles(path); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not restore deleted files in %s: %v\n", path, err)
+			}
 			return oldSHA, oldSHA, "Already up to date", nil
 		}
 
@@ -667,7 +673,9 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 
 		// go-git's HardReset may leave some working tree files un-checked-out.
 		// Run system git restore to guarantee the working tree matches HEAD.
-		_ = gitRestore(path)
+		if err := gitRestore(path); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not restore working tree in %s: %v\n", path, err)
+		}
 
 		newSHA := targetHash.String()
 		if oldSHA != newSHA {
@@ -695,11 +703,74 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 		}
 	} else {
 		// go-git clone succeeded but may have left files un-checked-out.
-		_ = gitRestore(path)
+		if err := gitRestore(path); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not restore working tree in %s: %v\n", path, err)
+		}
 	}
 
 	newSHA, _ := gitSHA(path)
 	return "", newSHA, "Cloned", nil
+}
+
+// repairDeletedFiles puts back tracked files that HEAD contains but that are
+// missing from the working tree, and touches nothing else: files with
+// uncommitted modifications and untracked files are left byte-for-byte alone.
+//
+// This is deliberately narrow. Blueprint clones hold user work — dotfiles
+// clones carry a locally edited .zshrc, and `clone workdir: true` targets
+// (CloneOrUpdateRepositoryDirect) are repos users develop in — so a blanket
+// `git restore .` would trade a missing-file bug for silent data loss.
+func repairDeletedFiles(path string) error {
+	deleted, err := deletedTrackedPaths(path)
+	if err != nil || len(deleted) == 0 {
+		// Nothing to repair, or a repository we can't inspect — either way
+		// leave it alone rather than failing the clone/update.
+		return nil
+	}
+
+	args := []string{"-C", path, "restore", "--source=HEAD", "--worktree", "--"}
+	args = append(args, deleted...)
+
+	// --source=HEAD repairs deletions that were staged in the index too;
+	// --worktree keeps the index (and therefore any staged work) untouched.
+	restoreCtx, restoreCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer restoreCancel()
+	cmd := exec.CommandContext(restoreCtx, "git", args...) // #nosec G204
+	cmd.Stdout = io.Discard
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git restore %d deleted file(s): %w: %s", len(deleted), err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+// deletedTrackedPaths returns the paths of tracked files that HEAD contains but
+// that are absent from the working tree.
+//
+// It uses `diff-index` rather than `status --porcelain` on purpose: diff-index
+// only walks tracked entries, so it never scans untracked files (cheap on repos
+// full of build artifacts) and never reports the untracked files themselves.
+func deletedTrackedPaths(path string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout())
+	defer cancel()
+	// --diff-filter=D drops every other change, so the output is strictly
+	// alternating status/path records; -z keeps odd path names (spaces, quotes,
+	// newlines) unambiguous.
+	cmd := exec.CommandContext(ctx, "git", "-C", path, "diff-index", "--name-status", "--diff-filter=D", "-z", "HEAD") // #nosec G204
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("diff-index %s: %w", path, err)
+	}
+
+	fields := strings.Split(string(out), "\x00")
+	var deleted []string
+	for i := 0; i+1 < len(fields); i += 2 {
+		if strings.HasPrefix(fields[i], "D") && fields[i+1] != "" {
+			deleted = append(deleted, fields[i+1])
+		}
+	}
+	return deleted, nil
 }
 
 // gitRestore runs system git restore to ensure the working tree is complete.
