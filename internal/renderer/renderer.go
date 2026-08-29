@@ -14,7 +14,7 @@ import (
 	"sync"
 	"text/template"
 
-	gitpkg "github.com/elpic/blueprint/internal/git"
+	giturl "github.com/elpic/blueprint/internal/giturl"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/platform"
 )
@@ -231,16 +231,16 @@ func ResolveTemplatePath(tmplPath string, preferSSH bool) (local, root string, c
 
 	var expanded string
 	if preferSSH {
-		expanded = gitpkg.ExpandShorthandSSH(tmplPath)
+		expanded = giturl.ExpandShorthandSSH(tmplPath)
 	} else {
-		expanded = gitpkg.ExpandShorthand(tmplPath)
+		expanded = giturl.ExpandShorthand(tmplPath)
 	}
 
-	if !gitpkg.IsGitURL(expanded) {
+	if !giturl.IsGitURL(expanded) {
 		return tmplPath, tmplPath, cleanup, nil
 	}
 
-	params := gitpkg.ParseGitURL(expanded)
+	params := giturl.ParseGitURL(expanded)
 	localRepo := blueprintRepoPath(expanded)
 
 	// Direct clone: the cache is a working copy whose files the renderer reads.
@@ -355,7 +355,7 @@ func writeOutput(content, output string) {
 // blueprintRepoPath returns the stable local cache path for a blueprint git URL.
 func blueprintRepoPath(rawURL string) string {
 	homeDir, _ := os.UserHomeDir()
-	params := gitpkg.ParseGitURL(rawURL)
+	params := giturl.ParseGitURL(rawURL)
 	normalized := strings.TrimPrefix(params.URL, "https://")
 	normalized = strings.TrimPrefix(normalized, "http://")
 	normalized = strings.TrimPrefix(normalized, "git://")

@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/elpic/blueprint/internal"
-	gitpkg "github.com/elpic/blueprint/internal/git"
+	giturl "github.com/elpic/blueprint/internal/giturl"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
@@ -242,9 +242,9 @@ func getAutoUninstallRules(currentRules []parser.Rule, blueprintFile string, osN
 // in status.json and prints what would be added or removed on the next apply.
 func PrintDiff(blueprintFile string, preferSSH bool) {
 	if preferSSH {
-		blueprintFile = gitpkg.ExpandShorthandSSH(blueprintFile)
+		blueprintFile = giturl.ExpandShorthandSSH(blueprintFile)
 	} else {
-		blueprintFile = gitpkg.ExpandShorthand(blueprintFile)
+		blueprintFile = giturl.ExpandShorthand(blueprintFile)
 	}
 	setupPath, _, cleanup, err := resolveBlueprintFile(blueprintFile, false, preferSSH)
 	if err != nil {

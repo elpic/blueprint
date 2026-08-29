@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	gitpkg "github.com/elpic/blueprint/internal/git"
+	giturl "github.com/elpic/blueprint/internal/giturl"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/platform"
 )
@@ -1393,17 +1393,17 @@ func TestNormalizeBlueprintHandlesGitURLs(t *testing.T) {
 		{
 			name:     "SSH git URL normalized to HTTPS",
 			input:    "git@github.com:user/repo.git",
-			expected: gitpkg.NormalizeGitURL("git@github.com:user/repo.git"),
+			expected: giturl.NormalizeGitURL("git@github.com:user/repo.git"),
 		},
 		{
 			name:     "HTTPS git URL normalized",
 			input:    "https://github.com/user/repo.git",
-			expected: gitpkg.NormalizeGitURL("https://github.com/user/repo.git"),
+			expected: giturl.NormalizeGitURL("https://github.com/user/repo.git"),
 		},
 		{
 			name:     "SSH and HTTPS normalize to the same value",
 			input:    "git@github.com:user/repo.git",
-			expected: gitpkg.NormalizeGitURL("https://github.com/user/repo.git"),
+			expected: giturl.NormalizeGitURL("https://github.com/user/repo.git"),
 		},
 		{
 			name:     "local path still works",

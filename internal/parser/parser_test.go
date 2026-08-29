@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/elpic/blueprint/internal/git"
+	"github.com/elpic/blueprint/internal/giturl"
 )
 
 // TestParseGPGKeyBasic tests basic GPG key rule parsing
@@ -1312,7 +1312,7 @@ func TestIsGitURLProtocols(t *testing.T) {
 		{"relative.bp", false},
 	}
 	for _, tc := range cases {
-		got := git.IsGitURL(tc.input)
+		got := giturl.IsGitURL(tc.input)
 		if got != tc.want {
 			t.Errorf("IsGitURL(%q) = %v, want %v", tc.input, got, tc.want)
 		}
@@ -1354,7 +1354,7 @@ func TestParseGitURLSSH(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		p := git.ParseGitURL(tc.input)
+		p := giturl.ParseGitURL(tc.input)
 		if p.URL != tc.wantURL {
 			t.Errorf("ParseGitURL(%q).URL = %q, want %q", tc.input, p.URL, tc.wantURL)
 		}
@@ -1410,31 +1410,31 @@ func TestGitIncludeDetection(t *testing.T) {
 		name     string
 		input    string
 		isGitURL bool
-		parseGit git.GitURLParams
+		parseGit giturl.GitURLParams
 	}{
 		{
 			name:     "https github url",
 			input:    "https://github.com/org/repo",
 			isGitURL: true,
-			parseGit: git.GitURLParams{URL: "https://github.com/org/repo", Branch: "", Path: "setup.bp"},
+			parseGit: giturl.GitURLParams{URL: "https://github.com/org/repo", Branch: "", Path: "setup.bp"},
 		},
 		{
 			name:     "https github url with branch and path",
 			input:    "https://github.com/org/repo@main:setup.bp",
 			isGitURL: true,
-			parseGit: git.GitURLParams{URL: "https://github.com/org/repo", Branch: "main", Path: "setup.bp"},
+			parseGit: giturl.GitURLParams{URL: "https://github.com/org/repo", Branch: "main", Path: "setup.bp"},
 		},
 		{
 			name:     "ssh github url",
 			input:    "git@github.com/org/repo.git",
 			isGitURL: true,
-			parseGit: git.GitURLParams{URL: "git@github.com/org/repo.git", Branch: "", Path: "setup.bp"},
+			parseGit: giturl.GitURLParams{URL: "git@github.com/org/repo.git", Branch: "", Path: "setup.bp"},
 		},
 		{
 			name:     "git protocol url",
 			input:    "git://github.com/org/repo.git",
 			isGitURL: true,
-			parseGit: git.GitURLParams{URL: "git://github.com/org/repo.git", Branch: "", Path: "setup.bp"},
+			parseGit: giturl.GitURLParams{URL: "git://github.com/org/repo.git", Branch: "", Path: "setup.bp"},
 		},
 		{
 			name:     "local relative path",
@@ -1456,14 +1456,14 @@ func TestGitIncludeDetection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test URL detection
-			got := git.IsGitURL(tt.input)
+			got := giturl.IsGitURL(tt.input)
 			if got != tt.isGitURL {
-				t.Errorf("git.IsGitURL(%q) = %v, want %v", tt.input, got, tt.isGitURL)
+				t.Errorf("giturl.IsGitURL(%q) = %v, want %v", tt.input, got, tt.isGitURL)
 			}
 
 			// Test URL parsing for git URLs
 			if tt.isGitURL {
-				parsed := git.ParseGitURL(tt.input)
+				parsed := giturl.ParseGitURL(tt.input)
 				if parsed.URL != tt.parseGit.URL {
 					t.Errorf("ParseGitURL(%q).URL = %q, want %q", tt.input, parsed.URL, tt.parseGit.URL)
 				}

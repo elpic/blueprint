@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	gitpkg "github.com/elpic/blueprint/internal/git"
+	giturl "github.com/elpic/blueprint/internal/giturl"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
@@ -16,9 +16,9 @@ import (
 // format is "bash" or "sh". output is "" for stdout or a file path.
 func Export(file string, format string, output string, preferSSH bool) {
 	if preferSSH {
-		file = gitpkg.ExpandShorthandSSH(file)
+		file = giturl.ExpandShorthandSSH(file)
 	} else {
-		file = gitpkg.ExpandShorthand(file)
+		file = giturl.ExpandShorthand(file)
 	}
 
 	setupPath, _, cleanup, err := resolveBlueprintFile(file, false, preferSSH)

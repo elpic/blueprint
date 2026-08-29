@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/elpic/blueprint/internal/git/gitcmd"
+	giturl "github.com/elpic/blueprint/internal/giturl"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -22,228 +23,6 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
-
-// GitURLParams holds parsed git URL information
-type GitURLParams struct {
-	URL    string
-	Branch string
-	Path   string
-}
-
-// shorthandHosts maps @provider: prefixes to their base HTTPS URLs.
-var shorthandHosts = map[string]string{
-	"github":    "https://github.com/",
-	"gitlab":    "https://gitlab.com/",
-	"bitbucket": "https://bitbucket.org/",
-	"codeberg":  "https://codeberg.org/",
-}
-
-// shorthandSSHHosts maps @provider: prefixes to their SSH host (git@<host>:).
-var shorthandSSHHosts = map[string]string{
-	"github":    "git@github.com:",
-	"gitlab":    "git@gitlab.com:",
-	"bitbucket": "git@bitbucket.org:",
-	"codeberg":  "git@codeberg.org:",
-}
-
-// ExpandShorthand expands @provider:user/repo[@branch][:path] to a full HTTPS URL.
-// Returns the input unchanged if it is not a shorthand form.
-//
-// Examples:
-//
-//	@github:user/repo              → https://github.com/user/repo
-//	@gitlab:user/repo@main         → https://gitlab.com/user/repo@main
-//	@bitbucket:user/repo@v1:ci.bp  → https://bitbucket.org/user/repo@v1:ci.bp
-func ExpandShorthand(input string) string {
-	return expandShorthand(input, false)
-}
-
-// ExpandShorthandSSH expands @provider:user/repo[@branch][:path] to an SSH URL.
-// Returns the input unchanged if it is not a shorthand form.
-//
-// Examples:
-//
-//	@github:user/repo      → git@github.com:user/repo
-//	@gitlab:user/repo@main → git@gitlab.com:user/repo@main
-func ExpandShorthandSSH(input string) string {
-	return expandShorthand(input, true)
-}
-
-func expandShorthand(input string, preferSSH bool) string {
-	if !strings.HasPrefix(input, "@") {
-		return input
-	}
-	// Format: @provider:user/repo[@branch][:path]
-	rest := input[1:] // strip leading "@"
-	colonIdx := strings.Index(rest, ":")
-	if colonIdx < 0 {
-		return input // no colon → not a valid shorthand
-	}
-	provider := rest[:colonIdx]
-	// rest[colonIdx+1:] is "user/repo[@branch][:path]"
-	suffix := rest[colonIdx+1:]
-	if preferSSH {
-		base, ok := shorthandSSHHosts[provider]
-		if !ok {
-			return input // unknown provider → pass through unchanged
-		}
-		return base + suffix
-	}
-	base, ok := shorthandHosts[provider]
-	if !ok {
-		return input // unknown provider → pass through unchanged
-	}
-	return base + suffix
-}
-
-// IsGitURL checks if the given string is a git URL
-func IsGitURL(input string) bool {
-	input = ExpandShorthand(input)
-	// Remove branch/path specifiers to check base URL
-	// Format: url[@branch][:path]
-
-	// SSH URLs: git@host:user/repo[@branch][:path]
-	if strings.HasPrefix(input, "git@") {
-		return true
-	}
-
-	// Strip trailing @branch specifier for HTTPS/git:// URLs.
-	beforeBranch := strings.Split(input, "@")[0]
-
-	// HTTP(S) and git:// protocol URLs are always remote git URLs.
-	// Also accept single-slash variants (https:/host/...) that were produced by
-	// a bug in an older version, so they can be recognized and normalized.
-	if strings.HasPrefix(beforeBranch, "https://") ||
-		strings.HasPrefix(beforeBranch, "https:/") ||
-		strings.HasPrefix(beforeBranch, "http://") ||
-		strings.HasPrefix(beforeBranch, "http:/") ||
-		strings.HasPrefix(beforeBranch, "git://") {
-		return true
-	}
-
-	return false
-}
-
-// ParseGitURL parses a git URL with optional branch and path.
-//
-// Supported formats:
-//
-//	https://github.com/user/repo[@branch][:path/to/file.bp]
-//	https://github.com/user/repo.git[@branch][:path/to/file.bp]
-//	git@github.com:user/repo.git[@branch[:path/to/file.bp]]
-//	git://github.com/user/repo.git[@branch][:path/to/file.bp]
-func ParseGitURL(input string) GitURLParams {
-	input = ExpandShorthand(input)
-	params := GitURLParams{
-		Path: "setup.bp", // Default path
-	}
-
-	// SSH URLs: git@host:org/repo.git[@branch[:path]]
-	// We must NOT split on the first "@" because that separates "git" from the host.
-	// The branch/path specifier uses a second "@" that appears only after ".git".
-	if strings.HasPrefix(input, "git@") {
-		baseURL := input
-		// Look for a second "@" that signals a branch specifier (after the repo part)
-		// e.g. git@github.com:org/repo.git@main:path/to/file.bp
-		if gitIdx := strings.Index(input, ".git"); gitIdx >= 0 {
-			afterGit := input[gitIdx+4:] // everything after ".git"
-			baseURL = input[:gitIdx+4]   // git@host:org/repo.git
-			if strings.HasPrefix(afterGit, "@") {
-				// branch (and optionally path) follow
-				branchAndPath := afterGit[1:]
-				if colonIdx := strings.Index(branchAndPath, ":"); colonIdx >= 0 {
-					params.Branch = branchAndPath[:colonIdx]
-					params.Path = branchAndPath[colonIdx+1:]
-				} else {
-					params.Branch = branchAndPath
-				}
-			} else if strings.HasPrefix(afterGit, ":") {
-				// path only, no branch
-				params.Path = afterGit[1:]
-			}
-		}
-		params.URL = baseURL
-		return params
-	}
-
-	// HTTPS / HTTP / git:// URLs: split on first "@" to extract branch specifier.
-	parts := strings.Split(input, "@")
-	baseURL := parts[0]
-
-	if len(parts) > 1 {
-		// Extract branch and possibly path after @
-		branchAndPath := parts[1]
-		if colonIdx := strings.Index(branchAndPath, ":"); colonIdx >= 0 {
-			params.Branch = branchAndPath[:colonIdx]
-			params.Path = branchAndPath[colonIdx+1:]
-		} else {
-			params.Branch = branchAndPath
-		}
-	}
-
-	// Look for path after .git: (only split on colon after .git)
-	if gitIdx := strings.Index(baseURL, ".git"); gitIdx >= 0 {
-		afterGit := baseURL[gitIdx+4:] // afterGit starts after ".git"
-		if strings.HasPrefix(afterGit, ":") {
-			params.Path = afterGit[1:]   // Remove the leading :
-			baseURL = baseURL[:gitIdx+4] // Keep everything up to and including .git
-		}
-	}
-
-	params.URL = baseURL
-	return params
-}
-
-// CloneRepository clones a git repository to a temporary directory
-// and returns the path to the cloned repository
-// Accepts URL with optional branch: url@branch or path: url:path or both: url@branch:path
-// verbose: if true, shows clone progress; if false, hides progress output
-func CloneRepository(input string, verbose bool) (string, string, error) {
-	// Parse URL to extract branch and path
-	params := ParseGitURL(input)
-
-	// Create temporary directory
-	tmpDir, err := os.MkdirTemp("", "blueprint-*")
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create temp directory: %w", err)
-	}
-
-	if verbose {
-		fmt.Printf("Cloning repository: %s\n", params.URL)
-		if params.Branch != "" {
-			fmt.Printf("Branch: %s\n", params.Branch)
-		}
-		if params.Path != "setup.bp" {
-			fmt.Printf("Setup file: %s\n", params.Path)
-		}
-		fmt.Printf("To: %s\n", tmpDir)
-	}
-
-	// Try go-git first; fall back to system git if go-git fails (e.g. SSH agent/passphrase issues).
-	if err = tryClone(tmpDir, params.URL, params.Branch, verbose); err != nil {
-		_ = os.RemoveAll(tmpDir) // clean up any partial clone before retrying
-		args := []string{"clone"}
-		if !verbose {
-			args = append(args, "--quiet")
-		}
-		if params.Branch != "" {
-			args = append(args, "--branch", params.Branch)
-		}
-		args = append(args, params.URL, tmpDir)
-		cloneCmd := exec.Command("git", args...) // #nosec G204
-		cloneCmd.Stdout = os.Stdout
-		cloneCmd.Stderr = os.Stderr
-		if err = cloneCmd.Run(); err != nil {
-			_ = os.RemoveAll(tmpDir)
-			return "", "", fmt.Errorf("failed to clone repository: %w", err)
-		}
-	}
-
-	if verbose {
-		fmt.Printf("Repository cloned successfully\n\n")
-	}
-	return tmpDir, params.Path, nil
-}
 
 // tryClone attempts to clone a repository with the given URL and optional branch
 func tryClone(tmpDir, url, branch string, verbose bool) error {
@@ -341,29 +120,6 @@ func sshAuth() (ssh.AuthMethod, error) {
 	return nil, fmt.Errorf("no usable SSH authentication: SSH agent unavailable and no key files found in ~/.ssh")
 }
 
-// FindSetupFile looks for a setup file in the given directory
-// If path is not provided, defaults to "setup.bp"
-func FindSetupFile(dir, path string) (string, error) {
-	if path == "" {
-		path = "setup.bp"
-	}
-
-	setupPath := filepath.Join(dir, path)
-	if _, err := os.Stat(setupPath); err == nil {
-		return setupPath, nil
-	}
-
-	return "", fmt.Errorf("setup file not found: %s in %s", path, dir)
-}
-
-// CleanupRepository removes the temporary repository directory
-func CleanupRepository(path string) error {
-	if path == "" {
-		return nil
-	}
-	return os.RemoveAll(path)
-}
-
 // LocalSHA reads the HEAD SHA of a local repository at the given path using go-git.
 // Returns empty string if the path is not a valid git repository.
 func LocalSHA(path string) string {
@@ -385,7 +141,7 @@ func RemoteHeadSHA(url, branch string) string {
 
 // RemoteHeadSHAWithError returns the remote HEAD SHA, propagating any error to the caller.
 func RemoteHeadSHAWithError(url, branch string) (string, error) {
-	url = ExpandShorthand(url)
+	url = giturl.ExpandShorthand(url)
 	ref := "HEAD"
 	if branch != "" {
 		ref = "refs/heads/" + branch
@@ -531,7 +287,7 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 // exported wrappers keep their historical 4-value signatures.
 func cloneOrUpdateRepository(url, path, branch string, notes *[]string) (string, string, string, error) {
 	// Expand @github: shorthand to full URL
-	url = ExpandShorthand(url)
+	url = giturl.ExpandShorthand(url)
 
 	// Expand home directory
 	if strings.HasPrefix(path, "~/") {
@@ -987,7 +743,7 @@ func writeFileAtomic(target string, data []byte, perm os.FileMode) error {
 
 // generateRepositoryID creates a unique ID for a repository based on URL and branch
 func generateRepositoryID(url, branch string) string {
-	normalizedURL := NormalizeGitURL(url)
+	normalizedURL := giturl.NormalizeGitURL(url)
 	key := normalizedURL
 	if branch != "" {
 		key += "@" + branch
@@ -998,58 +754,15 @@ func generateRepositoryID(url, branch string) string {
 	return fmt.Sprintf("%x", hasher.Sum(nil))[:16] // Use first 16 chars of hash
 }
 
-// StripBranch removes the @branch and :path specifiers from a git URL,
-// returning just the base repository URL. This is useful for comparing
-// whether two blueprint URLs point to the same repo regardless of branch.
-func StripBranch(input string) string {
-	// SSH URLs: git@host:user/repo.git@branch:path
-	if strings.HasPrefix(input, "git@") {
-		if gitIdx := strings.Index(input, ".git"); gitIdx >= 0 {
-			return input[:gitIdx+4] // keep up to and including .git
-		}
-		// No .git suffix — strip trailing @branch if present (second @ only)
-		return input
-	}
-
-	// HTTPS/HTTP/git:// URLs: url@branch:path — strip @branch and beyond
-	if idx := strings.Index(input, "@"); idx > 0 {
-		return input[:idx]
-	}
-
-	return input
-}
-
-// NormalizeGitURL normalizes a git URL for consistent identification.
-// It converts SSH URLs to HTTPS and lowercases the result.
-func NormalizeGitURL(url string) string {
-	// Remove .git suffix if present
-	url = strings.TrimSuffix(url, ".git")
-
-	// Repair single-slash http(s):/ → canonical double-slash form before further processing.
-	// These were produced by a bug in an older version of the code.
-	if strings.HasPrefix(url, "https:/") && !strings.HasPrefix(url, "https://") {
-		url = "https://" + url[len("https:/"):]
-	} else if strings.HasPrefix(url, "http:/") && !strings.HasPrefix(url, "http://") {
-		url = "http://" + url[len("http:/"):]
-	}
-
-	// Convert SSH to HTTPS for normalization (for ID generation only)
-	if strings.HasPrefix(url, "git@") {
-		// git@github.com:user/repo -> https://github.com/user/repo
-		parts := strings.Split(url, ":")
-		if len(parts) >= 2 {
-			host := strings.TrimPrefix(parts[0], "git@")
-			path := strings.Join(parts[1:], ":")
-			url = "https://" + host + "/" + path
-		}
-	}
-
-	return strings.ToLower(url)
-}
-
 // getRepositoryStoragePath returns the path where a repository should be stored
 func getRepositoryStoragePath(url, branch string) (string, error) {
-	return RepositoryStoragePath(url, branch)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	repoID := generateRepositoryID(url, branch)
+	return filepath.Join(homeDir, ".blueprint", "repos", repoID), nil
 }
 
 // CheckoutSHA checks out a specific commit SHA in the repository at localPath.
@@ -1067,18 +780,6 @@ func CheckoutSHA(localPath, sha string) error {
 		Hash:  plumbing.NewHash(sha),
 		Force: true,
 	})
-}
-
-// RepositoryStoragePath returns the local cache path for a blueprint repository.
-// This is where `blueprint apply <git-url>` stores the cloned repo.
-func RepositoryStoragePath(url, branch string) (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	repoID := generateRepositoryID(url, branch)
-	return filepath.Join(homeDir, ".blueprint", "repos", repoID), nil
 }
 
 // copyRepositoryContents copies the contents of a repository (excluding .git) from source to destination
@@ -1348,7 +1049,7 @@ const fullFetchRefspec = "+refs/heads/*:refs/remotes/origin/*"
 //
 // Returns (oldSHA, newSHA, status, error) — same contract as CloneOrUpdateRepository.
 func CloneOrUpdateRepositoryBare(url, targetPath, branch string) (string, string, string, error) {
-	url = ExpandShorthand(url)
+	url = giturl.ExpandShorthand(url)
 
 	expanded, err := expandHomePath(targetPath)
 	if err != nil {
