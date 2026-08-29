@@ -138,7 +138,9 @@ Flags:
   --only <id>         Only run the rule with the given id
   --skip-decrypt      Skip encrypted rules (useful when no password is available)
   --prefer-ssh        Prefer SSH over HTTPS for git operations
-  --no-status         Do not write to ~/.blueprint/status.json
+  --no-status         Do not store status: skip writing ~/.blueprint/status.json.
+                      Resources from this run go untracked, so a later apply will
+                      not auto-uninstall them. History is still recorded.
   --var KEY=VALUE     Override or set a blueprint variable (can be repeated)
   --debug             Enable debug logging (printed to stderr)
   --help, -h          Show this help message
@@ -147,6 +149,7 @@ Examples:
   blueprint apply setup.bp
   blueprint apply setup.bp --skip-group expensive --prefer-ssh
   blueprint apply setup.bp --only my-rule
+  blueprint apply setup.bp --no-status
   blueprint apply @github:elpic/blueprint --var WORKSPACE=~/other/path
   blueprint apply setup.bp --debug
 `)
