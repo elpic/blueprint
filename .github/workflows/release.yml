@@ -94,12 +94,15 @@ jobs:
           LATEST_TAG=${{ steps.latest_tag.outputs.tag }}
           CHANGELOG=$(git log ${LATEST_TAG}..HEAD --pretty=format:"- %s (%h)" | grep -E "^- (feat|fix|refactor|perf|docs)(\(.*\))?:" || echo "")
 
-          # Escape newlines for output
-          CHANGELOG="${CHANGELOG//'%'/'%25'}"
-          CHANGELOG="${CHANGELOG//$'\n'/'%0A'}"
-          CHANGELOG="${CHANGELOG//$'\r'/'%0D'}"
-
-          echo "changelog=$CHANGELOG" >> $GITHUB_OUTPUT
+          # Multi-line outputs need the heredoc delimiter syntax. The %0A
+          # escaping below was the workaround for the deprecated ::set-output,
+          # which decoded it — $GITHUB_OUTPUT does not, so encoded newlines
+          # (and %25-escaped percent signs) reached the release body literally.
+          {
+            echo 'changelog<<CHANGELOG_EOF'
+            echo "$CHANGELOG"
+            echo 'CHANGELOG_EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create git tag
         if: steps.version.outputs.should_release == 'true'
