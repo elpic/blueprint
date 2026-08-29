@@ -41,24 +41,24 @@ var approvedSites = map[string]string{
 	// --- Permanent: the bare:/worktree feature -------------------------------
 	// go-git v5 has no worktree support at all, so `git worktree add` cannot be
 	// expressed with it. The whole bare path runs on system git by design.
-	"internal/git/git.go:1443": "bare/worktree feature: second refspec-repair site (ensureFetchRefspec); go-git cannot express `git worktree`",
+	"internal/git/git.go:1450": "bare/worktree feature: second refspec-repair site (ensureFetchRefspec); go-git cannot express `git worktree`",
 
 	// --- Permanent: clone/fetch fallbacks ------------------------------------
 	// Each of these arms runs only after go-git has already failed. They cover
 	// SSH agent, OS keychain and other auth cases go-git handles poorly.
 	"internal/git/git.go:234": "clone fallback: system git clone after go-git tryClone fails (SSH agent/keychain auth)",
-	"internal/git/git.go:688": "clone fallback: system git clone after go-git PlainClone fails (SSH agent/keychain auth)",
-	"internal/git/git.go:597": "fetch fallback: system git fetch after go-git Fetch fails (SSH agent/keychain auth)",
+	"internal/git/git.go:695": "clone fallback: system git clone after go-git PlainClone fails (SSH agent/keychain auth)",
+	"internal/git/git.go:604": "fetch fallback: system git fetch after go-git Fetch fails (SSH agent/keychain auth)",
 
 	// --- Permanent: ls-remote fallback ---------------------------------------
 	// remoteRefWithError already tries go-git remote.List (and resolves
 	// symrefs) first; this is the arm reached only when that fails.
-	"internal/git/git.go:496": "ls-remote fallback: reached only after go-git remote.List fails; symref resolution already handled in go-git",
+	"internal/git/git.go:503": "ls-remote fallback: reached only after go-git remote.List fails; symref resolution already handled in go-git",
 
 	// --- TODO: migrate (#030) ------------------------------------------------
-	"internal/git/git.go:608": "TODO: migrate (#030) remote.origin.fetch refspec repair -> repo.SetConfig",
-	"internal/git/git.go:965": "TODO: migrate (#030) restore in repairDeletedFiles -> go-git blob write",
-	"internal/git/git.go:939": "TODO: migrate (#030) diff-index deleted-path detection -> go-git HEAD-tree walk + os.Lstat",
+	"internal/git/git.go:615": "TODO: migrate (#030) remote.origin.fetch refspec repair -> repo.SetConfig",
+	"internal/git/git.go:972": "TODO: migrate (#030) restore in repairDeletedFiles -> go-git blob write",
+	"internal/git/git.go:946": "TODO: migrate (#030) diff-index deleted-path detection -> go-git HEAD-tree walk + os.Lstat",
 }
 
 // execAllowedDuringMigration grants a file-level exemption from the primary

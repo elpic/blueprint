@@ -457,7 +457,14 @@ func remoteRefWithError(url, ref string) (string, error) {
 	}
 	ch := make(chan listResult, 1)
 	go func() {
-		r, e := remote.List(&git.ListOptions{Auth: auth})
+		// Timeout must be passed explicitly: go-git's remote.go hardcodes
+		// `timeout = 10` (seconds) when ListOptions.Timeout is 0, so without
+		// this gitTimeout() would only bound our select below, not the list
+		// goroutine itself.
+		r, e := remote.List(&git.ListOptions{
+			Auth:    auth,
+			Timeout: int(gitTimeout().Seconds()),
+		})
 		ch <- listResult{r, e}
 	}()
 
