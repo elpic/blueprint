@@ -483,21 +483,39 @@ var etcShellsReader = func() ([]byte, error) {
 }
 
 // sudoAppendToEtcShells appends the given content to /etc/shells via
-// `sudo tee -a /etc/shells`, feeding content on stdin so no temp file is
-// needed. Overridable for testing so tests never invoke real sudo.
+// `sudo -n tee -a /etc/shells`, feeding content on stdin so no temp file is
+// needed. The -n flag makes sudo non-interactive: if the sudo timestamp has
+// expired (e.g. after a long run with slow homebrew installs), sudo fails
+// immediately instead of prompting for a password mid-stream — the password
+// was already collected upfront by the engine's promptForSudoPassword.
+// Overridable for testing so tests never invoke real sudo.
 var sudoAppendToEtcShells = func(content string) (string, error) {
-	cmd := exec.Command("sudo", "tee", "-a", "/etc/shells")
+	cmd := exec.Command("sudo", "-n", "tee", "-a", "/etc/shells")
 	cmd.Stdin = strings.NewReader(content)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 
-// chshRunner runs `chsh -s <shellPath>` to change the login shell.
-// Overridable for testing so tests don't mutate the real login shell.
+// chshRunner runs `chsh -s <shellPath>` to change the login shell. On macOS,
+// chsh prompts for the user's PAM password mid-stream — to avoid that, we try
+// `sudo -n chsh` first (the sudo session was pre-warmed upfront by the engine
+// when NeedsSudo() returned true), and fall back to plain `chsh` if sudo is
+// not available (e.g. the shell was already in /etc/shells and no upfront
+// sudo prompt happened). Overridable for testing so tests don't mutate the
+// real login shell.
 var chshRunner = func(shellPath string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "chsh", "-s", filepath.Clean(shellPath))
+	cleaned := filepath.Clean(shellPath)
+	// Try sudo -n chsh first to reuse the pre-warmed sudo session (avoids
+	// macOS PAM password prompt mid-stream). If sudo -n is not available
+	// (no timestamp cached), fall back to plain chsh.
+	if exec.Command("sudo", "-n", "true").Run() == nil {
+		cmd := exec.CommandContext(ctx, "sudo", "-n", "chsh", "-s", cleaned)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	cmd := exec.CommandContext(ctx, "chsh", "-s", cleaned)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
