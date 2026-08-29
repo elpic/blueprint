@@ -661,9 +661,9 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 		}
 
 		// go-git's HardReset may leave some working tree files un-checked-out.
-		// Run system git restore to guarantee the working tree matches HEAD.
-		if err := gitRestore(path); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not restore working tree in %s: %v\n", path, err)
+		// Repair the deletions it missed.
+		if err := repairDeletedFiles(path); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not restore deleted files in %s: %v\n", path, err)
 		}
 
 		newSHA := targetHash.String()
@@ -692,8 +692,8 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 		}
 	} else {
 		// go-git clone succeeded but may have left files un-checked-out.
-		if err := gitRestore(path); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not restore working tree in %s: %v\n", path, err)
+		if err := repairDeletedFiles(path); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not restore deleted files in %s: %v\n", path, err)
 		}
 	}
 
@@ -709,6 +709,13 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 // clones carry a locally edited .zshrc, and `clone workdir: true` targets
 // (CloneOrUpdateRepositoryDirect) are repos users develop in — so a blanket
 // `git restore .` would trade a missing-file bug for silent data loss.
+//
+// It is also the *only* worktree-repair helper. CloneOrUpdateRepository calls
+// it on all three exits — "Already up to date", post-HardReset "Updated" and
+// "Cloned" — because go-git's HardReset and PlainClone can both leave files
+// un-checked-out, and the early return would otherwise skip repair entirely.
+// One helper at every exit means the three statuses no longer differ in
+// whether the worktree was made whole: that difference is what produced #026.
 func repairDeletedFiles(path string) error {
 	deleted, err := deletedTrackedPaths(path)
 	if err != nil || len(deleted) == 0 {
@@ -760,17 +767,6 @@ func deletedTrackedPaths(path string) ([]string, error) {
 		}
 	}
 	return deleted, nil
-}
-
-// gitRestore runs system git restore to ensure the working tree is complete.
-// go-git's HardReset and PlainClone can leave files un-checked-out (known go-git issue).
-func gitRestore(path string) error {
-	restoreCtx, restoreCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer restoreCancel()
-	cmd := exec.CommandContext(restoreCtx, "git", "-C", path, "restore", ".") // #nosec G204
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
-	return cmd.Run()
 }
 
 // generateRepositoryID creates a unique ID for a repository based on URL and branch

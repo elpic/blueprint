@@ -57,10 +57,9 @@ var approvedSites = map[string]string{
 
 	// --- TODO: migrate (#030) ------------------------------------------------
 	"internal/git/git.go:607": "TODO: migrate (#030) remote.origin.fetch refspec repair -> repo.SetConfig",
-	"internal/git/git.go:727": "TODO: migrate (#030) restore in repairDeletedFiles -> go-git blob write",
-	"internal/git/git.go:749": "TODO: migrate (#030) diff-index deleted-path detection -> go-git HEAD-tree walk + os.Lstat",
-	"internal/git/git.go:770": "TODO: migrate (#030) gitRestore -> delete, call unified repairDeletedFiles",
-}
+	"internal/git/git.go:734": "TODO: migrate (#030) restore in repairDeletedFiles -> go-git blob write",
+	"internal/git/git.go:756": "TODO: migrate (#030) diff-index deleted-path detection -> go-git HEAD-tree walk + os.Lstat",
+	}
 
 // execAllowedDuringMigration grants a file-level exemption from the primary
 // invariant while #030 is in flight, each with a mandatory reason. It exists
@@ -71,7 +70,7 @@ var approvedSites = map[string]string{
 // Every entry is deleted when its file's last exec site is ported, at which
 // point layer (a) becomes absolute.
 var execAllowedDuringMigration = map[string]string{
-	"internal/git/git.go": "TODO: migrate (#030) — still imports os/exec for 4 internal sites (607 refspec repair, 727 restore, 749 diff-index, 770 gitRestore); delete this entry when the last is ported to go-git",
+	"internal/git/git.go": "TODO: migrate (#030) — still imports os/exec for 3 internal sites (607 refspec repair, 734 restore, 756 diff-index); delete this entry when the last is ported to go-git",
 }
 
 // gitSubsystem is the directory tree layer (a) governs: where blueprint's own
