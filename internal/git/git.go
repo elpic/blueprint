@@ -886,7 +886,8 @@ func restoreFileFromCommit(commit *object.Commit, worktreePath, name string) err
 
 	target := filepath.Join(worktreePath, filepath.FromSlash(name))
 	// A deleted directory takes its parent directories with it.
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+	// 0750 matches the permissions every other MkdirAll in this file uses.
+	if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
 		return fmt.Errorf("create parent directory for %s: %w", name, err)
 	}
 
