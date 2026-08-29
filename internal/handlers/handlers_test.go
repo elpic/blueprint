@@ -8,6 +8,7 @@ import (
 
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
 )
 
 // TestGetDependencyKeyHelper tests the helper function that centralizes ID checking
@@ -139,7 +140,7 @@ func TestKeyProviderInterface(t *testing.T) {
 		},
 		{
 			name:    "DotfilesHandler implements KeyProvider",
-			handler: NewDotfilesHandler(parser.Rule{DotfilesURL: "https://github.com/user/dotfiles", DotfilesPath: "~/.blueprint/dotfiles/dotfiles"}, ""),
+			handler: NewDotfilesHandler(parser.Rule{DotfilesURL: "https://github.com/user/dotfiles", DotfilesPath: "~/.blueprint/dotfiles/dotfiles"}, "", platform.NewContainer()),
 		},
 		{
 			name:    "MiseHandler implements KeyProvider",
@@ -248,7 +249,7 @@ func TestDisplayProviderInterface(t *testing.T) {
 		},
 		{
 			name:              "DotfilesHandler provides URL display",
-			handler:           NewDotfilesHandler(parser.Rule{DotfilesURL: "https://github.com/user/dotfiles", DotfilesPath: "~/.blueprint/dotfiles/dotfiles"}, ""),
+			handler:           NewDotfilesHandler(parser.Rule{DotfilesURL: "https://github.com/user/dotfiles", DotfilesPath: "~/.blueprint/dotfiles/dotfiles"}, "", platform.NewContainer()),
 			expectedFormatted: "https://github.com/user/dotfiles",
 			isUninstall:       false,
 		},
@@ -384,7 +385,7 @@ func TestStateProviderInterface(t *testing.T) {
 		},
 		{
 			name:            "DotfilesHandler provides dotfiles state",
-			handler:         NewDotfilesHandler(parser.Rule{DotfilesURL: "https://github.com/user/dotfiles", DotfilesPath: "~/.blueprint/dotfiles/dotfiles"}, ""),
+			handler:         NewDotfilesHandler(parser.Rule{DotfilesURL: "https://github.com/user/dotfiles", DotfilesPath: "~/.blueprint/dotfiles/dotfiles"}, "", platform.NewContainer()),
 			expectedSummary: "https://github.com/user/dotfiles",
 			isUninstall:     false,
 			expectedKeys:    []string{"summary", "url", "path"},
@@ -1338,7 +1339,7 @@ func TestStatusProviderInterface(t *testing.T) {
 		},
 		{
 			name:              "DotfilesHandler implements StatusProvider",
-			handler:           NewDotfilesHandler(parser.Rule{DotfilesURL: "https://github.com/user/dotfiles", DotfilesPath: "~/.blueprint/dotfiles/dotfiles"}, ""),
+			handler:           NewDotfilesHandler(parser.Rule{DotfilesURL: "https://github.com/user/dotfiles", DotfilesPath: "~/.blueprint/dotfiles/dotfiles"}, "", platform.NewContainer()),
 			currentRules:      []parser.Rule{},
 			expectedRuleCount: 0,
 		},

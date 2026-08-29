@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
 )
 
 func TestDotfilesHandlerGetCommand(t *testing.T) {
@@ -37,7 +38,7 @@ func TestDotfilesHandlerGetCommand(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := NewDotfilesHandler(tt.rule, "")
+			h := NewDotfilesHandler(tt.rule, "", platform.NewContainer())
 			if got := h.GetCommand(); got != tt.want {
 				t.Errorf("GetCommand() = %q, want %q", got, tt.want)
 			}
@@ -50,7 +51,7 @@ func TestDotfilesHandlerGetDependencyKey(t *testing.T) {
 		h := NewDotfilesHandler(parser.Rule{
 			DotfilesURL: "https://github.com/user/dotfiles",
 			ID:          "my-dots",
-		}, "")
+		}, "", platform.NewContainer())
 		if got := h.GetDependencyKey(); got != "my-dots" {
 			t.Errorf("GetDependencyKey() = %q, want %q", got, "my-dots")
 		}
@@ -58,7 +59,7 @@ func TestDotfilesHandlerGetDependencyKey(t *testing.T) {
 	t.Run("falls back to URL", func(t *testing.T) {
 		h := NewDotfilesHandler(parser.Rule{
 			DotfilesURL: "https://github.com/user/dotfiles",
-		}, "")
+		}, "", platform.NewContainer())
 		if got := h.GetDependencyKey(); got != "https://github.com/user/dotfiles" {
 			t.Errorf("GetDependencyKey() = %q, want %q", got, "https://github.com/user/dotfiles")
 		}
@@ -70,7 +71,7 @@ func TestDotfilesHandlerDown_PathNotExist(t *testing.T) {
 		Action:       "dotfiles",
 		DotfilesURL:  "https://github.com/user/dotfiles",
 		DotfilesPath: "/nonexistent/path/.dotfiles",
-	}, "")
+	}, "", platform.NewContainer())
 	msg, err := h.Down()
 	if err != nil {
 		t.Fatalf("Down() unexpected error: %v", err)
@@ -85,7 +86,7 @@ func TestDotfilesHandlerGetDisplayDetails(t *testing.T) {
 	h := NewDotfilesHandler(parser.Rule{
 		DotfilesURL:  "https://github.com/user/dotfiles",
 		DotfilesPath: "~/.dotfiles",
-	}, "")
+	}, "", platform.NewContainer())
 	got := h.GetDisplayDetails(false)
 	if !strings.Contains(got, "dotfiles") {
 		t.Errorf("GetDisplayDetails() = %q, expected to contain path info", got)
@@ -190,7 +191,7 @@ func TestDotfilesHandlerIsInstalled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := NewDotfilesHandler(tt.rule, "/tmp")
+			h := NewDotfilesHandler(tt.rule, "/tmp", platform.NewContainer())
 			got := h.IsInstalled(&tt.status, "/tmp/test.bp", "linux")
 			if got != tt.expected {
 				t.Errorf("IsInstalled() = %v, want %v", got, tt.expected)
@@ -291,7 +292,7 @@ func TestDotfilesFindUninstallRulesNormalizesURLs(t *testing.T) {
 		},
 	}
 
-	handler := NewDotfilesHandler(currentRules[0], "/bp/setup.bp")
+	handler := NewDotfilesHandler(currentRules[0], "/bp/setup.bp", platform.NewContainer())
 	rules := handler.FindUninstallRules(&status, currentRules, "/bp/setup.bp", "linux")
 
 	// Since the URLs are normalized to the same value, the repo should NOT be marked for uninstall
@@ -323,7 +324,7 @@ func TestDotfilesIsInstalledNormalizesURLs(t *testing.T) {
 		DotfilesPath: "~/.dotfiles",
 	}
 
-	handler := NewDotfilesHandler(rule, "/bp/setup.bp")
+	handler := NewDotfilesHandler(rule, "/bp/setup.bp", platform.NewContainer())
 
 	// Should find the installed dotfiles because URLs are normalized for comparison
 	if !handler.IsInstalled(&status, "/bp/setup.bp", "linux") {
@@ -394,7 +395,7 @@ func TestUpdateRemovesOldSymlinksAndCreatesNew(t *testing.T) {
 
 	// The old symlink is now broken but still points into the clone.
 	// removeAllManagedSymlinks should remove it.
-	h := NewDotfilesHandler(parser.Rule{Action: "dotfiles"}, "")
+	h := NewDotfilesHandler(parser.Rule{Action: "dotfiles"}, "", platform.NewContainer())
 	removed := h.removeAllManagedSymlinks(cloneDir, homeDir)
 	if removed != 1 {
 		t.Errorf("removeAllManagedSymlinks() removed %d, want 1", removed)
@@ -449,7 +450,7 @@ func TestNonManagedSymlinksPreservedDuringUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h := NewDotfilesHandler(parser.Rule{Action: "dotfiles"}, "")
+	h := NewDotfilesHandler(parser.Rule{Action: "dotfiles"}, "", platform.NewContainer())
 	removed := h.removeAllManagedSymlinks(cloneDir, homeDir)
 	if removed != 1 {
 		t.Errorf("removeAllManagedSymlinks() removed %d, want 1 (only managed)", removed)
@@ -528,7 +529,7 @@ func TestIsInstalledReturnsFalseWhenSymlinkMissing(t *testing.T) {
 		Action:       "dotfiles",
 		DotfilesURL:  "https://github.com/user/dotfiles.git",
 		DotfilesPath: cloneDir,
-	}, "")
+	}, "", platform.NewContainer())
 
 	if h.IsInstalled(&status, "/tmp/test.bp", "linux") {
 		t.Error("IsInstalled() should return false when a symlink from Links is missing")
@@ -561,7 +562,7 @@ func TestDotfilesLinksForDiff(t *testing.T) {
 		DotfilesURL:  "git@github.com:user/dotfiles.git",
 		DotfilesPath: cloneDir,
 	}
-	h := NewDotfilesHandler(rule, cloneDir)
+	h := NewDotfilesHandler(rule, cloneDir, platform.NewContainer())
 	links := DotfilesLinksForDiff(h, homeDir)
 
 	if len(links) != 1 {
@@ -579,7 +580,7 @@ func TestDotfilesLinksForDiffEmptyClone(t *testing.T) {
 		DotfilesURL:  "git@github.com:user/dotfiles.git",
 		DotfilesPath: "/nonexistent/path",
 	}
-	h := NewDotfilesHandler(rule, "/nonexistent/path")
+	h := NewDotfilesHandler(rule, "/nonexistent/path", platform.NewContainer())
 	links := DotfilesLinksForDiff(h, t.TempDir())
 	if len(links) != 0 {
 		t.Errorf("DotfilesLinksForDiff() returned %d links for missing clone, want 0", len(links))
@@ -603,7 +604,7 @@ func TestDotfilesLinksForDiffSkipsExistingSymlinks(t *testing.T) {
 	}
 
 	rule := parser.Rule{Action: "dotfiles", DotfilesURL: "git@github.com:user/dots.git", DotfilesPath: cloneDir}
-	h := NewDotfilesHandler(rule, cloneDir)
+	h := NewDotfilesHandler(rule, cloneDir, platform.NewContainer())
 	links := DotfilesLinksForDiff(h, homeDir)
 	if len(links) != 0 {
 		t.Errorf("expected no diff links when symlink is correct, got %v", links)
@@ -651,7 +652,7 @@ func TestBrokenSymlinksCleanedUpOnUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h := NewDotfilesHandler(parser.Rule{Action: "dotfiles"}, "")
+	h := NewDotfilesHandler(parser.Rule{Action: "dotfiles"}, "", platform.NewContainer())
 	removed := h.removeAllManagedSymlinks(cloneDir, homeDir)
 	if removed != 2 {
 		t.Errorf("removeAllManagedSymlinks() removed %d broken symlinks, want 2", removed)
