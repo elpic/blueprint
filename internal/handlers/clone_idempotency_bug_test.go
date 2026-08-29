@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
+	"github.com/elpic/blueprint/internal/platform/mocks"
 )
 
 // TestCloneIdempotencyBug reproduces the oh-my-zsh clone idempotency issue
@@ -13,17 +14,10 @@ func TestCloneIdempotencyBug(t *testing.T) {
 	// Test to reproduce: Rule #10 (oh-my-zsh clone) runs again on subsequent runs,
 	// overwriting directory and deleting antigen.zsh from Rule #11
 
-	t.Run("Normal case should work", func(t *testing.T) {
-		// Store original functions
-		origLocal := localSHA
-		origRemote := remoteHeadSHA
-		origCleanSHA := gitpkg.GetCleanRepositorySHA
-		defer func() {
-			localSHA = origLocal
-			remoteHeadSHA = origRemote
-			gitpkg.GetCleanRepositorySHA = origCleanSHA
-		}()
+	// "~" expands to /home/testuser in the mock filesystem
+	localPath := platform.RepoPath("/home/testuser/.oh-my-zsh")
 
+	newHandler := func(git *mocks.MockGitProvider) *CloneHandler {
 		rule := parser.Rule{
 			ID:        "oh-my-zsh",
 			Action:    "clone",
@@ -31,14 +25,17 @@ func TestCloneIdempotencyBug(t *testing.T) {
 			ClonePath: "~/.oh-my-zsh",
 			Branch:    "",
 		}
+		return NewCloneHandler(rule, "/tmp", newTestGitContainer(git))
+	}
 
-		handler := NewCloneHandlerLegacy(rule, "/tmp")
-
-		// Mock consistent SHAs (repository unchanged)
+	t.Run("Normal case should work", func(t *testing.T) {
+		// Mock consistent SHAs (repository unchanged); no clean storage
+		// configured, so IsInstalled falls back to the local SHA
 		testSHA := "abc123456789"
-		localSHA = func(string) string { return testSHA }
-		remoteHeadSHA = func(string, string) string { return testSHA }
-		gitpkg.GetCleanRepositorySHA = func(url, branch string) string { return "" } // No clean storage, fall back to localSHA
+		gitMock := mocks.NewMockGitProvider().
+			WithLocalSHA(localPath, platform.SHA(testSHA)).
+			WithRemoteSHA(platform.RepoID{URL: "https://github.com/ohmyzsh/ohmyzsh.git"}, platform.SHA(testSHA))
+		handler := newHandler(gitMock)
 
 		status := &Status{
 			Clones: []CloneStatus{
@@ -62,25 +59,10 @@ func TestCloneIdempotencyBug(t *testing.T) {
 
 	t.Run("Network failure should trust status", func(t *testing.T) {
 		// This tests the fallback behavior when remote SHA can't be fetched
-		origLocal := localSHA
-		origRemote := remoteHeadSHA
-		defer func() {
-			localSHA = origLocal
-			remoteHeadSHA = origRemote
-		}()
-
-		rule := parser.Rule{
-			ID:        "oh-my-zsh",
-			Action:    "clone",
-			CloneURL:  "https://github.com/ohmyzsh/ohmyzsh.git",
-			ClonePath: "~/.oh-my-zsh",
-		}
-
-		handler := NewCloneHandlerLegacy(rule, "/tmp")
-
-		// Mock network failure (empty remote SHA) but valid local SHA
-		localSHA = func(string) string { return "abc123456789" }
-		remoteHeadSHA = func(string, string) string { return "" } // Network failure
+		gitMock := mocks.NewMockGitProvider().
+			WithLocalSHA(localPath, "abc123456789").
+			WithRemoteSHA(platform.RepoID{URL: "https://github.com/ohmyzsh/ohmyzsh.git"}, "") // Network failure
+		handler := newHandler(gitMock)
 
 		status := &Status{
 			Clones: []CloneStatus{
@@ -104,25 +86,10 @@ func TestCloneIdempotencyBug(t *testing.T) {
 
 	t.Run("Local repository corruption should cause re-clone", func(t *testing.T) {
 		// This tests what happens when local repository is corrupted
-		origLocal := localSHA
-		origRemote := remoteHeadSHA
-		defer func() {
-			localSHA = origLocal
-			remoteHeadSHA = origRemote
-		}()
-
-		rule := parser.Rule{
-			ID:        "oh-my-zsh",
-			Action:    "clone",
-			CloneURL:  "https://github.com/ohmyzsh/ohmyzsh.git",
-			ClonePath: "~/.oh-my-zsh",
-		}
-
-		handler := NewCloneHandlerLegacy(rule, "/tmp")
-
-		// Mock local repository corruption (empty local SHA) but valid remote SHA
-		localSHA = func(string) string { return "" } // Corrupted/missing .git
-		remoteHeadSHA = func(string, string) string { return "def987654321" }
+		gitMock := mocks.NewMockGitProvider().
+			WithLocalSHA(localPath, ""). // Corrupted/missing .git
+			WithRemoteSHA(platform.RepoID{URL: "https://github.com/ohmyzsh/ohmyzsh.git"}, "def987654321")
+		handler := newHandler(gitMock)
 
 		status := &Status{
 			Clones: []CloneStatus{
@@ -148,14 +115,7 @@ func TestCloneIdempotencyBug(t *testing.T) {
 	})
 
 	t.Run("Missing status entry should cause clone", func(t *testing.T) {
-		rule := parser.Rule{
-			ID:        "oh-my-zsh",
-			Action:    "clone",
-			CloneURL:  "https://github.com/ohmyzsh/ohmyzsh.git",
-			ClonePath: "~/.oh-my-zsh",
-		}
-
-		handler := NewCloneHandlerLegacy(rule, "/tmp")
+		handler := newHandler(mocks.NewMockGitProvider())
 
 		// Empty status (no clone recorded)
 		status := &Status{Clones: []CloneStatus{}}
@@ -170,28 +130,11 @@ func TestCloneIdempotencyBug(t *testing.T) {
 	})
 
 	t.Run("Path normalization issues", func(t *testing.T) {
-		origLocal := localSHA
-		origRemote := remoteHeadSHA
-		origCleanSHA := gitpkg.GetCleanRepositorySHA
-		defer func() {
-			localSHA = origLocal
-			remoteHeadSHA = origRemote
-			gitpkg.GetCleanRepositorySHA = origCleanSHA
-		}()
-
-		rule := parser.Rule{
-			ID:        "oh-my-zsh",
-			Action:    "clone",
-			CloneURL:  "https://github.com/ohmyzsh/ohmyzsh.git",
-			ClonePath: "~/.oh-my-zsh",
-		}
-
-		handler := NewCloneHandlerLegacy(rule, "/tmp")
-
 		testSHA := "abc123456789"
-		localSHA = func(string) string { return testSHA }
-		remoteHeadSHA = func(string, string) string { return testSHA }
-		gitpkg.GetCleanRepositorySHA = func(url, branch string) string { return "" } // No clean storage, fall back to localSHA
+		gitMock := mocks.NewMockGitProvider().
+			WithLocalSHA(localPath, platform.SHA(testSHA)).
+			WithRemoteSHA(platform.RepoID{URL: "https://github.com/ohmyzsh/ohmyzsh.git"}, platform.SHA(testSHA))
+		handler := newHandler(gitMock)
 
 		status := &Status{
 			Clones: []CloneStatus{
@@ -228,28 +171,11 @@ func TestCloneIdempotencyBug(t *testing.T) {
 	})
 
 	t.Run("OS name case sensitivity", func(t *testing.T) {
-		origLocal := localSHA
-		origRemote := remoteHeadSHA
-		origCleanSHA := gitpkg.GetCleanRepositorySHA
-		defer func() {
-			localSHA = origLocal
-			remoteHeadSHA = origRemote
-			gitpkg.GetCleanRepositorySHA = origCleanSHA
-		}()
-
-		rule := parser.Rule{
-			ID:        "oh-my-zsh",
-			Action:    "clone",
-			CloneURL:  "https://github.com/ohmyzsh/ohmyzsh.git",
-			ClonePath: "~/.oh-my-zsh",
-		}
-
-		handler := NewCloneHandlerLegacy(rule, "/tmp")
-
 		testSHA := "abc123456789"
-		localSHA = func(string) string { return testSHA }
-		remoteHeadSHA = func(string, string) string { return testSHA }
-		gitpkg.GetCleanRepositorySHA = func(url, branch string) string { return "" } // No clean storage, fall back to localSHA
+		gitMock := mocks.NewMockGitProvider().
+			WithLocalSHA(localPath, platform.SHA(testSHA)).
+			WithRemoteSHA(platform.RepoID{URL: "https://github.com/ohmyzsh/ohmyzsh.git"}, platform.SHA(testSHA))
+		handler := newHandler(gitMock)
 
 		status := &Status{
 			Clones: []CloneStatus{

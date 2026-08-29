@@ -6,26 +6,14 @@ import (
 	"testing"
 	"time"
 
-	gitpkg "github.com/elpic/blueprint/internal/git"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
+	"github.com/elpic/blueprint/internal/platform/mocks"
 )
 
 // TestAntigenZshPollutionFix specifically tests the fix for the antigen.zsh deletion issue
 // described in TROUBLESHOOTING_ZSH_ANTIGEN.md
 func TestAntigenZshPollutionFix(t *testing.T) {
-	// Store original functions to restore later
-	origLocal := localSHA
-	origRemote := remoteHeadSHA
-	origTwoStage := gitpkg.CloneOrUpdateRepositoryTwoStage
-	origCleanSHA := gitpkg.GetCleanRepositorySHA
-
-	defer func() {
-		localSHA = origLocal
-		remoteHeadSHA = origRemote
-		gitpkg.CloneOrUpdateRepositoryTwoStage = origTwoStage
-		gitpkg.GetCleanRepositorySHA = origCleanSHA
-	}()
-
 	t.Run("Oh-My-Zsh clone preserves antigen.zsh file", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		ohMyZshPath := filepath.Join(tmpDir, ".oh-my-zsh")
@@ -39,8 +27,7 @@ func TestAntigenZshPollutionFix(t *testing.T) {
 			ClonePath: ohMyZshPath,
 			Branch:    "",
 		}
-
-		handler := NewCloneHandlerLegacy(ohMyZshRule, tmpDir)
+		id := platform.RepoID{URL: ohMyZshRule.CloneURL}
 
 		// SCENARIO: Initial setup where antigen.zsh was downloaded separately
 		// This simulates Rule #11 from troubleshooting doc: download antigen to ~/.oh-my-zsh/antigen.zsh
@@ -70,21 +57,23 @@ source ~/.oh-my-zsh/lib/theme-and-appearance.zsh
 			t.Fatalf("Failed to read antigen.zsh: %v", err)
 		}
 
-		// Mock the two-stage clone to demonstrate the fix
+		// Script the seam: FIRST RUN is an initial clone, SECOND RUN is the
+		// repository moving forward (where the bug occurred). The old behavior
+		// would overwrite the entire directory, deleting antigen.zsh; the
+		// two-stage clone preserves non-git files.
 		testSHA := "abc123456789"
 		updatedSHA := "def987654321"
-
-		// FIRST RUN: Initial clone (works fine)
-		firstRunCalled := false
-		gitpkg.CloneOrUpdateRepositoryTwoStage = func(url, targetPath, branch string) (string, string, string, error) {
-			firstRunCalled = true
-			// Simulate successful clone that preserves existing files
-			return "", testSHA, "Cloned", nil
+		gitMock := mocks.NewMockGitProvider().
+			WithRemoteSHA(id, platform.SHA(testSHA)).
+			WithStorageSHA(id, platform.SHA(testSHA))
+		sequenced := &sequencedCloneProvider{
+			MockGitProvider: gitMock,
+			results: []platform.CloneResult{
+				{Status: platform.StatusCloned, NewSHA: platform.SHA(testSHA)},
+				{Status: platform.StatusUpdated, OldSHA: platform.SHA(testSHA), NewSHA: platform.SHA(updatedSHA)},
+			},
 		}
-
-		localSHA = func(string) string { return testSHA }
-		remoteHeadSHA = func(string, string) string { return testSHA }
-		gitpkg.GetCleanRepositorySHA = func(url, branch string) string { return testSHA }
+		handler := NewCloneHandler(ohMyZshRule, tmpDir, newTestGitContainer(sequenced))
 
 		// First clone execution
 		output, err := handler.Up()
@@ -93,8 +82,11 @@ source ~/.oh-my-zsh/lib/theme-and-appearance.zsh
 		}
 		t.Logf("First clone: %s", output)
 
-		if !firstRunCalled {
-			t.Fatal("Expected two-stage clone to be called on first run")
+		if sequenced.calls != 1 {
+			t.Fatal("Expected the seam's Clone to be called on first run")
+		}
+		if sequenced.lastSpec.Mode != platform.ModeTwoStage {
+			t.Errorf("Expected two-stage mode on first run, got %v", sequenced.lastSpec.Mode)
 		}
 
 		// Verify antigen.zsh still exists after first clone
@@ -118,17 +110,8 @@ source ~/.oh-my-zsh/lib/theme-and-appearance.zsh
 
 		// SECOND RUN: Repository has updates (this is where the bug occurred)
 		// Simulate that remote repository has been updated
-		secondRunCalled := false
-		gitpkg.CloneOrUpdateRepositoryTwoStage = func(url, targetPath, branch string) (string, string, string, error) {
-			secondRunCalled = true
-			// Old behavior would overwrite the entire directory, deleting antigen.zsh
-			// New behavior with two-stage clone preserves non-git files
-			return testSHA, updatedSHA, "Updated", nil
-		}
-
-		// Update remote SHA to simulate repository changes
-		remoteHeadSHA = func(string, string) string { return updatedSHA }
-		gitpkg.GetCleanRepositorySHA = func(url, branch string) string { return updatedSHA }
+		gitMock.WithRemoteSHA(id, platform.SHA(updatedSHA))
+		gitMock.WithStorageSHA(id, platform.SHA(updatedSHA))
 
 		// Check if update is needed (should detect repository changes)
 		isInstalled := handler.IsInstalled(status, tmpDir+"/setup.bp", "linux")
@@ -145,8 +128,8 @@ source ~/.oh-my-zsh/lib/theme-and-appearance.zsh
 		}
 		t.Logf("Second clone: %s", output2)
 
-		if !secondRunCalled {
-			t.Fatal("Expected two-stage clone to be called on second run")
+		if sequenced.calls != 2 {
+			t.Fatal("Expected the seam's Clone to be called on second run")
 		}
 
 		// THE FIX: Verify antigen.zsh SURVIVES the repository update
@@ -183,20 +166,15 @@ source ~/.oh-my-zsh/lib/theme-and-appearance.zsh
 			CloneURL:  "https://github.com/ohmyzsh/ohmyzsh.git",
 			ClonePath: ohMyZshPath,
 		}
+		id := platform.RepoID{URL: rule.CloneURL}
 
-		handler := NewCloneHandlerLegacy(rule, tmpDir)
-
+		// Set up mocks for idempotent scenario (no changes): clean storage and
+		// remote agree on the same SHA
 		testSHA := "stable123456"
-
-		// Set up mocks for idempotent scenario (no changes)
-		localSHA = func(string) string { return testSHA }
-		remoteHeadSHA = func(string, string) string { return testSHA } // Same SHA
-		gitpkg.GetCleanRepositorySHA = func(url, branch string) string { return testSHA }
-
-		gitpkg.CloneOrUpdateRepositoryTwoStage = func(url, targetPath, branch string) (string, string, string, error) {
-			// This should not be called if repository is already up to date
-			return testSHA, testSHA, "Already up to date", nil
-		}
+		gitMock := mocks.NewMockGitProvider().
+			WithRemoteSHA(id, platform.SHA(testSHA)).
+			WithStorageSHA(id, platform.SHA(testSHA))
+		handler := NewCloneHandler(rule, tmpDir, newTestGitContainer(gitMock))
 
 		status := &Status{
 			Clones: []CloneStatus{

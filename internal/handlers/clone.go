@@ -92,16 +92,6 @@ func init() {
 	})
 }
 
-// localSHA returns the HEAD SHA of a local repository. Var for test stubbing.
-var localSHA = func(path string) string {
-	return gitpkg.LocalSHA(path)
-}
-
-// remoteHeadSHA returns the remote HEAD SHA for a URL+branch. Var for test stubbing.
-var remoteHeadSHA = func(url, branch string) string {
-	return gitpkg.RemoteHeadSHA(url, branch)
-}
-
 // CloneHandler handles git repository cloning and cleanup
 type CloneHandler struct {
 	BaseHandler
@@ -131,65 +121,72 @@ func NewCloneHandlerLegacy(rule parser.Rule, basePath string) *CloneHandler {
 // Otherwise the default two-stage approach is used: clone to clean storage then
 // copy files without .git, preventing accidental pollution of the target.
 func (h *CloneHandler) Up() (string, error) {
-	var oldSHA, newSHA, status string
-	var err error
+	// Interpret the rule into a resolved clone spec; the mode selection stays
+	// above the seam, the clone mechanics below it.
+	mode := platform.ModeTwoStage
 	switch {
 	case h.Rule.CloneBare:
-		oldSHA, newSHA, status, err = gitpkg.CloneOrUpdateRepositoryBare(
-			h.Rule.CloneURL,
-			h.Rule.ClonePath,
-			h.Rule.Branch,
-		)
+		mode = platform.ModeBare
 	case h.Rule.CloneWorkdir:
-		oldSHA, newSHA, status, err = gitpkg.CloneOrUpdateRepositoryDirect(
-			h.Rule.CloneURL,
-			h.Rule.ClonePath,
-			h.Rule.Branch,
-		)
-	default:
-		oldSHA, newSHA, status, err = gitpkg.CloneOrUpdateRepositoryTwoStage(
-			h.Rule.CloneURL,
-			h.Rule.ClonePath,
-			h.Rule.Branch,
-		)
+		mode = platform.ModeDirect
 	}
+
+	result, err := h.Container.GitProvider().Clone(platform.CloneSpec{
+		URL:    h.Rule.CloneURL,
+		Path:   h.Rule.ClonePath,
+		Branch: h.Rule.Branch,
+		Mode:   mode,
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to clone/update repository: %w", err)
 	}
 
+	oldSHA, newSHA := string(result.OldSHA), string(result.NewSHA)
+
 	// Format output message with SHA tracking
-	switch status {
-	case "Cloned":
+	var msg string
+	switch result.Status {
+	case platform.StatusCloned:
 		if newSHA != "" {
-			return fmt.Sprintf("Cloned (SHA: %s)", newSHA), nil
+			msg = fmt.Sprintf("Cloned (SHA: %s)", newSHA)
+		} else {
+			msg = "Cloned"
 		}
-		return "Cloned", nil
 
-	case "Updated":
+	case platform.StatusUpdated:
 		if oldSHA != "" && newSHA != "" {
-			return fmt.Sprintf("Updated (SHA changed: %s → %s) (SHA: %s)",
-				oldSHA[:8], newSHA[:8], newSHA), nil
+			msg = fmt.Sprintf("Updated (SHA changed: %s → %s) (SHA: %s)",
+				oldSHA[:8], newSHA[:8], newSHA)
+		} else if newSHA != "" {
+			msg = fmt.Sprintf("Updated (SHA: %s)", newSHA)
+		} else {
+			msg = "Updated"
 		}
-		if newSHA != "" {
-			return fmt.Sprintf("Updated (SHA: %s)", newSHA), nil
-		}
-		return "Updated", nil
 
-	case "Synced":
+	case platform.StatusSynced:
 		if newSHA != "" {
-			return fmt.Sprintf("Synced (SHA: %s)", newSHA), nil
+			msg = fmt.Sprintf("Synced (SHA: %s)", newSHA)
+		} else {
+			msg = "Synced"
 		}
-		return "Synced", nil
 
-	case "Already up to date":
+	case platform.StatusUpToDate:
 		if newSHA != "" {
-			return fmt.Sprintf("Already up to date (SHA: %s)", newSHA), nil
+			msg = fmt.Sprintf("Already up to date (SHA: %s)", newSHA)
+		} else {
+			msg = "Already up to date"
 		}
-		return "Already up to date", nil
 
 	default:
-		return status, nil
+		return "", fmt.Errorf("unknown clone status %d", result.Status)
 	}
+
+	// Recoverable incidents (repair counts, skipped-step warnings) are notes,
+	// never failures — surface them alongside the status message.
+	for _, note := range result.Notes {
+		msg += "; " + note
+	}
+	return msg, nil
 }
 
 // Down removes the cloned repository
@@ -411,10 +408,14 @@ func (h *CloneHandler) IsInstalled(status *Status, blueprintFile, osName string)
 		if clone.Path != h.Rule.ClonePath || normalizeBlueprint(clone.Blueprint) != normalizedBlueprint || clone.OS != osName {
 			continue
 		}
-		// Found a matching status entry — now check SHA currency
-		remoteSHA := remoteHeadSHA(h.Rule.CloneURL, h.Rule.Branch)
-		if remoteSHA == "" {
-			// Cannot reach remote — trust the status entry as-is.
+		provider := h.Container.GitProvider()
+		fs := h.Container.SystemProvider().Filesystem()
+
+		// Found a matching status entry — now check SHA currency. An
+		// unreachable remote (error or unknown SHA) means we cannot judge
+		// currency — trust the status entry as-is.
+		remoteSHA, remoteErr := provider.RemoteSHA(platform.RepoID{URL: h.Rule.CloneURL, Branch: h.Rule.Branch})
+		if remoteErr != nil || remoteSHA == "" {
 			return true
 		}
 
@@ -422,23 +423,24 @@ func (h *CloneHandler) IsInstalled(status *Status, blueprintFile, osName string)
 		// (moving it would disturb whichever worktree has it checked out).
 		// The layout is also detected on disk because uninstall rules are
 		// rebuilt from status and don't carry the bare flag.
-		expandedPath := h.Container.SystemProvider().Filesystem().ExpandPath(h.Rule.ClonePath)
-		if h.Rule.CloneBare || gitpkg.IsBareRepository(filepath.Join(expandedPath, ".git")) {
-			hasGit := h.Container.SystemProvider().Filesystem().Exists(filepath.Join(expandedPath, ".git"))
-			return hasGit && gitpkg.BareRepositorySHA(expandedPath, h.Rule.Branch) == remoteSHA
+		expandedPath := fs.ExpandPath(h.Rule.ClonePath)
+		if h.Rule.CloneBare || provider.Layout(platform.RepoPath(expandedPath)) == platform.LayoutBare {
+			hasGit := fs.Exists(filepath.Join(expandedPath, ".git"))
+			bareSHA, _ := provider.BareSHA(platform.RepoPath(expandedPath), h.Rule.Branch)
+			return hasGit && bareSHA == remoteSHA
 		}
 
 		// When workdir is set, we only care about the target directory — skip the
 		// clean storage check (which is for two-stage clones) and verify .git exists.
 		if h.Rule.CloneWorkdir {
-			localSHAVal := localSHA(h.Container.SystemProvider().Filesystem().ExpandPath(h.Rule.ClonePath))
-			gitDir := h.Container.SystemProvider().Filesystem().ExpandPath(h.Rule.ClonePath) + "/.git"
-			hasGit := h.Container.SystemProvider().Filesystem().Exists(gitDir)
+			gitDir := expandedPath + "/.git"
+			hasGit := fs.Exists(gitDir)
+			localSHAVal, _ := provider.LocalSHA(platform.RepoPath(expandedPath))
 			return hasGit && localSHAVal == remoteSHA
 		}
 
 		// Two-stage clone — try clean repository storage first (prevents pollution issues)
-		cleanSHA := gitpkg.GetCleanRepositorySHA(h.Rule.CloneURL, h.Rule.Branch)
+		cleanSHA, _ := provider.StorageSHA(platform.RepoID{URL: h.Rule.CloneURL, Branch: h.Rule.Branch})
 		if cleanSHA != "" {
 			// Clean storage exists, use it for SHA comparison
 			return cleanSHA == remoteSHA
@@ -446,7 +448,7 @@ func (h *CloneHandler) IsInstalled(status *Status, blueprintFile, osName string)
 
 		// Fall back to checking target directory for backward compatibility
 		// This handles existing installations that don't have clean storage yet
-		localSHAVal := localSHA(h.Container.SystemProvider().Filesystem().ExpandPath(h.Rule.ClonePath))
+		localSHAVal, _ := provider.LocalSHA(platform.RepoPath(expandedPath))
 		return localSHAVal == remoteSHA
 	}
 	return false
