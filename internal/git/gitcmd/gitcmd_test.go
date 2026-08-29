@@ -38,11 +38,10 @@ import (
 // its site is ported to go-git, until the map holds only the bare/worktree
 // feature and the clone/fetch fallbacks.
 var approvedSites = map[string]string{
-	"internal/git/git.go:233":  "clone fallback: system git clone after go-git tryClone fails (SSH agent/keychain auth)",
-	"internal/git/git.go:502":  "ls-remote fallback: reached only after go-git remote.List fails; symref resolution already handled in go-git",
-	"internal/git/git.go:603":  "fetch fallback: system git fetch after go-git Fetch fails (SSH agent/keychain auth)",
-	"internal/git/git.go:705":  "clone fallback: system git clone after go-git PlainClone fails (SSH agent/keychain auth)",
-	"internal/git/git.go:1410": "bare/worktree feature: second refspec-repair site (ensureFetchRefspec); go-git cannot express `git worktree`",
+	"internal/git/git.go:233": "clone fallback: system git clone after go-git tryClone fails (SSH agent/keychain auth)",
+	"internal/git/git.go:502": "ls-remote fallback: reached only after go-git remote.List fails; symref resolution already handled in go-git",
+	"internal/git/git.go:615": "fetch fallback: system git fetch after go-git Fetch fails (SSH agent/keychain auth)",
+	"internal/git/git.go:750": "clone fallback: system git clone after go-git PlainClone fails (SSH agent/keychain auth)",
 }
 
 // execAllowedFiles grants a file-level exemption from the primary invariant,

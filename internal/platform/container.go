@@ -593,14 +593,19 @@ type realGitProvider struct{}
 
 // Clone dispatches to the internal/git clone strategy selected by spec.Mode
 // and translates the legacy status string into the CloneStatus enum.
+//
+// ModeDirect is the mode whose data-safety contract requires untracked files
+// to survive updates (#031), so it is also the mode that surfaces protection
+// notes; the other modes have no notes to report today.
 func (g *realGitProvider) Clone(spec CloneSpec) (CloneResult, error) {
 	var oldSHA, newSHA, status string
+	var notes []string
 	var err error
 	switch spec.Mode {
 	case ModeTwoStage:
 		oldSHA, newSHA, status, err = gitpkg.CloneOrUpdateRepositoryTwoStage(spec.URL, spec.Path, spec.Branch)
 	case ModeDirect:
-		oldSHA, newSHA, status, err = gitpkg.CloneOrUpdateRepositoryDirect(spec.URL, spec.Path, spec.Branch)
+		oldSHA, newSHA, status, notes, err = gitpkg.CloneOrUpdateRepositoryDirectWithNotes(spec.URL, spec.Path, spec.Branch)
 	case ModeBare:
 		oldSHA, newSHA, status, err = gitpkg.CloneOrUpdateRepositoryBare(spec.URL, spec.Path, spec.Branch)
 	default:
@@ -617,6 +622,7 @@ func (g *realGitProvider) Clone(spec CloneSpec) (CloneResult, error) {
 		Status: mapped,
 		OldSHA: SHA(oldSHA),
 		NewSHA: SHA(newSHA),
+		Notes:  notes,
 	}, nil
 }
 
