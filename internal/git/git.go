@@ -1,7 +1,6 @@
 package git
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -9,30 +8,20 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/elpic/blueprint/internal/git/gitcmd"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
-
-// gitTimeout returns the timeout duration for git network operations.
-// Reads BLUEPRINT_GIT_TIMEOUT (seconds); defaults to 120s.
-func gitTimeout() time.Duration {
-	if s := os.Getenv("BLUEPRINT_GIT_TIMEOUT"); s != "" {
-		if n, err := strconv.Atoi(s); err == nil && n > 0 {
-			return time.Duration(n) * time.Second
-		}
-	}
-	return 120 * time.Second
-}
 
 // GitURLParams holds parsed git URL information
 type GitURLParams struct {
@@ -467,7 +456,14 @@ func remoteRefWithError(url, ref string) (string, error) {
 	}
 	ch := make(chan listResult, 1)
 	go func() {
-		r, e := remote.List(&git.ListOptions{Auth: auth})
+		// Timeout must be passed explicitly: go-git's remote.go hardcodes
+		// `timeout = 10` (seconds) when ListOptions.Timeout is 0, so without
+		// this gitTimeout() would only bound our select below, not the list
+		// goroutine itself.
+		r, e := remote.List(&git.ListOptions{
+			Auth:    auth,
+			Timeout: int(gitTimeout().Seconds()),
+		})
 		ch <- listResult{r, e}
 	}()
 
@@ -567,9 +563,9 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 		fetched := false
 		fullRefspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
 		limitedRefspec := false
+		goRepo, goRepoErr := git.PlainOpen(path)
 		{
-			goRepo, openErr := git.PlainOpen(path)
-			if openErr == nil {
+			if goRepoErr == nil {
 				// Ensure the remote config fetches all branches. go-git's clone with
 				// SingleBranch: true stores a limited refspec — if a different branch
 				// is now requested, the stored refspec won't include it and the fetch
@@ -612,11 +608,22 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 			}
 		}
 
-		// Persist the full refspec to disk so future operations (go-git or system git)
-		// don't encounter the same SingleBranch limitation.
-		if limitedRefspec {
-			setRefspec := exec.Command("git", "-C", path, "config", "remote.origin.fetch", string(fullRefspec))
-			_ = setRefspec.Run()
+		// Persist the full refspec to disk so future operations (go-git or system
+		// git) don't encounter the same SingleBranch limitation.
+		//
+		// The in-memory mutation above is what made *this* fetch use the full
+		// refspec; SetConfig writes that config back to .git/config, so the
+		// refspec is repaired once rather than twice — previously this was a
+		// second, separate repair via `git config`.
+		if limitedRefspec && goRepoErr == nil {
+			if cfg, cfgErr := goRepo.Config(); cfgErr == nil {
+				if rc, ok := cfg.Remotes["origin"]; ok {
+					rc.Fetch = []config.RefSpec{fullRefspec}
+				}
+				if err := goRepo.SetConfig(cfg); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: could not persist remote.origin.fetch in %s: %v\n", path, err)
+				}
+			}
 		}
 
 		// Open the repo for local ref resolution and reset (no auth needed — local only)
@@ -672,9 +679,9 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 		}
 
 		// go-git's HardReset may leave some working tree files un-checked-out.
-		// Run system git restore to guarantee the working tree matches HEAD.
-		if err := gitRestore(path); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not restore working tree in %s: %v\n", path, err)
+		// Repair the deletions it missed.
+		if err := repairDeletedFiles(path); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not restore deleted files in %s: %v\n", path, err)
 		}
 
 		newSHA := targetHash.String()
@@ -703,8 +710,8 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 		}
 	} else {
 		// go-git clone succeeded but may have left files un-checked-out.
-		if err := gitRestore(path); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not restore working tree in %s: %v\n", path, err)
+		if err := repairDeletedFiles(path); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not restore deleted files in %s: %v\n", path, err)
 		}
 	}
 
@@ -720,6 +727,13 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 // clones carry a locally edited .zshrc, and `clone workdir: true` targets
 // (CloneOrUpdateRepositoryDirect) are repos users develop in — so a blanket
 // `git restore .` would trade a missing-file bug for silent data loss.
+//
+// It is also the *only* worktree-repair helper. CloneOrUpdateRepository calls
+// it on all three exits — "Already up to date", post-HardReset "Updated" and
+// "Cloned" — because go-git's HardReset and PlainClone can both leave files
+// un-checked-out, and the early return would otherwise skip repair entirely.
+// One helper at every exit means the three statuses no longer differ in
+// whether the worktree was made whole: that difference is what produced #026.
 func repairDeletedFiles(path string) error {
 	deleted, err := deletedTrackedPaths(path)
 	if err != nil || len(deleted) == 0 {
@@ -728,60 +742,202 @@ func repairDeletedFiles(path string) error {
 		return nil
 	}
 
-	args := []string{"-C", path, "restore", "--source=HEAD", "--worktree", "--"}
-	args = append(args, deleted...)
-
-	// --source=HEAD repairs deletions that were staged in the index too;
-	// --worktree keeps the index (and therefore any staged work) untouched.
-	restoreCtx, restoreCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer restoreCancel()
-	cmd := exec.CommandContext(restoreCtx, "git", args...) // #nosec G204
-	cmd.Stdout = io.Discard
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git restore %d deleted file(s): %w: %s", len(deleted), err, strings.TrimSpace(stderr.String()))
-	}
-	return nil
+	return restoreDeletedPaths(path, deleted)
 }
 
 // deletedTrackedPaths returns the paths of tracked files that HEAD contains but
 // that are absent from the working tree.
 //
-// It uses `diff-index` rather than `status --porcelain` on purpose: diff-index
-// only walks tracked entries, so it never scans untracked files (cheap on repos
-// full of build artifacts) and never reports the untracked files themselves.
+// It walks HEAD's tree and stats each entry. Worktree.Status() is deliberately
+// not used: even with the default (empty) status strategy it builds a full root
+// node, which walks untracked files as well as tracked ones and hashes their
+// content, and StatusOptions offers no tracked-only mode. This walk touches
+// only tracked paths and reads no file content at all.
 func deletedTrackedPaths(path string) ([]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout())
-	defer cancel()
-	// --diff-filter=D drops every other change, so the output is strictly
-	// alternating status/path records; -z keeps odd path names (spaces, quotes,
-	// newlines) unambiguous.
-	cmd := exec.CommandContext(ctx, "git", "-C", path, "diff-index", "--name-status", "--diff-filter=D", "-z", "HEAD") // #nosec G204
-	out, err := cmd.Output()
+	repo, err := git.PlainOpen(path)
 	if err != nil {
-		return nil, fmt.Errorf("diff-index %s: %w", path, err)
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	tree, err := headTree(repo)
+	if err != nil {
+		return nil, err
 	}
 
-	fields := strings.Split(string(out), "\x00")
+	// Sparse checkout: entries the user deliberately excluded from the working
+	// tree must not be repaired back into existence. This matters for the #024
+	// worktree layouts, where sparse checkout is how a clone stays partial.
+	skipWorktree, err := skipWorktreePaths(repo)
+	if err != nil {
+		return nil, err
+	}
+
 	var deleted []string
-	for i := 0; i+1 < len(fields); i += 2 {
-		if strings.HasPrefix(fields[i], "D") && fields[i+1] != "" {
-			deleted = append(deleted, fields[i+1])
+	err = tree.Files().ForEach(func(f *object.File) error {
+		if skipWorktree[f.Name] {
+			return nil
 		}
+		// IsFile covers regular, executable and symlink entries. Everything
+		// else — gitlinks (160000, submodules) and trees — cannot be
+		// materialised from the parent repository, so it is not ours to restore.
+		if !f.Mode.IsFile() {
+			return nil
+		}
+		// Lstat, not Stat: a symlink whose target is missing is not a deletion,
+		// but Stat follows the link and would report it as one.
+		if _, err := os.Lstat(filepath.Join(path, filepath.FromSlash(f.Name))); err == nil {
+			return nil
+		} else if !os.IsNotExist(err) {
+			return nil // unreadable but present — not ours to touch
+		}
+		deleted = append(deleted, f.Name)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walk HEAD tree of %s: %w", path, err)
 	}
 	return deleted, nil
 }
 
-// gitRestore runs system git restore to ensure the working tree is complete.
-// go-git's HardReset and PlainClone can leave files un-checked-out (known go-git issue).
-func gitRestore(path string) error {
-	restoreCtx, restoreCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer restoreCancel()
-	cmd := exec.CommandContext(restoreCtx, "git", "-C", path, "restore", ".") // #nosec G204
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
-	return cmd.Run()
+// headTree resolves the tree of the repository's HEAD commit.
+func headTree(repo *git.Repository) (*object.Tree, error) {
+	head, err := repo.Head()
+	if err != nil {
+		return nil, fmt.Errorf("resolve HEAD: %w", err)
+	}
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return nil, fmt.Errorf("resolve HEAD commit: %w", err)
+	}
+	tree, err := commit.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("resolve HEAD tree: %w", err)
+	}
+	return tree, nil
+}
+
+// skipWorktreePaths returns the set of index entries flagged skip-worktree
+// (sparse checkout). Their absence from the working tree is intentional.
+func skipWorktreePaths(repo *git.Repository) (map[string]bool, error) {
+	idx, err := repo.Storer.Index()
+	if err != nil {
+		return nil, fmt.Errorf("read index: %w", err)
+	}
+	skip := make(map[string]bool, len(idx.Entries))
+	for _, e := range idx.Entries {
+		if e.SkipWorktree {
+			skip[e.Name] = true
+		}
+	}
+	return skip, nil
+}
+
+// restoreDeletedPaths writes each path back into the working tree from HEAD.
+//
+// The index is left untouched by construction: go-git only writes the index
+// through an explicit SetIndex/Add, and neither is called here. A staged
+// deletion therefore keeps its staged state — the file reappears in the working
+// tree while the index still records the deletion, so `git status` shows `D `
+// alongside `??`, exactly as the previous `git restore --source=HEAD
+// --worktree` did.
+//
+// Accepted divergence: go-git has no clean/smudge engine, so on Windows with
+// core.autocrlf=true a restored file gets LF where system git would write CRLF.
+// We ship windows-amd64, so this is real, but it is low severity — it fires
+// only on this repair path, and dotfiles are usually LF-tolerant. Documented
+// rather than worked around: a detection-based fallback would re-open the
+// exception door behind a fragile heuristic.
+func restoreDeletedPaths(path string, deleted []string) error {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", path, err)
+	}
+	head, err := repo.Head()
+	if err != nil {
+		return fmt.Errorf("resolve HEAD in %s: %w", path, err)
+	}
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return fmt.Errorf("resolve HEAD commit in %s: %w", path, err)
+	}
+
+	var firstErr error
+	for _, name := range deleted {
+		if err := restoreFileFromCommit(commit, path, name); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+// restoreFileFromCommit materialises a single HEAD blob into the working tree.
+func restoreFileFromCommit(commit *object.Commit, worktreePath, name string) error {
+	f, err := commit.File(name)
+	if err != nil {
+		return fmt.Errorf("resolve %s in HEAD: %w", name, err)
+	}
+	mode, err := f.Mode.ToOSFileMode()
+	if err != nil {
+		return fmt.Errorf("map mode for %s: %w", name, err)
+	}
+	contents, err := f.Contents()
+	if err != nil {
+		return fmt.Errorf("read %s from HEAD: %w", name, err)
+	}
+
+	target := filepath.Join(worktreePath, filepath.FromSlash(name))
+	// A deleted directory takes its parent directories with it.
+	// 0750 matches the permissions every other MkdirAll in this file uses.
+	if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+		return fmt.Errorf("create parent directory for %s: %w", name, err)
+	}
+
+	// A symlink's blob content is its target, not file data.
+	if mode&os.ModeSymlink != 0 {
+		_ = os.Remove(target) // anything already at this path would make Symlink fail
+		if err := os.Symlink(contents, target); err != nil {
+			return fmt.Errorf("restore symlink %s: %w", name, err)
+		}
+		return nil
+	}
+
+	if err := writeFileAtomic(target, []byte(contents), mode.Perm()); err != nil {
+		return fmt.Errorf("restore %s: %w", name, err)
+	}
+	return nil
+}
+
+// writeFileAtomic writes data to target through a temp file in the same
+// directory and renames it into place. These are live dotfiles and symlink
+// targets: a crash mid-write must not leave a truncated .zshrc behind.
+func writeFileAtomic(target string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(target)
+	tmp, err := os.CreateTemp(dir, ".blueprint-restore-*")
+	if err != nil {
+		return fmt.Errorf("create temp file in %s: %w", dir, err)
+	}
+	tmpName := tmp.Name()
+	// No-op once the rename below succeeds.
+	defer func() { _ = os.Remove(tmpName) }()
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write: %w", err)
+	}
+	// Sync before the rename so the bytes are durable at their final path.
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("sync: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close: %w", err)
+	}
+	if err := os.Chmod(tmpName, perm); err != nil {
+		return fmt.Errorf("set mode: %w", err)
+	}
+	if err := os.Rename(tmpName, target); err != nil {
+		return fmt.Errorf("move into place: %w", err)
+	}
+	return nil
 }
 
 // generateRepositoryID creates a unique ID for a repository based on URL and branch
@@ -1404,23 +1560,23 @@ func IsBareRepository(path string) bool {
 	return err == nil && strings.TrimSpace(out) == "true"
 }
 
+// gitTimeout returns the timeout duration for git network operations.
+func gitTimeout() time.Duration {
+	return gitcmd.Timeout()
+}
+
 // runGit runs git with the standard git timeout and returns its stdout.
 func runGit(args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout())
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
-	}
-	return stdout.String(), nil
+	return runGitIn("", args...)
 }
 
 // runGitIn runs git with -C dir so it operates on the given repository.
+// Every shell-out in blueprint funnels through gitcmd, the single exec
+// boundary — see the package docs there for the go-git policy.
 func runGitIn(dir string, args ...string) (string, error) {
-	return runGit(append([]string{"-C", dir}, args...)...)
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout())
+	defer cancel()
+	return gitcmd.Run(ctx, dir, args...)
 }
 
 // expandHomePath expands a leading ~/ to the user's home directory.
