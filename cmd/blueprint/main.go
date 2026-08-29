@@ -451,7 +451,10 @@ Examples:
 }
 
 // parseVarFlags extracts all --var KEY=VALUE pairs from args into a map.
-func parseVarFlags(args []string) map[string]string {
+// It returns (nil, false) when a --var value is malformed (missing '='),
+// having already printed the error to stderr. Callers must return their
+// error exit code when ok is false.
+func parseVarFlags(args []string) (map[string]string, bool) {
 	vars := map[string]string{}
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--var" && i+1 < len(args) {
@@ -460,12 +463,12 @@ func parseVarFlags(args []string) map[string]string {
 			idx := strings.Index(kv, "=")
 			if idx < 0 {
 				fmt.Fprintf(os.Stderr, "error: --var must be KEY=VALUE, got %q\n", kv)
-				os.Exit(1)
+				return nil, false
 			}
 			vars[kv[:idx]] = kv[idx+1:]
 		}
 	}
-	return vars
+	return vars, true
 }
 
 func isKnownCommand(cmd string) bool {
@@ -513,56 +516,63 @@ func main() {
 		engine.ExecutableName = "go run ./cmd/blueprint"
 	}
 
-	if len(os.Args) < 2 || isHelpFlag(os.Args[1]) {
+	os.Exit(ExecuteCommand(os.Args[1:]))
+}
+
+// ExecuteCommand runs the blueprint CLI for the given arguments (the arguments
+// after the program name, i.e. os.Args[1:]) and returns the process exit code
+// instead of calling os.Exit. This makes the command dispatch testable in-process.
+func ExecuteCommand(args []string) int {
+	if len(args) < 1 || isHelpFlag(args[0]) {
 		printGlobalHelp()
-		if len(os.Args) >= 2 {
+		if len(args) >= 1 {
 			// --help or -h was explicitly passed — exit 0
-			os.Exit(0)
+			return 0
 		}
-		os.Exit(1)
+		return 1
 	}
 
-	mode := os.Args[1]
+	mode := args[0]
 
 	switch mode {
 	case "version":
-		args := os.Args[2:]
-		if hasHelpFlag(args) {
+		cmdArgs := args[1:]
+		if hasHelpFlag(cmdArgs) {
 			printVersionHelp()
-			os.Exit(0)
+			return 0
 		}
-		if len(args) > 0 && args[0] == "--commit" {
+		if len(cmdArgs) > 0 && cmdArgs[0] == "--commit" {
 			fmt.Println(commit)
-		} else if len(args) > 0 && args[0] == "--short" {
+		} else if len(cmdArgs) > 0 && cmdArgs[0] == "--short" {
 			fmt.Println(version)
 		} else {
 			fmt.Printf("Version: %s\nCommit:  %s\n", version, commit)
 		}
 	case "history":
-		if hasHelpFlag(os.Args[2:]) {
+		if hasHelpFlag(args[1:]) {
 			printHistoryHelp()
-			os.Exit(0)
+			return 0
 		}
 		var since, blueprintFilter string
 		var statsOnly bool
-		args := os.Args[2:]
+		cmdArgs := args[1:]
 		var positional []string
-		for i := 0; i < len(args); i++ {
+		for i := 0; i < len(cmdArgs); i++ {
 			switch {
-			case args[i] == "--stats":
+			case cmdArgs[i] == "--stats":
 				statsOnly = true
-			case args[i] == "--since" && i+1 < len(args):
+			case cmdArgs[i] == "--since" && i+1 < len(cmdArgs):
 				i++
-				since = args[i]
-			case strings.HasPrefix(args[i], "--since="):
-				since = strings.TrimPrefix(args[i], "--since=")
-			case args[i] == "--blueprint" && i+1 < len(args):
+				since = cmdArgs[i]
+			case strings.HasPrefix(cmdArgs[i], "--since="):
+				since = strings.TrimPrefix(cmdArgs[i], "--since=")
+			case cmdArgs[i] == "--blueprint" && i+1 < len(cmdArgs):
 				i++
-				blueprintFilter = args[i]
-			case strings.HasPrefix(args[i], "--blueprint="):
-				blueprintFilter = strings.TrimPrefix(args[i], "--blueprint=")
+				blueprintFilter = cmdArgs[i]
+			case strings.HasPrefix(cmdArgs[i], "--blueprint="):
+				blueprintFilter = strings.TrimPrefix(cmdArgs[i], "--blueprint=")
 			default:
-				positional = append(positional, args[i])
+				positional = append(positional, cmdArgs[i])
 			}
 		}
 		runNumber := 0
@@ -570,14 +580,14 @@ func main() {
 		if len(positional) >= 1 {
 			n, ok := parseNonNegativeInt(positional[0], "run_number")
 			if !ok {
-				os.Exit(1)
+				return 1
 			}
 			runNumber = n
 		}
 		if len(positional) >= 2 {
 			n, ok := parseNonNegativeInt(positional[1], "step_number")
 			if !ok {
-				os.Exit(1)
+				return 1
 			}
 			stepNumber = n
 		}
@@ -587,116 +597,122 @@ func main() {
 			engine.PrintHistory(runNumber, stepNumber, since, blueprintFilter)
 		}
 	case "plan":
-		if hasHelpFlag(os.Args[2:]) {
+		if hasHelpFlag(args[1:]) {
 			printPlanHelp()
-			os.Exit(0)
+			return 0
 		}
-		if len(os.Args) < 3 {
+		if len(args) < 2 {
 			printPlanHelp()
-			os.Exit(1)
+			return 1
 		}
-		file := os.Args[2]
-		skipGroup, skipID, onlyID, skipDecrypt, preferSSH, _ := parseFlags(os.Args[3:])
-		cliVars := parseVarFlags(os.Args[3:])
-		os.Exit(engine.RunWithSkip(file, true, skipGroup, skipID, onlyID, skipDecrypt, preferSSH, false, cliVars))
+		file := args[1]
+		skipGroup, skipID, onlyID, skipDecrypt, preferSSH, _ := parseFlags(args[2:])
+		cliVars, ok := parseVarFlags(args[2:])
+		if !ok {
+			return 1
+		}
+		return engine.RunWithSkip(file, true, skipGroup, skipID, onlyID, skipDecrypt, preferSSH, false, cliVars)
 	case "apply":
-		if hasHelpFlag(os.Args[2:]) {
+		if hasHelpFlag(args[1:]) {
 			printApplyHelp()
-			os.Exit(0)
+			return 0
 		}
-		if len(os.Args) < 3 {
+		if len(args) < 2 {
 			printApplyHelp()
-			os.Exit(1)
+			return 1
 		}
-		file := os.Args[2]
-		skipGroup, skipID, onlyID, skipDecrypt, preferSSH, noStatus := parseFlags(os.Args[3:])
-		cliVars := parseVarFlags(os.Args[3:])
-		os.Exit(engine.RunWithSkip(file, false, skipGroup, skipID, onlyID, skipDecrypt, preferSSH, noStatus, cliVars))
+		file := args[1]
+		skipGroup, skipID, onlyID, skipDecrypt, preferSSH, noStatus := parseFlags(args[2:])
+		cliVars, ok := parseVarFlags(args[2:])
+		if !ok {
+			return 1
+		}
+		return engine.RunWithSkip(file, false, skipGroup, skipID, onlyID, skipDecrypt, preferSSH, noStatus, cliVars)
 	case "encrypt":
-		if hasHelpFlag(os.Args[2:]) {
+		if hasHelpFlag(args[1:]) {
 			printEncryptHelp()
-			os.Exit(0)
+			return 0
 		}
-		if len(os.Args) < 3 {
+		if len(args) < 2 {
 			printEncryptHelp()
-			os.Exit(1)
+			return 1
 		}
-		file := os.Args[2]
+		file := args[1]
 		passwordID := "default"
 		// Check for --password-id flag
-		for i := 3; i < len(os.Args); i++ {
-			if os.Args[i] == "--password-id" && i+1 < len(os.Args) {
-				passwordID = os.Args[i+1]
+		for i := 2; i < len(args); i++ {
+			if args[i] == "--password-id" && i+1 < len(args) {
+				passwordID = args[i+1]
 				break
 			}
 		}
 		engine.EncryptFile(file, passwordID)
 	case "export":
-		if hasHelpFlag(os.Args[2:]) {
+		if hasHelpFlag(args[1:]) {
 			printExportHelp()
-			os.Exit(0)
+			return 0
 		}
-		if len(os.Args) < 3 {
+		if len(args) < 2 {
 			printExportHelp()
-			os.Exit(1)
+			return 1
 		}
-		file := os.Args[2]
+		file := args[1]
 		format := "bash"
 		output := ""
-		_, _, _, _, preferSSH, _ := parseFlags(os.Args[3:])
-		for i := 3; i < len(os.Args); i++ {
-			switch os.Args[i] {
+		_, _, _, _, preferSSH, _ := parseFlags(args[2:])
+		for i := 2; i < len(args); i++ {
+			switch args[i] {
 			case "--format":
-				if i+1 < len(os.Args) {
-					format = os.Args[i+1]
+				if i+1 < len(args) {
+					format = args[i+1]
 					i++
 				}
 			case "--output":
-				if i+1 < len(os.Args) {
-					output = os.Args[i+1]
+				if i+1 < len(args) {
+					output = args[i+1]
 					i++
 				}
 			}
 		}
 		if format != "bash" && format != "sh" {
 			fmt.Fprintf(os.Stderr, "error: --format must be \"bash\" or \"sh\", got %q\n", format)
-			os.Exit(1)
+			return 1
 		}
 		engine.Export(file, format, output, preferSSH)
 	case "status":
-		if hasHelpFlag(os.Args[2:]) {
+		if hasHelpFlag(args[1:]) {
 			printStatusHelp()
-			os.Exit(0)
+			return 0
 		}
 		engine.PrintStatus()
 	case "ps":
-		if hasHelpFlag(os.Args[2:]) {
+		if hasHelpFlag(args[1:]) {
 			printPSHelp()
-			os.Exit(0)
+			return 0
 		}
 		engine.PrintPS()
 	case "diff":
-		if hasHelpFlag(os.Args[2:]) {
+		if hasHelpFlag(args[1:]) {
 			printDiffHelp()
-			os.Exit(0)
+			return 0
 		}
-		if len(os.Args) < 3 {
+		if len(args) < 2 {
 			printDiffHelp()
-			os.Exit(1)
+			return 1
 		}
-		_, _, _, _, preferSSH, _ := parseFlags(os.Args[3:])
-		engine.PrintDiff(os.Args[2], preferSSH)
+		_, _, _, _, preferSSH, _ := parseFlags(args[2:])
+		engine.PrintDiff(args[1], preferSSH)
 	case "slow":
-		if hasHelpFlag(os.Args[2:]) {
+		if hasHelpFlag(args[1:]) {
 			printSlowHelp()
-			os.Exit(0)
+			return 0
 		}
 		topN := 10
-		for i := 2; i < len(os.Args); i++ {
-			if os.Args[i] == "--top" && i+1 < len(os.Args) {
-				n, ok := parsePositiveInt(os.Args[i+1], "--top")
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--top" && i+1 < len(args) {
+				n, ok := parsePositiveInt(args[i+1], "--top")
 				if !ok {
-					os.Exit(1)
+					return 1
 				}
 				topN = n
 				i++
@@ -704,13 +720,13 @@ func main() {
 		}
 		engine.PrintSlow(topN)
 	case "doctor":
-		if hasHelpFlag(os.Args[2:]) {
+		if hasHelpFlag(args[1:]) {
 			printDoctorHelp()
-			os.Exit(0)
+			return 0
 		}
 		fix := false
 		verbose := false
-		for _, arg := range os.Args[2:] {
+		for _, arg := range args[1:] {
 			if arg == "--fix" {
 				fix = true
 			}
@@ -720,133 +736,145 @@ func main() {
 		}
 		engine.DoctorCheck(fix, verbose)
 	case "validate":
-		if hasHelpFlag(os.Args[2:]) {
+		if hasHelpFlag(args[1:]) {
 			printValidateHelp()
-			os.Exit(0)
+			return 0
 		}
-		if len(os.Args) < 3 {
+		if len(args) < 2 {
 			printValidateHelp()
-			os.Exit(1)
+			return 1
 		}
-		_, _, _, _, preferSSH, _ := parseFlags(os.Args[3:])
-		engine.Validate(os.Args[2], preferSSH)
+		_, _, _, _, preferSSH, _ := parseFlags(args[2:])
+		engine.Validate(args[1], preferSSH)
 	case "render":
-		if hasHelpFlag(os.Args[2:]) {
+		if hasHelpFlag(args[1:]) {
 			printRenderHelp()
-			os.Exit(0)
+			return 0
 		}
-		if len(os.Args) < 3 {
+		if len(args) < 2 {
 			printRenderHelp()
-			os.Exit(1)
+			return 1
 		}
-		file := os.Args[2]
+		file := args[1]
 		tmplPath := ""
 		output := ""
-		_, _, _, _, preferSSH, _ := parseFlags(os.Args[3:])
-		for i := 3; i < len(os.Args); i++ {
-			switch os.Args[i] {
+		_, _, _, _, preferSSH, _ := parseFlags(args[2:])
+		for i := 2; i < len(args); i++ {
+			switch args[i] {
 			case "--template":
-				if i+1 < len(os.Args) {
-					tmplPath = os.Args[i+1]
+				if i+1 < len(args) {
+					tmplPath = args[i+1]
 					i++
 				}
 			case "--output":
-				if i+1 < len(os.Args) {
-					output = os.Args[i+1]
+				if i+1 < len(args) {
+					output = args[i+1]
 					i++
 				}
 			}
 		}
 		if tmplPath == "" {
 			fmt.Fprintln(os.Stderr, "error: --template <file.tmpl|dir> is required")
-			os.Exit(1)
+			return 1
 		}
-		cliVars := parseVarFlags(os.Args[3:])
+		cliVars, ok := parseVarFlags(args[2:])
+		if !ok {
+			return 1
+		}
 		engine.Render(file, tmplPath, output, preferSSH, cliVars)
 	case "check":
-		if hasHelpFlag(os.Args[2:]) {
+		if hasHelpFlag(args[1:]) {
 			printCheckHelp()
-			os.Exit(0)
+			return 0
 		}
-		if len(os.Args) < 3 {
+		if len(args) < 2 {
 			printCheckHelp()
-			os.Exit(1)
+			return 1
 		}
-		file := os.Args[2]
+		file := args[1]
 		tmplPath := ""
 		against := ""
-		_, _, _, _, preferSSH, _ := parseFlags(os.Args[3:])
-		for i := 3; i < len(os.Args); i++ {
-			switch os.Args[i] {
+		_, _, _, _, preferSSH, _ := parseFlags(args[2:])
+		for i := 2; i < len(args); i++ {
+			switch args[i] {
 			case "--template":
-				if i+1 < len(os.Args) {
-					tmplPath = os.Args[i+1]
+				if i+1 < len(args) {
+					tmplPath = args[i+1]
 					i++
 				}
 			case "--against":
-				if i+1 < len(os.Args) {
-					against = os.Args[i+1]
+				if i+1 < len(args) {
+					against = args[i+1]
 					i++
 				}
 			}
 		}
 		if tmplPath == "" {
 			fmt.Fprintln(os.Stderr, "error: --template <file.tmpl|dir> is required")
-			os.Exit(1)
+			return 1
 		}
-		cliVars := parseVarFlags(os.Args[3:])
+		cliVars, ok := parseVarFlags(args[2:])
+		if !ok {
+			return 1
+		}
 		engine.Check(file, tmplPath, against, preferSSH, cliVars)
 	case "template":
-		if hasHelpFlag(os.Args[2:]) {
+		if hasHelpFlag(args[1:]) {
 			printTemplateHelp()
-			os.Exit(0)
+			return 0
 		}
-		if len(os.Args) < 3 {
+		if len(args) < 2 {
 			printTemplateHelp()
-			os.Exit(1)
+			return 1
 		}
-		tmplPath := os.Args[2]
+		tmplPath := args[1]
 		output := ""
-		_, _, _, _, preferSSH, _ := parseFlags(os.Args[3:])
-		for i := 3; i < len(os.Args); i++ {
-			switch os.Args[i] {
+		_, _, _, _, preferSSH, _ := parseFlags(args[2:])
+		for i := 2; i < len(args); i++ {
+			switch args[i] {
 			case "--output":
-				if i+1 < len(os.Args) {
-					output = os.Args[i+1]
+				if i+1 < len(args) {
+					output = args[i+1]
 					i++
 				}
 			}
 		}
 		if output == "" {
 			fmt.Fprintln(os.Stderr, "error: --output <dir> is required")
-			os.Exit(1)
+			return 1
 		}
-		cliVars := parseVarFlags(os.Args[3:])
+		cliVars, ok := parseVarFlags(args[2:])
+		if !ok {
+			return 1
+		}
 		engine.Template(tmplPath, output, preferSSH, cliVars)
 	case "get":
-		if hasHelpFlag(os.Args[2:]) {
+		if hasHelpFlag(args[1:]) {
 			printGetHelp()
-			os.Exit(0)
+			return 0
 		}
-		if len(os.Args) < 5 {
+		if len(args) < 4 {
 			printGetHelp()
-			os.Exit(1)
+			return 1
 		}
-		file := os.Args[2]
-		action := os.Args[3]
-		key := os.Args[4]
-		_, _, _, _, preferSSH, _ := parseFlags(os.Args[5:])
-		cliVars := parseVarFlags(os.Args[5:])
+		file := args[1]
+		action := args[2]
+		key := args[3]
+		_, _, _, _, preferSSH, _ := parseFlags(args[4:])
+		cliVars, ok := parseVarFlags(args[4:])
+		if !ok {
+			return 1
+		}
 		engine.Get(file, action, key, preferSSH, cliVars)
 	default:
 		// Short mode: treat as file path only if it looks like a path (not a known command typo).
 		if !isKnownCommand(mode) {
 			if _, err := os.Stat(mode); err == nil { // #nosec G703 -- user-supplied file path is intentional
-				os.Exit(engine.Run(mode, false))
-				return
+				return engine.Run(mode, false)
 			}
 		}
 		fmt.Fprintln(os.Stderr, unknownCommandMessage(mode))
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
