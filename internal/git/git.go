@@ -9,10 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/elpic/blueprint/internal/git/gitcmd"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -22,17 +22,6 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
-
-// gitTimeout returns the timeout duration for git network operations.
-// Reads BLUEPRINT_GIT_TIMEOUT (seconds); defaults to 120s.
-func gitTimeout() time.Duration {
-	if s := os.Getenv("BLUEPRINT_GIT_TIMEOUT"); s != "" {
-		if n, err := strconv.Atoi(s); err == nil && n > 0 {
-			return time.Duration(n) * time.Second
-		}
-	}
-	return 120 * time.Second
-}
 
 // GitURLParams holds parsed git URL information
 type GitURLParams struct {
@@ -1404,23 +1393,23 @@ func IsBareRepository(path string) bool {
 	return err == nil && strings.TrimSpace(out) == "true"
 }
 
+// gitTimeout returns the timeout duration for git network operations.
+func gitTimeout() time.Duration {
+	return gitcmd.Timeout()
+}
+
 // runGit runs git with the standard git timeout and returns its stdout.
 func runGit(args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout())
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
-	}
-	return stdout.String(), nil
+	return runGitIn("", args...)
 }
 
 // runGitIn runs git with -C dir so it operates on the given repository.
+// Every shell-out in blueprint funnels through gitcmd, the single exec
+// boundary — see the package docs there for the go-git policy.
 func runGitIn(dir string, args ...string) (string, error) {
-	return runGit(append([]string{"-C", dir}, args...)...)
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout())
+	defer cancel()
+	return gitcmd.Run(ctx, dir, args...)
 }
 
 // expandHomePath expands a leading ~/ to the user's home directory.
