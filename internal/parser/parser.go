@@ -6,8 +6,19 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/elpic/blueprint/internal/git"
+	gitpkg "github.com/elpic/blueprint/internal/git"
+	"github.com/elpic/blueprint/internal/platform"
 )
+
+// Git is the git seam used by the parser for git includes. Package var (not
+// injected) — the parser is function-organized; reassign in tests.
+//
+// This is the seam replacement for the engine call that previously hid
+// behind the `git` import alias (git.CloneOrUpdateRepository): parser must
+// have zero git ENGINE dependencies; the remaining gitpkg calls are URL
+// semantics only (IsGitURL, ExpandShorthand, ParseGitURL), which move to
+// internal/giturl in phase 5.
+var Git platform.GitProvider = platform.NewContainer().GitProvider()
 
 type Package struct {
 	Name           string
@@ -244,11 +255,11 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 			}
 
 			// Dispatch git URLs to the remote include handler
-			if git.IsGitURL(filePath) {
+			if gitpkg.IsGitURL(filePath) {
 				if preferSSH {
-					filePath = git.ExpandShorthandSSH(filePath)
+					filePath = gitpkg.ExpandShorthandSSH(filePath)
 				} else {
-					filePath = git.ExpandShorthand(filePath)
+					filePath = gitpkg.ExpandShorthand(filePath)
 				}
 				if loadedFiles[filePath] {
 					fmt.Printf("Warning: Skipping circular include: %s\n", filePath)
@@ -368,15 +379,20 @@ func localPathForGitInclude(rawURL string) string {
 
 // loadGitInclude clones/updates the remote repo and parses the target blueprint file.
 func loadGitInclude(rawURL string, loadedFiles map[string]bool) ([]Rule, error) {
-	params := git.ParseGitURL(rawURL)
+	params := gitpkg.ParseGitURL(rawURL)
 	localPath := localPathForGitInclude(rawURL)
 
-	_, _, _, err := git.CloneOrUpdateRepository(params.URL, localPath, params.Branch)
-	if err != nil {
+	// Direct clone: the cache is a real working copy the setup file is read from.
+	if _, err := Git.Clone(platform.CloneSpec{
+		URL:    params.URL,
+		Path:   localPath,
+		Branch: params.Branch,
+		Mode:   platform.ModeDirect,
+	}); err != nil {
 		return nil, fmt.Errorf("failed to clone/update %s: %w", rawURL, err)
 	}
 
-	setupFile, err := git.FindSetupFile(localPath, params.Path)
+	setupFile, err := findSetupFile(localPath, params.Path)
 	if err != nil {
 		return nil, fmt.Errorf("setup file not found in %s: %w", rawURL, err)
 	}
@@ -387,6 +403,22 @@ func loadGitInclude(rawURL string, loadedFiles map[string]bool) ([]Rule, error) 
 	}
 	baseDir := filepath.Dir(setupFile)
 	return parseContent(string(content), baseDir, loadedFiles)
+}
+
+// findSetupFile returns the path to the blueprint setup file inside dir.
+// path defaults to "setup.bp" when empty. Local replacement for
+// git.FindSetupFile (plain os.Stat), which is slated for deletion in phase 5.
+func findSetupFile(dir, path string) (string, error) {
+	if path == "" {
+		path = "setup.bp"
+	}
+
+	setupPath := filepath.Join(dir, path)
+	if _, err := os.Stat(setupPath); err != nil {
+		return "", fmt.Errorf("setup file not found: %s in %s", path, dir)
+	}
+
+	return setupPath, nil
 }
 
 func ParseInstallRule(line string) (*Rule, error) {
