@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	gitpkg "github.com/elpic/blueprint/internal/git"
+	giturl "github.com/elpic/blueprint/internal/giturl"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/platform"
 	"github.com/elpic/blueprint/internal/ui"
@@ -540,14 +540,14 @@ func (h *DotfilesHandler) FindUninstallRules(status *Status, currentRules []pars
 	currentURLs := make(map[string]bool)
 	for _, rule := range currentRules {
 		if rule.Action == "dotfiles" && rule.DotfilesURL != "" {
-			currentURLs[gitpkg.NormalizeGitURL(rule.DotfilesURL)] = true
+			currentURLs[giturl.NormalizeGitURL(rule.DotfilesURL)] = true
 		}
 	}
 
 	var rules []parser.Rule
 	for _, d := range status.Dotfiles {
 		normalizedStatusBlueprint := normalizeBlueprint(d.Blueprint)
-		normalizedStatusURL := gitpkg.NormalizeGitURL(d.URL)
+		normalizedStatusURL := giturl.NormalizeGitURL(d.URL)
 		if normalizedStatusBlueprint == normalizedBlueprint && d.OS == osName && !currentURLs[normalizedStatusURL] {
 			rules = append(rules, parser.Rule{
 				Action:         "uninstall",
@@ -645,9 +645,9 @@ func DotfilesLinksForDiff(h *DotfilesHandler, homeDirOverride ...string) []strin
 // dotfiles regardless of this result (see command.go).
 func (h *DotfilesHandler) IsInstalled(status *Status, blueprintFile, osName string) bool {
 	normalizedBlueprint := normalizeBlueprint(blueprintFile)
-	normalizedRuleURL := gitpkg.NormalizeGitURL(h.Rule.DotfilesURL)
+	normalizedRuleURL := giturl.NormalizeGitURL(h.Rule.DotfilesURL)
 	for _, d := range status.Dotfiles {
-		normalizedStatusURL := gitpkg.NormalizeGitURL(d.URL)
+		normalizedStatusURL := giturl.NormalizeGitURL(d.URL)
 		if normalizedStatusURL == normalizedRuleURL && normalizeBlueprint(d.Blueprint) == normalizedBlueprint && d.OS == osName {
 			// Check if remote has new commits
 			clonePath := h.expandedDotfilesPath()

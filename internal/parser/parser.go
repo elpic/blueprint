@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	gitpkg "github.com/elpic/blueprint/internal/git"
+	giturl "github.com/elpic/blueprint/internal/giturl"
 	"github.com/elpic/blueprint/internal/platform"
 )
 
@@ -14,10 +14,9 @@ import (
 // injected) — the parser is function-organized; reassign in tests.
 //
 // This is the seam replacement for the engine call that previously hid
-// behind the `git` import alias (git.CloneOrUpdateRepository): parser must
-// have zero git ENGINE dependencies; the remaining gitpkg calls are URL
-// semantics only (IsGitURL, ExpandShorthand, ParseGitURL), which move to
-// internal/giturl in phase 5.
+// behind the `git` import alias (git.CloneOrUpdateRepository): parser has
+// zero git ENGINE dependencies. URL semantics (IsGitURL, ExpandShorthand,
+// ParseGitURL) come from internal/giturl, not internal/git.
 var Git platform.GitProvider = platform.NewContainer().GitProvider()
 
 type Package struct {
@@ -255,11 +254,11 @@ func parseContent(content string, baseDir string, loadedFiles map[string]bool) (
 			}
 
 			// Dispatch git URLs to the remote include handler
-			if gitpkg.IsGitURL(filePath) {
+			if giturl.IsGitURL(filePath) {
 				if preferSSH {
-					filePath = gitpkg.ExpandShorthandSSH(filePath)
+					filePath = giturl.ExpandShorthandSSH(filePath)
 				} else {
-					filePath = gitpkg.ExpandShorthand(filePath)
+					filePath = giturl.ExpandShorthand(filePath)
 				}
 				if loadedFiles[filePath] {
 					fmt.Printf("Warning: Skipping circular include: %s\n", filePath)
@@ -379,7 +378,7 @@ func localPathForGitInclude(rawURL string) string {
 
 // loadGitInclude clones/updates the remote repo and parses the target blueprint file.
 func loadGitInclude(rawURL string, loadedFiles map[string]bool) ([]Rule, error) {
-	params := gitpkg.ParseGitURL(rawURL)
+	params := giturl.ParseGitURL(rawURL)
 	localPath := localPathForGitInclude(rawURL)
 
 	// Direct clone: the cache is a real working copy the setup file is read from.
@@ -406,8 +405,7 @@ func loadGitInclude(rawURL string, loadedFiles map[string]bool) ([]Rule, error) 
 }
 
 // findSetupFile returns the path to the blueprint setup file inside dir.
-// path defaults to "setup.bp" when empty. Local replacement for
-// git.FindSetupFile (plain os.Stat), which is slated for deletion in phase 5.
+// path defaults to "setup.bp" when empty.
 func findSetupFile(dir, path string) (string, error) {
 	if path == "" {
 		path = "setup.bp"

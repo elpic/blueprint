@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"time"
 
-	gitpkg "github.com/elpic/blueprint/internal/git"
+	giturl "github.com/elpic/blueprint/internal/giturl"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/platform"
 	"github.com/elpic/blueprint/internal/ui"
@@ -370,7 +370,7 @@ func (h *CloneHandler) FindUninstallRules(status *Status, currentRules []parser.
 	currentCloneURLs := make(map[string]bool)
 	for _, rule := range currentRules {
 		if rule.Action == "clone" && rule.CloneURL != "" {
-			currentCloneURLs[gitpkg.NormalizeGitURL(rule.CloneURL)] = true
+			currentCloneURLs[giturl.NormalizeGitURL(rule.CloneURL)] = true
 		}
 	}
 
@@ -379,7 +379,7 @@ func (h *CloneHandler) FindUninstallRules(status *Status, currentRules []parser.
 	if status.Clones != nil {
 		for _, clone := range status.Clones {
 			normalizedStatusBlueprint := normalizeBlueprint(clone.Blueprint)
-			normalizedStatusURL := gitpkg.NormalizeGitURL(clone.URL)
+			normalizedStatusURL := giturl.NormalizeGitURL(clone.URL)
 			// Match by path OR by normalized URL
 			isCurrent := currentClonePaths[clone.Path] || currentCloneURLs[normalizedStatusURL]
 			if normalizedStatusBlueprint == normalizedBlueprint && clone.OS == osName && !isCurrent {

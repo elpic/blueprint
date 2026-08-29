@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/elpic/blueprint/internal"
-	gitpkg "github.com/elpic/blueprint/internal/git"
+	giturl "github.com/elpic/blueprint/internal/giturl"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/platform"
@@ -251,7 +251,7 @@ func groupIntoWaves(sorted []parser.Rule) [][]parser.Rule {
 
 // isGitURL returns true if the input is a git URL
 func isGitURL(input string) bool {
-	return gitpkg.IsGitURL(input)
+	return giturl.IsGitURL(input)
 }
 
 // normalizeBlueprint normalizes a blueprint identifier for consistent storage
@@ -259,7 +259,7 @@ func isGitURL(input string) bool {
 // lowercase HTTPS form). Local file paths are normalized via normalizePath.
 func normalizeBlueprint(input string) string {
 	if isGitURL(input) {
-		return gitpkg.NormalizeGitURL(gitpkg.StripBranch(input))
+		return giturl.NormalizeGitURL(giturl.StripBranch(input))
 	}
 	return normalizePath(input)
 }
@@ -272,13 +272,13 @@ func normalizeBlueprint(input string) string {
 func resolveBlueprintFile(input string, verbose bool, preferSSH bool) (setupPath string, sha string, cleanup func(), err error) {
 	cleanup = func() {}
 	if preferSSH {
-		input = gitpkg.ExpandShorthandSSH(input)
+		input = giturl.ExpandShorthandSSH(input)
 	} else {
-		input = gitpkg.ExpandShorthand(input)
+		input = giturl.ExpandShorthand(input)
 	}
 
-	if gitpkg.IsGitURL(input) {
-		params := gitpkg.ParseGitURL(input)
+	if giturl.IsGitURL(input) {
+		params := giturl.ParseGitURL(input)
 		localPath := blueprintRepoPath(input)
 
 		// Direct clone: the cache is a real working copy so doctor can check
@@ -304,8 +304,7 @@ func resolveBlueprintFile(input string, verbose bool, preferSSH bool) (setupPath
 }
 
 // findBlueprintSetupFile returns the path to the blueprint setup file inside
-// dir. path defaults to "setup.bp" when empty. Local replacement for
-// git.FindSetupFile (plain os.Stat), which is slated for deletion in phase 5.
+// dir. path defaults to "setup.bp" when empty.
 func findBlueprintSetupFile(dir, path string) (string, error) {
 	if path == "" {
 		path = "setup.bp"
@@ -322,7 +321,7 @@ func findBlueprintSetupFile(dir, path string) (string, error) {
 // `blueprint doctor` can locate the repo without re-cloning it.
 func blueprintRepoPath(rawURL string) string {
 	homeDir, _ := os.UserHomeDir()
-	params := gitpkg.ParseGitURL(rawURL)
+	params := giturl.ParseGitURL(rawURL)
 	normalized := strings.TrimPrefix(params.URL, "https://")
 	normalized = strings.TrimPrefix(normalized, "http://")
 	normalized = strings.TrimPrefix(normalized, "git://")

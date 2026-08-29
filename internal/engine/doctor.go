@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	gitpkg "github.com/elpic/blueprint/internal/git"
+	giturl "github.com/elpic/blueprint/internal/giturl"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/platform"
@@ -78,8 +78,8 @@ func checkBlueprintURLs(status *handlerskg.Status) []doctorIssue {
 func normalizeBlueprintForDoctor(bp string) string {
 	// Deliberately preserve the branch so checkBranchDuplicates can distinguish
 	// "repo@main" from "repo@feat/test". Only normalize URL form (SSH→HTTPS, .git suffix).
-	if gitpkg.IsGitURL(bp) {
-		return gitpkg.NormalizeGitURL(bp)
+	if giturl.IsGitURL(bp) {
+		return giturl.NormalizeGitURL(bp)
 	}
 	return handlerskg.NormalizeBlueprint(bp)
 }
@@ -122,7 +122,7 @@ func checkDuplicates(status *handlerskg.Status) []doctorIssue {
 // specifier, returning just the base repo identity. Two URLs that differ only
 // by branch will return the same value.
 func stripBranchFromBlueprint(bp string) string {
-	return handlerskg.NormalizeBlueprint(gitpkg.StripBranch(bp))
+	return handlerskg.NormalizeBlueprint(giturl.StripBranch(bp))
 }
 
 // checkBranchDuplicates detects entries where the same resource+OS pair appears
@@ -209,7 +209,7 @@ func checkBranchDuplicates(status *handlerskg.Status) []doctorIssue {
 // so the orphan check uses the exact version that was applied. If sha is empty
 // it uses HEAD (safe fallback for local blueprints or old status files).
 func rulesForBlueprint(blueprintURL, sha string) ([]parser.Rule, error) {
-	if !gitpkg.IsGitURL(blueprintURL) {
+	if !giturl.IsGitURL(blueprintURL) {
 		// Local file — parse directly.
 		return parser.ParseFile(blueprintURL)
 	}
@@ -218,7 +218,7 @@ func rulesForBlueprint(blueprintURL, sha string) ([]parser.Rule, error) {
 
 	// Clone or update so we have the repo locally. Direct mode: the cache is
 	// a working copy so the SHA checkout below has a worktree to act on.
-	params := gitpkg.ParseGitURL(blueprintURL)
+	params := giturl.ParseGitURL(blueprintURL)
 	if _, err := Git.Clone(platform.CloneSpec{
 		URL:    params.URL,
 		Path:   localPath,
@@ -743,12 +743,12 @@ func prefetchBlueprints(status *handlerskg.Status) {
 		return
 	}
 	for _, u := range urls {
-		if !gitpkg.IsGitURL(u) {
+		if !giturl.IsGitURL(u) {
 			continue
 		}
 		fmt.Printf("  %s %s\n", ui.FormatDim("⟳"), ui.FormatDim(fmt.Sprintf("Fetching %s...", u)))
 		localPath := blueprintRepoPath(u)
-		params := gitpkg.ParseGitURL(u)
+		params := giturl.ParseGitURL(u)
 		// Direct mode, matching the working-copy cache rulesForBlueprint reads.
 		result, err := Git.Clone(platform.CloneSpec{
 			URL:    params.URL,

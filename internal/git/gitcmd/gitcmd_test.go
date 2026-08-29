@@ -4,7 +4,7 @@ package gitcmd
 // operations use go-git, and system git is confined to the bare/worktree
 // feature plus clone/fetch fallbacks.
 //
-// Two layers:
+// Three layers:
 //
 //   (a) Primary — no file in the git subsystem other than this package may
 //       import os/exec, except those named in execAllowedFiles. Checked on the AST rather than by grepping, so it
@@ -18,6 +18,13 @@ package gitcmd
 //       package or be listed in approvedSites with a written reason. This
 //       layer is self-documenting: it makes the surviving exceptions, and
 //       why they survive, legible in one place.
+//   (c) Import guard (#033 phase 5) — no package outside internal/platform,
+//       internal/git, and internal/giturl may import internal/git. Internal
+//       git operations must go through the GitProvider seam
+//       (internal/platform) or URL semantics (internal/giturl). Checked on
+//       the AST so it catches an import added for a type but not yet used —
+//       a grep over call sites would miss it. This is what makes the engine
+//       boundary enforced, not conventional.
 
 import (
 	"go/ast"
@@ -38,10 +45,9 @@ import (
 // its site is ported to go-git, until the map holds only the bare/worktree
 // feature and the clone/fetch fallbacks.
 var approvedSites = map[string]string{
-	"internal/git/git.go:233": "clone fallback: system git clone after go-git tryClone fails (SSH agent/keychain auth)",
-	"internal/git/git.go:502": "ls-remote fallback: reached only after go-git remote.List fails; symref resolution already handled in go-git",
-	"internal/git/git.go:615": "fetch fallback: system git fetch after go-git Fetch fails (SSH agent/keychain auth)",
-	"internal/git/git.go:750": "clone fallback: system git clone after go-git PlainClone fails (SSH agent/keychain auth)",
+	"internal/git/git.go:258": "ls-remote fallback: reached only after go-git remote.List fails; symref resolution already handled in go-git",
+	"internal/git/git.go:371": "fetch fallback: system git fetch after go-git Fetch fails (SSH agent/keychain auth)",
+	"internal/git/git.go:506": "clone fallback: system git clone after go-git PlainClone fails (SSH agent/keychain auth)",
 }
 
 // execAllowedFiles grants a file-level exemption from the primary invariant,
@@ -234,6 +240,61 @@ func TestApprovedSitesAreDocumented(t *testing.T) {
 		}
 		if !strings.Contains(key, ":") {
 			t.Errorf("approvedSites key %q must be of the form file:line", key)
+		}
+	}
+}
+
+// ---- #033 phase 5: engine boundary import guard (layer c) -----------------
+
+// gitEngineImportPath is the import path of the git engine package. After
+// #033 phase 5, only the seam (internal/platform), the engine itself
+// (internal/git and its subpackages), and the URL-semantics package
+// (internal/giturl) may import it. Every other caller must go through the
+// GitProvider seam or internal/giturl.
+const gitEngineImportPath = `"github.com/elpic/blueprint/internal/git"`
+
+// gitEngineAllowedDirs are the directory prefixes whose files may import
+// internal/git without violating the seam boundary.
+var gitEngineAllowedDirs = []string{
+	"internal/platform", // the seam delegation layer (realGitProvider)
+	"internal/git",      // the engine itself and its subpackages (gitcmd)
+	"internal/giturl",   // pure URL functions (should not need internal/git, but allowed defensively)
+}
+
+// TestGitEngineNotImportedOutsideSeam is layer (c): an AST-based import scan
+// that enforces the engine boundary established in #033. No package outside
+// internal/platform, internal/git, and internal/giturl may import
+// internal/git — internal git operations must go through the GitProvider seam
+// (internal/platform) or URL semantics (internal/giturl). This catches an
+// import that a grep over call sites would miss (e.g. an import added for a
+// type but not yet used).
+func TestGitEngineNotImportedOutsideSeam(t *testing.T) {
+	root := moduleRoot(t)
+
+	for _, path := range goFiles(t, root, true) {
+		rel := relPath(t, root, path)
+		dir := filepath.ToSlash(filepath.Dir(rel))
+
+		allowed := false
+		for _, allowedDir := range gitEngineAllowedDirs {
+			if dir == allowedDir || strings.HasPrefix(dir, allowedDir+"/") {
+				allowed = true
+				break
+			}
+		}
+		if allowed {
+			continue
+		}
+
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		for _, imp := range file.Imports {
+			if imp.Path.Value == gitEngineImportPath {
+				t.Errorf("%s imports internal/git — internal git operations must go through the GitProvider seam (internal/platform) or URL semantics (internal/giturl)", rel)
+			}
 		}
 	}
 }

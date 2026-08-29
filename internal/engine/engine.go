@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	gitpkg "github.com/elpic/blueprint/internal/git"
+	giturl "github.com/elpic/blueprint/internal/giturl"
 	"github.com/elpic/blueprint/internal/logging"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
@@ -64,9 +64,9 @@ var passwordCache = &passwordStore{m: make(map[string]string)}
 // 1 = one or more rules failed or a fatal error occurred.
 func RunWithSkip(file string, dry bool, skipGroup string, skipID string, onlyID string, skipDecrypt bool, preferSSH bool, noStatus bool, cliVars map[string]string) int {
 	if preferSSH {
-		file = gitpkg.ExpandShorthandSSH(file)
+		file = giturl.ExpandShorthandSSH(file)
 	} else {
-		file = gitpkg.ExpandShorthand(file)
+		file = giturl.ExpandShorthand(file)
 	}
 	var runNumber int
 

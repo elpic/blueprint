@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	gitpkg "github.com/elpic/blueprint/internal/git"
+	giturl "github.com/elpic/blueprint/internal/giturl"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/platform"
 )
@@ -578,11 +578,11 @@ func NormalizeBlueprint(input string) string {
 // and comparison. Git URLs are normalized via NormalizeGitURL (SSH/HTTPS → canonical
 // lowercase HTTPS form). Local file paths are normalized via normalizePath.
 func normalizeBlueprint(input string) string {
-	if gitpkg.IsGitURL(input) {
+	if giturl.IsGitURL(input) {
 		// Strip @branch/:path before normalizing so that
 		// "https://github.com/user/repo@main" and "https://github.com/user/repo"
 		// are treated as the same blueprint for status lookups.
-		return gitpkg.NormalizeGitURL(gitpkg.StripBranch(input))
+		return giturl.NormalizeGitURL(giturl.StripBranch(input))
 	}
 	// Detect mangled git URLs: normalizePath() was previously called on git URL
 	// strings, producing absolute paths like "/home/user/https:/github.com/repo.git".
@@ -590,8 +590,8 @@ func normalizeBlueprint(input string) string {
 	for _, prefix := range []string{"https:/", "http:/", "git@"} {
 		if idx := strings.Index(input, prefix); idx > 0 {
 			embedded := input[idx:]
-			if gitpkg.IsGitURL(embedded) {
-				return gitpkg.NormalizeGitURL(embedded)
+			if giturl.IsGitURL(embedded) {
+				return giturl.NormalizeGitURL(embedded)
 			}
 		}
 	}

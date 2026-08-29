@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	gitpkg "github.com/elpic/blueprint/internal/git"
+	giturl "github.com/elpic/blueprint/internal/giturl"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/renderer"
 	"github.com/elpic/blueprint/internal/ui"
@@ -161,9 +161,9 @@ func isDir(path string) bool {
 // loadRulesForRender resolves and parses a blueprint, exiting on any error.
 func loadRulesForRender(file string, preferSSH bool) []parser.Rule {
 	if preferSSH {
-		file = gitpkg.ExpandShorthandSSH(file)
+		file = giturl.ExpandShorthandSSH(file)
 	} else {
-		file = gitpkg.ExpandShorthand(file)
+		file = giturl.ExpandShorthand(file)
 	}
 
 	setupPath, _, cleanup, err := resolveBlueprintFile(file, false, preferSSH)
