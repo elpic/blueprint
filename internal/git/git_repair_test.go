@@ -1,18 +1,19 @@
 package git
 
-// Golden-master differential test for the #030 port of the worktree repair
-// from system git to go-git.
+// Table tests for the #030 go-git worktree repair: deleted-path detection and
+// the restore that follows it.
 //
-// The shell implementation (`deletedTrackedPathsShell` /
-// `restoreDeletedPathsShell`) is the reference; the go-git implementation must
-// return identical results on every case below. Both are run against
-// independent but identically-built fixtures, so neither can influence the
-// other. Once this test has served its purpose the shell reference is deleted.
+// These cases began as a golden-master differential test against the shell
+// implementation the repair was ported from. Once that reference was deleted
+// the expectations stayed: each case pins a semantic the port had to preserve,
+// and several (dangling symlink, skip-worktree, staged deletion) are exactly
+// the ones a naive rewrite gets wrong.
 
 import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -138,72 +139,67 @@ func repairFixtures() []repairFixture {
 	}
 }
 
-// TestRepairDetectionMatchesGoldenMaster asserts the go-git port reports
-// exactly what the shell reference reports.
-func TestRepairDetectionMatchesGoldenMaster(t *testing.T) {
+// TestRepairDetectsDeletedPaths asserts deletedTrackedPaths reports exactly
+// the paths each fixture expects — and, crucially, nothing else.
+func TestRepairDetectsDeletedPaths(t *testing.T) {
 	for _, fx := range repairFixtures() {
 		t.Run(fx.name, func(t *testing.T) {
-			shellWork := buildFixture(t, fx)
-			gogitWork := buildFixture(t, fx)
+			work := buildFixture(t, fx)
 
-			wantShell, err := deletedTrackedPathsShell(shellWork)
+			got, err := deletedTrackedPaths(work)
 			if err != nil {
-				t.Fatalf("shell reference failed: %v", err)
+				t.Fatalf("deletedTrackedPaths: %v", err)
 			}
-			gotGoGit, err := deletedTrackedPaths(gogitWork)
-			if err != nil {
-				t.Fatalf("go-git implementation failed: %v", err)
-			}
-
-			sort.Strings(wantShell)
-			sort.Strings(gotGoGit)
-			assertSamePaths(t, "deleted", wantShell, gotGoGit)
-			assertSamePaths(t, "vs expected", fx.wantDeleted, gotGoGit)
+			assertSamePaths(t, "deleted", fx.wantDeleted, got)
 		})
 	}
 }
 
-// TestRepairRestoreMatchesGoldenMaster runs both restores over identically
-// built fixtures and asserts the resulting worktrees are indistinguishable.
-func TestRepairRestoreMatchesGoldenMaster(t *testing.T) {
+// TestRepairRestoresDeletedPaths runs the full repair and asserts the resulting
+// worktree: restored bytes, untouched user files, and (where the fixture cares)
+// the exact `git status --porcelain` output.
+func TestRepairRestoresDeletedPaths(t *testing.T) {
 	for _, fx := range repairFixtures() {
 		t.Run(fx.name, func(t *testing.T) {
-			shellWork := buildFixture(t, fx)
-			gogitWork := buildFixture(t, fx)
+			work := buildFixture(t, fx)
 
-			shellDeleted, err := deletedTrackedPathsShell(shellWork)
-			if err != nil {
-				t.Fatalf("shell detect: %v", err)
+			if err := repairDeletedFiles(work); err != nil {
+				t.Fatalf("repairDeletedFiles: %v", err)
 			}
-			goDeleted, err := deletedTrackedPaths(gogitWork)
-			if err != nil {
-				t.Fatalf("go-git detect: %v", err)
-			}
-
-			if len(shellDeleted) > 0 {
-				if err := restoreDeletedPathsShell(shellWork, shellDeleted); err != nil {
-					t.Fatalf("shell restore: %v", err)
-				}
-			}
-			if len(goDeleted) > 0 {
-				if err := restoreDeletedPaths(gogitWork, goDeleted); err != nil {
-					t.Fatalf("go-git restore: %v", err)
-				}
-			}
-
-			// Compare the whole worktree, excluding .git, byte for byte.
-			assertTreesEqual(t, shellWork, gogitWork)
 
 			if fx.wantStatus != nil {
-				assertSamePaths(t, "status", fx.wantStatus, statusEntries(t, gogitWork))
+				assertSamePaths(t, "status", fx.wantStatus, statusEntries(t, work))
 			}
 			for rel, want := range fx.wantContent {
-				if got := readFile(t, filepath.Join(gogitWork, rel)); got != want {
+				if got := readFile(t, filepath.Join(work, rel)); got != want {
 					t.Errorf("%s = %q, want %q", rel, got, want)
 				}
 			}
+			// No .blueprint-restore-* temp file may survive the rename.
+			if leftovers := strayTempFiles(t, work); len(leftovers) > 0 {
+				t.Errorf("repair left temp files behind: %v", leftovers)
+			}
 		})
 	}
+}
+
+// strayTempFiles returns any temp file the atomic write failed to rename.
+func strayTempFiles(t *testing.T, root string) []string {
+	t.Helper()
+	var out []string
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && strings.HasPrefix(info.Name(), ".blueprint-restore-") {
+			out = append(out, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+	return out
 }
 
 // buildFixture creates an origin repo, clones it and applies fx.mutate.
@@ -267,68 +263,4 @@ func assertSamePaths(t *testing.T, what string, want, got []string) {
 			t.Fatalf("%s: got %v, want %v", what, got, want)
 		}
 	}
-}
-
-// assertTreesEqual compares two worktrees file by file, skipping .git.
-func assertTreesEqual(t *testing.T, a, b string) {
-	t.Helper()
-	aFiles := walkTree(t, a)
-	bFiles := walkTree(t, b)
-	assertSamePaths(t, "restored file set", aFiles, bFiles)
-	for _, rel := range aFiles {
-		if got, want := readEntry(t, filepath.Join(b, rel)), readEntry(t, filepath.Join(a, rel)); got != want {
-			t.Errorf("%s: go-git restored %q, shell restored %q", rel, got, want)
-		}
-	}
-}
-
-// readEntry describes a worktree entry in a comparable way. Symlinks are
-// rendered as their target rather than their contents, so a dangling link can
-// be compared without following it (filepath.Walk lstats, but os.ReadFile does
-// not).
-func readEntry(t *testing.T, path string) string {
-	t.Helper()
-	info, err := os.Lstat(path)
-	if err != nil {
-		t.Fatalf("lstat %s: %v", path, err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		target, err := os.Readlink(path)
-		if err != nil {
-			t.Fatalf("readlink %s: %v", path, err)
-		}
-		return "symlink:" + target
-	}
-	return readFile(t, path)
-}
-
-// walkTree returns every file under root except .git, as sorted slash paths.
-func walkTree(t *testing.T, root string) []string {
-	t.Helper()
-	var out []string
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-		if rel == ".git" {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !info.IsDir() {
-			out = append(out, rel)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walk %s: %v", root, err)
-	}
-	sort.Strings(out)
-	return out
 }

@@ -953,7 +953,7 @@ func appendToGitConfig(t *testing.T, repo, extra string) {
 	if err != nil {
 		t.Fatalf("open .git/config: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := f.WriteString("\n" + extra); err != nil {
 		t.Fatalf("append .git/config: %v", err)
 	}

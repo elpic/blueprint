@@ -1,7 +1,6 @@
 package git
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -936,56 +935,6 @@ func writeFileAtomic(target string, data []byte, perm os.FileMode) error {
 	}
 	if err := os.Rename(tmpName, target); err != nil {
 		return fmt.Errorf("move into place: %w", err)
-	}
-	return nil
-}
-
-// --- Reference implementation (temporary) -----------------------------------
-//
-// The shell versions below are retained only so the differential test can
-// assert that the go-git port returns identical results. They are deleted once
-// that test has served its purpose; see #030.
-
-// deletedTrackedPathsShell is the pre-port implementation, kept as the golden
-// master for deletedTrackedPaths.
-func deletedTrackedPathsShell(path string) ([]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout())
-	defer cancel()
-	// --diff-filter=D drops every other change, so the output is strictly
-	// alternating status/path records; -z keeps odd path names (spaces, quotes,
-	// newlines) unambiguous.
-	cmd := exec.CommandContext(ctx, "git", "-C", path, "diff-index", "--name-status", "--diff-filter=D", "-z", "HEAD") // #nosec G204
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("diff-index %s: %w", path, err)
-	}
-
-	fields := strings.Split(string(out), "\x00")
-	var deleted []string
-	for i := 0; i+1 < len(fields); i += 2 {
-		if strings.HasPrefix(fields[i], "D") && fields[i+1] != "" {
-			deleted = append(deleted, fields[i+1])
-		}
-	}
-	return deleted, nil
-}
-
-// restoreDeletedPathsShell is the pre-port implementation, kept as the golden
-// master for restoreDeletedPaths.
-func restoreDeletedPathsShell(path string, deleted []string) error {
-	args := []string{"-C", path, "restore", "--source=HEAD", "--worktree", "--"}
-	args = append(args, deleted...)
-
-	// --source=HEAD repairs deletions that were staged in the index too;
-	// --worktree keeps the index (and therefore any staged work) untouched.
-	restoreCtx, restoreCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer restoreCancel()
-	cmd := exec.CommandContext(restoreCtx, "git", args...) // #nosec G204
-	cmd.Stdout = io.Discard
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git restore %d deleted file(s): %w: %s", len(deleted), err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
 }

@@ -7,7 +7,7 @@ package gitcmd
 // Two layers:
 //
 //   (a) Primary — no file in the git subsystem other than this package may
-//       import os/exec. Checked on the AST rather than by grepping, so it
+//       import os/exec, except those named in execAllowedFiles. Checked on the AST rather than by grepping, so it
 //       catches `exec.Command(bin, ...)` where bin is a variable — a regex
 //       over call sites never would. (Blueprint is a provisioning tool and
 //       shells out to brew, asdf, mise, gpg and friends all over, so a
@@ -38,38 +38,19 @@ import (
 // its site is ported to go-git, until the map holds only the bare/worktree
 // feature and the clone/fetch fallbacks.
 var approvedSites = map[string]string{
-	// --- Permanent: the bare:/worktree feature -------------------------------
-	// go-git v5 has no worktree support at all, so `git worktree add` cannot be
-	// expressed with it. The whole bare path runs on system git by design.
-	"internal/git/git.go:1461": "bare/worktree feature: second refspec-repair site (ensureFetchRefspec); go-git cannot express `git worktree`",
-
-	// --- Permanent: clone/fetch fallbacks ------------------------------------
-	// Each of these arms runs only after go-git has already failed. They cover
-	// SSH agent, OS keychain and other auth cases go-git handles poorly.
-	"internal/git/git.go:234": "clone fallback: system git clone after go-git tryClone fails (SSH agent/keychain auth)",
-	"internal/git/git.go:706": "clone fallback: system git clone after go-git PlainClone fails (SSH agent/keychain auth)",
-	"internal/git/git.go:604": "fetch fallback: system git fetch after go-git Fetch fails (SSH agent/keychain auth)",
-
-	// --- Permanent: ls-remote fallback ---------------------------------------
-	// remoteRefWithError already tries go-git remote.List (and resolves
-	// symrefs) first; this is the arm reached only when that fails.
-	"internal/git/git.go:503": "ls-remote fallback: reached only after go-git remote.List fails; symref resolution already handled in go-git",
-
-	// --- TODO: migrate (#030) ------------------------------------------------
-	"internal/git/git.go:983": "TODO: migrate (#030) restore in repairDeletedFiles -> go-git blob write",
-	"internal/git/git.go:957": "TODO: migrate (#030) diff-index deleted-path detection -> go-git HEAD-tree walk + os.Lstat",
+	"internal/git/git.go:233":  "clone fallback: system git clone after go-git tryClone fails (SSH agent/keychain auth)",
+	"internal/git/git.go:502":  "ls-remote fallback: reached only after go-git remote.List fails; symref resolution already handled in go-git",
+	"internal/git/git.go:603":  "fetch fallback: system git fetch after go-git Fetch fails (SSH agent/keychain auth)",
+	"internal/git/git.go:705":  "clone fallback: system git clone after go-git PlainClone fails (SSH agent/keychain auth)",
+	"internal/git/git.go:1410": "bare/worktree feature: second refspec-repair site (ensureFetchRefspec); go-git cannot express `git worktree`",
 }
 
-// execAllowedDuringMigration grants a file-level exemption from the primary
-// invariant while #030 is in flight, each with a mandatory reason. It exists
-// so the invariant can be enforced from day one without leaving the tree red:
-// a *new* os/exec import anywhere in the git subsystem fails immediately,
-// while the known stragglers are named and tracked.
-//
-// Every entry is deleted when its file's last exec site is ported, at which
-// point layer (a) becomes absolute.
-var execAllowedDuringMigration = map[string]string{
-	"internal/git/git.go": "TODO: migrate (#030) — still imports os/exec for 2 sites (957/983: the shell reference impl, deleted with the differential test); delete this entry when the last is ported to go-git",
+// execAllowedFiles grants a file-level exemption from the primary invariant,
+// each with a mandatory reason. Layer (b) governs these files line by line;
+// this map says which files may hold such lines at all, so an os/exec import
+// appearing in a *new* file in the git subsystem fails immediately.
+var execAllowedFiles = map[string]string{
+	"internal/git/git.go": "holds the approved system-git arms: the clone/fetch/ls-remote fallbacks (each runs only after go-git fails) and the bare/worktree feature, which go-git cannot express. Every site is enumerated in approvedSites.",
 }
 
 // gitSubsystem is the directory tree layer (a) governs: where blueprint's own
@@ -161,7 +142,7 @@ func TestGitSubsystemDoesNotExec(t *testing.T) {
 			if imp.Path.Value != `"os/exec"` {
 				continue
 			}
-			reason, exempt := execAllowedDuringMigration[rel]
+			reason, exempt := execAllowedFiles[rel]
 			switch {
 			case !exempt:
 				t.Errorf("%s imports os/exec — internal git operations must use go-git; "+
@@ -169,7 +150,7 @@ func TestGitSubsystemDoesNotExec(t *testing.T) {
 					rel, gitSubsystem)
 			case strings.TrimSpace(reason) == "":
 				t.Errorf("%s is exempt from the exec ban with an empty reason — "+
-					"document why, or finish the migration and delete the entry", rel)
+					"document which system-git arms it holds", rel)
 			}
 		}
 	}

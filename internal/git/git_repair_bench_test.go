@@ -101,33 +101,24 @@ func gitInBench(b *testing.B, dir string, args ...string) {
 	}
 }
 
-// BenchmarkDeletedTrackedPaths compares the go-git HEAD-tree walk against the
-// shell `diff-index` reference on the same fixture.
+// BenchmarkDeletedTrackedPaths is a regression guard for the go-git
+// HEAD-tree walk, retained after the measurement it was built for.
+//
+// The shell reference it originally raced against is gone, so this now reports
+// an absolute number to compare against the ADR's "<100ms for a 5k-file repo"
+// gate. If this number drifts materially upward, the tree-walk's cost
+// assumptions need revisiting.
 func BenchmarkDeletedTrackedPaths(b *testing.B) {
 	work := benchFixture(b)
 	b.ResetTimer()
 
-	b.Run("tree-walk", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			got, err := deletedTrackedPaths(work)
-			if err != nil {
-				b.Fatal(err)
-			}
-			if len(got) != benchDeletedFiles {
-				b.Fatalf("deleted %d files, want %d", len(got), benchDeletedFiles)
-			}
+	for i := 0; i < b.N; i++ {
+		got, err := deletedTrackedPaths(work)
+		if err != nil {
+			b.Fatal(err)
 		}
-	})
-
-	b.Run("diff-index", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			got, err := deletedTrackedPathsShell(work)
-			if err != nil {
-				b.Fatal(err)
-			}
-			if len(got) != benchDeletedFiles {
-				b.Fatalf("deleted %d files, want %d", len(got), benchDeletedFiles)
-			}
+		if len(got) != benchDeletedFiles {
+			b.Fatalf("deleted %d files, want %d", len(got), benchDeletedFiles)
 		}
-	})
+	}
 }
