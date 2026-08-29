@@ -157,32 +157,130 @@ type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// GitProvider handles Git operations (specialized network/filesystem operations).
-// This is separated from other providers as Git operations are common enough
-// to warrant their own interface but complex enough to need abstraction.
-type GitProvider interface {
-	// Clone clones a repository
-	Clone(url, path, branch string) (*GitResult, error)
-	// Update updates a repository to latest
-	Update(path, branch string) (*GitResult, error)
-	// GetLocalSHA returns the current HEAD SHA of a local repository
-	GetLocalSHA(path string) (string, error)
-	// GetRemoteHeadSHA returns the HEAD SHA of a remote repository
-	GetRemoteHeadSHA(url, branch string) (string, error)
-	// IsRepository checks if a path is a Git repository
-	IsRepository(path string) bool
+// --- named scalar types: type-safety now, promotion path later ---
+
+// SHA is a git commit hash.
+type SHA string
+
+// RepoPath is a working-copy or bare-layout repository path (~ allowed;
+// expansion belongs to the engine below this seam).
+type RepoPath string
+
+// RepoID identifies a remote: URL in any accepted form (@github:, ssh, https)
+// + optional branch. Struct because the pair already repeats across three
+// methods; new fields (e.g. auth hints) won't touch signatures.
+type RepoID struct {
+	URL    string
+	Branch string
 }
 
-// GitResult represents the result of a Git operation
-type GitResult struct {
-	// Status indicates what happened (Cloned, Updated, Already up to date)
-	Status string
-	// OldSHA is the SHA before the operation (for updates)
-	OldSHA string
-	// NewSHA is the SHA after the operation
-	NewSHA string
-	// Message provides additional information
-	Message string
+// CloneMode selects the clone strategy. The zero value is ModeTwoStage, the
+// engine's default, so a spec constructed without an explicit mode does what
+// clone rules do today.
+type CloneMode uint8
+
+const (
+	// ModeTwoStage clones into clean storage and mirrors the content into the
+	// target (no .git in the target — it is a mirror, not a working repo).
+	ModeTwoStage CloneMode = iota
+	// ModeDirect clones a fully functional working copy. Updating an existing
+	// copy reverts tracked changes, but untracked files MUST survive (#031).
+	ModeDirect
+	// ModeBare keeps the repository itself in <path>/.git (bare) with a
+	// worktree per branch under <path>/; updates never touch existing
+	// worktrees.
+	ModeBare
+)
+
+// CloneSpec is resolved intent: the caller interpreted the rule, the engine
+// executes the spec. Shorthand/`~` expansion belong to the engine.
+type CloneSpec struct {
+	URL    string
+	Path   string
+	Branch string
+	Mode   CloneMode // ModeTwoStage (default) | ModeDirect | ModeBare
+}
+
+// CheckoutSpec is doctor's exact-SHA comparison. Force/Detach are realistic
+// future fields (the current internal impl already forces) — spec type from
+// day one so adding them touches zero call sites.
+type CheckoutSpec struct {
+	Path RepoPath
+	SHA  SHA
+}
+
+// CloneStatus enumerates what a Clone did. Callers switch on the enum —
+// never on status strings — so the compiler enumerates every case.
+type CloneStatus uint8
+
+const (
+	StatusCloned   CloneStatus = iota // target did not exist; created
+	StatusUpdated                     // existing target moved to a new SHA
+	StatusSynced                      // content resynced, SHA unchanged
+	StatusUpToDate                    // nothing to do
+)
+
+// CloneResult reports what a Clone did.
+type CloneResult struct {
+	Status CloneStatus
+	OldSHA SHA
+	NewSHA SHA
+	// Notes carries recoverable incidents (repair counts, #031
+	// untracked-file protection warnings). Never a failure — failures are
+	// errors.
+	Notes []string
+}
+
+// RepoLayout classifies what sits at a path.
+type RepoLayout uint8
+
+const (
+	LayoutNone     RepoLayout = iota // not a repository
+	LayoutStandard                   // working copy with a .git directory
+	LayoutBare                       // bare repository (path itself, or <path>/.git in the bare-clone layout)
+	LayoutWorktree                   // linked worktree / gitfile (.git is a regular file)
+)
+
+// GitProvider is the one seam for all git operations. Handlers, engine,
+// doctor, renderer, and parser program against it; the implementation behind
+// it (go-git v5 + system-git fallbacks today, go-git v6 after #032) is a
+// swappable detail.
+//
+// Error contract:
+//   - Hard failures (clone/fetch failure, checkout conflict) are errors.
+//   - Recoverable incidents are CloneResult.Notes, never errors.
+//   - An unknown SHA is ("", nil), not an error.
+//
+// Data-safety contract per CloneMode:
+//   - ModeTwoStage: the target is a content mirror (no .git); re-cloning
+//     replaces content but the clean storage is the source of truth.
+//   - ModeDirect: updating an existing copy reverts tracked changes, but
+//     untracked files MUST survive (#031).
+//   - ModeBare: updates never touch existing worktrees registered under
+//     <path>/.
+type GitProvider interface {
+	// Clone clones or updates per spec. The mode's data-safety contract above
+	// is binding on every implementation.
+	Clone(spec CloneSpec) (CloneResult, error)
+	// Checkout checks out an exact SHA (forced; doctor inspects the version
+	// that was applied).
+	Checkout(spec CheckoutSpec) error
+
+	// LocalSHA returns the HEAD SHA of the repository at path.
+	// ("", nil) = unknown, not error.
+	LocalSHA(path RepoPath) (SHA, error)
+	// RemoteSHA returns the remote HEAD (or branch tip) SHA for id.
+	// Branch "" resolves the remote default via symref.
+	RemoteSHA(id RepoID) (SHA, error)
+	// BareSHA returns the SHA a bare-layout clone at path is synced to, for
+	// the given branch ("" for the remote default).
+	BareSHA(path RepoPath, branch string) (SHA, error)
+	// StorageSHA returns the HEAD SHA of the clean storage copy of id, or
+	// ("", nil) when no clean storage exists.
+	StorageSHA(id RepoID) (SHA, error)
+
+	// Layout classifies what sits at path.
+	Layout(path RepoPath) RepoLayout
 }
 
 // CryptoProvider handles encryption and decryption operations.

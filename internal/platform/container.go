@@ -18,7 +18,6 @@ import (
 	"github.com/elpic/blueprint/internal"
 	cryptopkg "github.com/elpic/blueprint/internal/crypto"
 	gitpkg "github.com/elpic/blueprint/internal/git"
-	"github.com/go-git/go-git/v5"
 )
 
 // container implements the Container interface and manages all platform dependencies.
@@ -587,59 +586,130 @@ func (n *realNetworkProvider) IsReachable(host string, port int, timeout time.Du
 	return err == nil
 }
 
+// realGitProvider implements GitProvider by delegating to internal/git.
+// It is the only type above the seam allowed to touch internal/git (enforced
+// by an import guard in a later phase of #033).
 type realGitProvider struct{}
 
-func (g *realGitProvider) Clone(url, path, branch string) (*GitResult, error) {
-	oldSHA, newSHA, status, err := gitpkg.CloneOrUpdateRepository(url, path, branch)
+// Clone dispatches to the internal/git clone strategy selected by spec.Mode
+// and translates the legacy status string into the CloneStatus enum.
+func (g *realGitProvider) Clone(spec CloneSpec) (CloneResult, error) {
+	var oldSHA, newSHA, status string
+	var err error
+	switch spec.Mode {
+	case ModeTwoStage:
+		oldSHA, newSHA, status, err = gitpkg.CloneOrUpdateRepositoryTwoStage(spec.URL, spec.Path, spec.Branch)
+	case ModeDirect:
+		oldSHA, newSHA, status, err = gitpkg.CloneOrUpdateRepositoryDirect(spec.URL, spec.Path, spec.Branch)
+	case ModeBare:
+		oldSHA, newSHA, status, err = gitpkg.CloneOrUpdateRepositoryBare(spec.URL, spec.Path, spec.Branch)
+	default:
+		return CloneResult{}, fmt.Errorf("unknown clone mode %d", spec.Mode)
+	}
 	if err != nil {
-		return nil, err
+		return CloneResult{}, err
 	}
-	return &GitResult{Status: status, OldSHA: oldSHA, NewSHA: newSHA}, nil
-}
-
-func (g *realGitProvider) Update(path, branch string) (*GitResult, error) {
-	// Update has no URL argument, so read the "origin" remote URL from the
-	// existing local repository first. Use repo.Remote("origin") rather than
-	// iterating Remotes() — it returns a direct error when origin is absent.
-	repo, err := git.PlainOpen(path)
+	mapped, err := cloneStatusFromString(status)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open repository at %s: %w", path, err)
+		return CloneResult{}, err
 	}
-	origin, err := repo.Remote("origin")
-	if err != nil || len(origin.Config().URLs) == 0 {
-		return nil, fmt.Errorf("no origin remote found in repository: %s", path)
-	}
-
-	oldSHA, newSHA, status, err := gitpkg.CloneOrUpdateRepository(origin.Config().URLs[0], path, branch)
-	if err != nil {
-		return nil, err
-	}
-	return &GitResult{Status: status, OldSHA: oldSHA, NewSHA: newSHA}, nil
+	return CloneResult{
+		Status: mapped,
+		OldSHA: SHA(oldSHA),
+		NewSHA: SHA(newSHA),
+	}, nil
 }
 
-func (g *realGitProvider) GetLocalSHA(path string) (string, error) {
-	return gitpkg.LocalSHAWithError(path)
+// cloneStatusFromString maps the status strings emitted by internal/git to the
+// CloneStatus enum. An unrecognized string is an error, not a silent zero
+// value — today's callers switch on exact strings, so an unnoticed new status
+// would silently misreport (this is how "Synced" once escaped an audit).
+func cloneStatusFromString(status string) (CloneStatus, error) {
+	switch status {
+	case "Cloned":
+		return StatusCloned, nil
+	case "Updated":
+		return StatusUpdated, nil
+	case "Synced":
+		return StatusSynced, nil
+	case "Already up to date":
+		return StatusUpToDate, nil
+	default:
+		return 0, fmt.Errorf("unknown clone status %q", status)
+	}
 }
 
-func (g *realGitProvider) GetRemoteHeadSHA(url, branch string) (string, error) {
-	return gitpkg.RemoteHeadSHAWithError(url, branch)
+// Checkout delegates to internal/git's forced exact-SHA checkout.
+func (g *realGitProvider) Checkout(spec CheckoutSpec) error {
+	return gitpkg.CheckoutSHA(string(spec.Path), string(spec.SHA))
 }
 
-// IsRepository reports whether path looks like a git repository.
-// The path itself must be a directory, and it must contain a .git entry.
-// The .git entry may be a directory (standard and bare repositories) or a
-// regular file (worktrees and gitfiles such as submodules), so its mere
-// existence is the check rather than requiring a directory.
-func (g *realGitProvider) IsRepository(path string) bool {
-	pathInfo, err := os.Stat(path)
+// LocalSHA propagates the underlying error verbatim: internal/git reports a
+// missing repository or unreadable HEAD as an error, so only alternate
+// implementations that cannot distinguish "unknown" use ("", nil).
+func (g *realGitProvider) LocalSHA(path RepoPath) (SHA, error) {
+	sha, err := gitpkg.LocalSHAWithError(string(path))
+	return SHA(sha), err
+}
+
+// RemoteSHA delegates to internal/git; Branch "" resolves the remote default
+// via symref.
+func (g *realGitProvider) RemoteSHA(id RepoID) (SHA, error) {
+	sha, err := gitpkg.RemoteHeadSHAWithError(id.URL, id.Branch)
+	return SHA(sha), err
+}
+
+// BareSHA maps internal/git's empty-string "no such bare repo / branch" to
+// the seam's unknown SHA ("", nil) — the underlying function cannot fail
+// loudly, so "" is unknown, not error.
+func (g *realGitProvider) BareSHA(path RepoPath, branch string) (SHA, error) {
+	return SHA(gitpkg.BareRepositorySHA(string(path), branch)), nil
+}
+
+// StorageSHA reads the clean-storage copy of id. Like BareSHA, the underlying
+// function returns "" (no clean storage, unreadable HEAD) rather than an
+// error, which maps to the seam's unknown SHA ("", nil).
+func (g *realGitProvider) StorageSHA(id RepoID) (SHA, error) {
+	return SHA(gitpkg.GetCleanRepositorySHA(id.URL, id.Branch)), nil
+}
+
+// Layout classifies what sits at path.
+//
+// The bare check runs first and shells out to git, two ways:
+//   - <path>/.git is itself a bare repository — this codebase's bare-clone
+//     layout, detected exactly the way clone.go does it. The .git subdir must
+//     be probed directly: git's discovery at <path> treats it as the worktree
+//     (answering rev-parse --is-bare-repository "false") for go-git-created
+//     bare clones, which are the engine's default.
+//   - path itself is a bare gitdir (a true bare repository).
+//
+// The bare layout's .git is a directory, so the bare checks must precede the
+// standard-repo stat below.
+//
+// The .git entry semantics come from the old IsRepository: a regular .git
+// file is a linked worktree or gitfile (submodule); a .git directory is a
+// standard working copy.
+func (g *realGitProvider) Layout(path RepoPath) RepoLayout {
+	if gitpkg.IsBareRepository(filepath.Join(string(path), ".git")) ||
+		gitpkg.IsBareRepository(string(path)) {
+		return LayoutBare
+	}
+	pathInfo, err := os.Stat(string(path))
 	if err != nil || !pathInfo.IsDir() {
-		return false
+		return LayoutNone
 	}
-	gitEntry, err := os.Stat(filepath.Join(path, ".git"))
+	gitEntry, err := os.Stat(filepath.Join(string(path), ".git"))
 	if err != nil {
-		return false
+		return LayoutNone
 	}
-	return gitEntry.IsDir() || gitEntry.Mode().IsRegular()
+	switch {
+	case gitEntry.Mode().IsRegular():
+		return LayoutWorktree
+	case gitEntry.IsDir():
+		return LayoutStandard
+	default:
+		return LayoutNone
+	}
 }
 
 type realCryptoProvider struct{}
