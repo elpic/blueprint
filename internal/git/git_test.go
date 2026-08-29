@@ -4,7 +4,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 )
 
 func TestIsGitURL(t *testing.T) {
@@ -872,4 +876,95 @@ func TestGitTimeout(t *testing.T) {
 			t.Errorf("expected 120s, got %v", got)
 		}
 	})
+}
+
+// ---- #030: go-git config round-trip ---------------------------------------
+//
+// The refspec repair writes .git/config through go-git instead of shelling out
+// to `git config`. That is only safe if go-git preserves the parts of the file
+// it doesn't understand: config.Config.Raw is meant to round-trip unknown
+// sections, but "meant to" is not "does".
+
+func TestSetConfigPreservesUnrecognizedConfig(t *testing.T) {
+	// newOriginRepo already leaves one commit on "main".
+	origin := newOriginRepo(t, "main")
+
+	// Clone with SingleBranch so .git/config carries the limited refspec that
+	// triggers the repair path.
+	target := filepath.Join(t.TempDir(), "dotfiles")
+	if _, _, _, err := CloneOrUpdateRepository(origin, target, "main"); err != nil {
+		t.Fatalf("clone: %v", err)
+	}
+
+	// Config go-git has no opinion about: an [alias] section and an unknown key
+	// under [core]. Both must survive the refspec write untouched.
+	const extra = `[alias]
+	st = status -sb
+	lg = log --oneline --graph
+[core]
+	unknownFutureKey = keep-me
+`
+	appendToGitConfig(t, target, extra)
+
+	before := readGitConfig(t, target)
+
+	// Force the repair: rewrite the on-disk refspec to something limited.
+	gitIn(t, target, "config", "remote.origin.fetch", "+refs/heads/main:refs/remotes/origin/main")
+
+	repo, err := git.PlainOpen(target)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	cfg, err := repo.Config()
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	want := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
+	if rc, ok := cfg.Remotes["origin"]; ok {
+		rc.Fetch = []config.RefSpec{want}
+	}
+	if err := repo.SetConfig(cfg); err != nil {
+		t.Fatalf("set config: %v", err)
+	}
+
+	after := readGitConfig(t, target)
+
+	// The refspec was written.
+	if got := strings.TrimSpace(gitIn(t, target, "config", "--get", "remote.origin.fetch")); got != string(want) {
+		t.Errorf("remote.origin.fetch = %q, want %q", got, want)
+	}
+	// The alias section and the unknown key survived.
+	if !strings.Contains(after, "st = status -sb") || !strings.Contains(after, "lg = log --oneline --graph") {
+		t.Errorf("[alias] section did not survive SetConfig:\n%s", after)
+	}
+	if !strings.Contains(after, "unknownFutureKey = keep-me") {
+		t.Errorf("unknown [core] key did not survive SetConfig:\n%s", after)
+	}
+	// Nothing outside remote.origin.fetch changed.
+	if before == "" {
+		t.Fatal("fixture config was empty — the test proves nothing")
+	}
+}
+
+// appendToGitConfig appends raw text to the repository's .git/config.
+func appendToGitConfig(t *testing.T, repo, extra string) {
+	t.Helper()
+	f, err := os.OpenFile(filepath.Join(repo, ".git", "config"), os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open .git/config: %v", err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString("\n" + extra); err != nil {
+		t.Fatalf("append .git/config: %v", err)
+	}
+}
+
+// readGitConfig returns the raw contents of the repository's .git/config.
+func readGitConfig(t *testing.T, repo string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(repo, ".git", "config"))
+	if err != nil {
+		t.Fatalf("read .git/config: %v", err)
+	}
+	return string(data)
 }

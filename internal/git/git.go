@@ -564,9 +564,9 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 		fetched := false
 		fullRefspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
 		limitedRefspec := false
+		goRepo, goRepoErr := git.PlainOpen(path)
 		{
-			goRepo, openErr := git.PlainOpen(path)
-			if openErr == nil {
+			if goRepoErr == nil {
 				// Ensure the remote config fetches all branches. go-git's clone with
 				// SingleBranch: true stores a limited refspec — if a different branch
 				// is now requested, the stored refspec won't include it and the fetch
@@ -609,11 +609,22 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 			}
 		}
 
-		// Persist the full refspec to disk so future operations (go-git or system git)
-		// don't encounter the same SingleBranch limitation.
-		if limitedRefspec {
-			setRefspec := exec.Command("git", "-C", path, "config", "remote.origin.fetch", string(fullRefspec))
-			_ = setRefspec.Run()
+		// Persist the full refspec to disk so future operations (go-git or system
+		// git) don't encounter the same SingleBranch limitation.
+		//
+		// The in-memory mutation above is what made *this* fetch use the full
+		// refspec; SetConfig writes that config back to .git/config, so the
+		// refspec is repaired once rather than twice — previously this was a
+		// second, separate repair via `git config`.
+		if limitedRefspec && goRepoErr == nil {
+			if cfg, cfgErr := goRepo.Config(); cfgErr == nil {
+				if rc, ok := cfg.Remotes["origin"]; ok {
+					rc.Fetch = []config.RefSpec{fullRefspec}
+				}
+				if err := goRepo.SetConfig(cfg); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: could not persist remote.origin.fetch in %s: %v\n", path, err)
+				}
+			}
 		}
 
 		// Open the repo for local ref resolution and reset (no auth needed — local only)
