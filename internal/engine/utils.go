@@ -10,8 +10,13 @@ import (
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
 	"github.com/elpic/blueprint/internal/ui"
 )
+
+// Git is the git seam used by the engine. Package var (not injected) because
+// the engine is function-organized; reassign in tests.
+var Git platform.GitProvider = platform.NewContainer().GitProvider()
 
 func getOSName() string {
 	detector := internal.NewOSDetector()
@@ -276,19 +281,40 @@ func resolveBlueprintFile(input string, verbose bool, preferSSH bool) (setupPath
 		params := gitpkg.ParseGitURL(input)
 		localPath := blueprintRepoPath(input)
 
-		_, newSHA, _, cloneErr := gitpkg.CloneOrUpdateRepository(params.URL, localPath, params.Branch)
+		// Direct clone: the cache is a real working copy so doctor can check
+		// out exact SHAs and inspect files.
+		result, cloneErr := Git.Clone(platform.CloneSpec{
+			URL:    params.URL,
+			Path:   localPath,
+			Branch: params.Branch,
+			Mode:   platform.ModeDirect,
+		})
 		if cloneErr != nil {
 			return "", "", cleanup, fmt.Errorf("error cloning repository: %w", cloneErr)
 		}
 
-		setupPath, err = gitpkg.FindSetupFile(localPath, params.Path)
+		setupPath, err = findBlueprintSetupFile(localPath, params.Path)
 		if err != nil {
 			return "", "", cleanup, fmt.Errorf("error finding setup file: %w", err)
 		}
-		return setupPath, newSHA, cleanup, nil
+		return setupPath, string(result.NewSHA), cleanup, nil
 	}
 
 	return input, "", cleanup, nil
+}
+
+// findBlueprintSetupFile returns the path to the blueprint setup file inside
+// dir. path defaults to "setup.bp" when empty. Local replacement for
+// git.FindSetupFile (plain os.Stat), which is slated for deletion in phase 5.
+func findBlueprintSetupFile(dir, path string) (string, error) {
+	if path == "" {
+		path = "setup.bp"
+	}
+	setupPath := filepath.Join(dir, path)
+	if _, err := os.Stat(setupPath); err != nil {
+		return "", fmt.Errorf("setup file not found: %s in %s", path, dir)
+	}
+	return setupPath, nil
 }
 
 // blueprintRepoPath returns the stable local cache path for a blueprint git URL.

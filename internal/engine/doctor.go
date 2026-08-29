@@ -11,6 +11,7 @@ import (
 	gitpkg "github.com/elpic/blueprint/internal/git"
 	handlerskg "github.com/elpic/blueprint/internal/handlers"
 	"github.com/elpic/blueprint/internal/parser"
+	"github.com/elpic/blueprint/internal/platform"
 	"github.com/elpic/blueprint/internal/ui"
 )
 
@@ -203,16 +204,6 @@ func checkBranchDuplicates(status *handlerskg.Status) []doctorIssue {
 	}
 }
 
-// findBlueprintSetupFile returns the path to setup.bp inside localPath, or an
-// error if the file does not exist.
-func findBlueprintSetupFile(localPath string) (string, error) {
-	p := filepath.Join(localPath, "setup.bp")
-	if _, err := os.Stat(p); err != nil {
-		return "", err
-	}
-	return p, nil
-}
-
 // rulesForBlueprint loads the parsed rules for a blueprint URL at a specific
 // git SHA. It clones/updates the repo on demand, then checks out the given SHA
 // so the orphan check uses the exact version that was applied. If sha is empty
@@ -225,22 +216,31 @@ func rulesForBlueprint(blueprintURL, sha string) ([]parser.Rule, error) {
 
 	localPath := blueprintRepoPath(blueprintURL)
 
-	// Clone or update so we have the repo locally.
+	// Clone or update so we have the repo locally. Direct mode: the cache is
+	// a working copy so the SHA checkout below has a worktree to act on.
 	params := gitpkg.ParseGitURL(blueprintURL)
-	if _, _, _, err := gitpkg.CloneOrUpdateRepository(params.URL, localPath, params.Branch); err != nil {
+	if _, err := Git.Clone(platform.CloneSpec{
+		URL:    params.URL,
+		Path:   localPath,
+		Branch: params.Branch,
+		Mode:   platform.ModeDirect,
+	}); err != nil {
 		return nil, fmt.Errorf("failed to fetch blueprint %s: %w", blueprintURL, err)
 	}
 
 	// Checkout the specific SHA that was applied so we compare against the
 	// exact version of the blueprint the user ran, not the current HEAD.
 	if sha != "" {
-		if err := gitpkg.CheckoutSHA(localPath, sha); err != nil {
+		if err := Git.Checkout(platform.CheckoutSpec{
+			Path: platform.RepoPath(localPath),
+			SHA:  platform.SHA(sha),
+		}); err != nil {
 			// Non-fatal: fall through and use whatever is checked out.
 			fmt.Printf("  Warning: could not checkout SHA %s for %s: %v\n", sha, blueprintURL, err)
 		}
 	}
 
-	setupPath, err := findBlueprintSetupFile(localPath)
+	setupPath, err := findBlueprintSetupFile(localPath, "")
 	if err != nil {
 		return nil, fmt.Errorf("setup.bp not found in %s: %w", blueprintURL, err)
 	}
@@ -749,11 +749,17 @@ func prefetchBlueprints(status *handlerskg.Status) {
 		fmt.Printf("  %s %s\n", ui.FormatDim("⟳"), ui.FormatDim(fmt.Sprintf("Fetching %s...", u)))
 		localPath := blueprintRepoPath(u)
 		params := gitpkg.ParseGitURL(u)
-		_, newSHA, _, err := gitpkg.CloneOrUpdateRepository(params.URL, localPath, params.Branch)
+		// Direct mode, matching the working-copy cache rulesForBlueprint reads.
+		result, err := Git.Clone(platform.CloneSpec{
+			URL:    params.URL,
+			Path:   localPath,
+			Branch: params.Branch,
+			Mode:   platform.ModeDirect,
+		})
 		if err != nil {
 			fmt.Printf("    %s\n", ui.FormatDim(fmt.Sprintf("  Could not fetch %s: %v", u, err)))
-		} else if newSHA != "" {
-			shortSHA := newSHA
+		} else if result.NewSHA != "" {
+			shortSHA := string(result.NewSHA)
 			if len(shortSHA) > 8 {
 				shortSHA = shortSHA[:8]
 			}
