@@ -39,13 +39,23 @@ func init() {
 		},
 		ShellExport: func(rule parser.Rule, _, _ string) []string {
 			shell := rule.ShellName
+			// Prepend a conditional, idempotent append to /etc/shells so the
+			// exported script converges the machine to the declared state, just
+			// like Up() does. The grep -qxF short-circuit avoids a sudo prompt
+			// (and a duplicate line) when the shell is already listed.
+			const ensureLine = `grep -qxF "$SHELL_PATH" /etc/shells || echo "$SHELL_PATH" | sudo tee -a /etc/shells > /dev/null`
 			if !strings.HasPrefix(shell, "/") {
 				return []string{
 					fmt.Sprintf(`SHELL_PATH="$(command -v %s)"`, shellQ(shell)),
+					ensureLine,
 					`chsh -s "$SHELL_PATH"`,
 				}
 			}
-			return []string{"chsh -s " + shellQ(shell)}
+			return []string{
+				fmt.Sprintf(`SHELL_PATH=%s`, shellQ(shell)),
+				ensureLine,
+				`chsh -s "$SHELL_PATH"`,
+			}
 		},
 	})
 }
@@ -106,8 +116,11 @@ func (h *ShellHandler) Up() (string, error) {
 		return "", err
 	}
 
-	// Check if shell is in /etc/shells
-	if err := h.validateShellInEtcShells(shellPath); err != nil {
+	// Ensure the shell is listed in /etc/shells, appending it via sudo if it
+	// is missing. Returns whether an append actually happened so we can note
+	// it in the success message.
+	appended, err := ensureShellInEtcShells(shellPath)
+	if err != nil {
 		return "", err
 	}
 
@@ -131,15 +144,16 @@ func (h *ShellHandler) Up() (string, error) {
 	// This will be used for rollback in Down()
 	h.previousShell = currentShell
 
-	// Change shell using chsh (with path sanitization and timeout)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "chsh", "-s", filepath.Clean(shellPath))
-	output, err := cmd.CombinedOutput()
+	// Change shell using chsh (with path sanitization). chshRunner is
+	// overridable for testing so tests don't mutate the real login shell.
+	out, err := chshRunner(shellPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to change shell: %w (output: %s)", err, string(output))
+		return "", fmt.Errorf("failed to change shell: %w (output: %s)", err, out)
 	}
 
+	if appended {
+		return fmt.Sprintf("Added %s to /etc/shells and changed default shell to %s for user %s", shellPath, shellPath, currentUser.Username), nil
+	}
 	return fmt.Sprintf("Changed default shell to %s for user %s", shellPath, currentUser.Username), nil
 }
 
@@ -460,23 +474,105 @@ func (h *ShellHandler) validateShell(shellPath string) error {
 	return nil
 }
 
-// validateShellInEtcShells checks if the shell is listed in /etc/shells
-func (h *ShellHandler) validateShellInEtcShells(shellPath string) error {
-	content, err := os.ReadFile("/etc/shells")
+// etcShellsReader reads the contents of /etc/shells. Overridable for testing
+// so tests can point at a temp file instead of mutating the real /etc/shells.
+// Returns an os.ErrNotExist-wrapped error (or any underlying error) when the
+// file is missing; callers treat "not exist" as "no /etc/shells enforcement".
+var etcShellsReader = func() ([]byte, error) {
+	return os.ReadFile("/etc/shells")
+}
+
+// sudoAppendToEtcShells appends the given content to /etc/shells via
+// `sudo tee -a /etc/shells`, feeding content on stdin so no temp file is
+// needed. Overridable for testing so tests never invoke real sudo.
+var sudoAppendToEtcShells = func(content string) (string, error) {
+	cmd := exec.Command("sudo", "tee", "-a", "/etc/shells")
+	cmd.Stdin = strings.NewReader(content)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// chshRunner runs `chsh -s <shellPath>` to change the login shell.
+// Overridable for testing so tests don't mutate the real login shell.
+var chshRunner = func(shellPath string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "chsh", "-s", filepath.Clean(shellPath))
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// shellInEtcShells is a pure-read predicate that reports whether the given
+// shell path is listed in /etc/shells. It returns (true, nil) when /etc/shells
+// is absent (preserving the historical "no enforcement" behavior), (true, nil)
+// when the path is listed, (false, nil) when it is not listed, and (false,
+// err) only on a real read failure that isn't "file doesn't exist".
+func shellInEtcShells(shellPath string) (bool, error) {
+	content, err := etcShellsReader()
 	if err != nil {
-		// If /etc/shells doesn't exist, allow any valid shell
-		return nil
+		// If /etc/shells doesn't exist, allow any valid shell (no enforcement).
+		if os.IsNotExist(err) {
+			return true, nil
+		}
+		return false, err
 	}
 
-	shells := strings.Split(string(content), "\n")
-	for _, line := range shells {
-		line = strings.TrimSpace(line)
-		if line == shellPath {
-			return nil
+	for _, line := range strings.Split(string(content), "\n") {
+		if strings.TrimSpace(line) == shellPath {
+			return true, nil
 		}
 	}
+	return false, nil
+}
 
-	return fmt.Errorf("shell '%s' is not listed in /etc/shells - it may not be allowed as a login shell", shellPath)
+// ensureShellInEtcShells guarantees that shellPath is listed in /etc/shells,
+// appending it via sudo when missing. It returns (false, nil) when the shell
+// is already present (or /etc/shells is absent — no-op, no sudo), (true, nil)
+// after a successful append, and (false, err) if reading or appending fails.
+// The path is cleaned before writing; the shell-path injection surface is
+// already covered upstream by validateShellName + filepath.IsAbs/Clean.
+func ensureShellInEtcShells(shellPath string) (bool, error) {
+	shellPath = filepath.Clean(shellPath)
+
+	present, err := shellInEtcShells(shellPath)
+	if err != nil {
+		return false, fmt.Errorf("failed to check /etc/shells: %w", err)
+	}
+	if present {
+		return false, nil
+	}
+
+	// If the existing file doesn't end with a newline, prepend one so we don't
+	// merge the new entry onto the last line. When /etc/shells is absent the
+	// reader returns (true, nil) above, so we only reach here when the file
+	// exists — but guard the read anyway in case of a transient race.
+	line := shellPath + "\n"
+	if content, readErr := etcShellsReader(); readErr == nil && len(content) > 0 &&
+		content[len(content)-1] != '\n' {
+		line = "\n" + line
+	}
+
+	out, err := sudoAppendToEtcShells(line)
+	if err != nil {
+		return false, fmt.Errorf("failed to append %s to /etc/shells: %w (output: %s)", shellPath, err, out)
+	}
+	return true, nil
+}
+
+// validateShellInEtcShells checks if the shell is listed in /etc/shells. It is
+// retained for Down() (rollback), which must NOT auto-fix /etc/shells —
+// removing a shell could break another user on the machine. To preserve the
+// historical rollback behavior, any read failure (including permission errors)
+// is treated as "allow" rather than blocking the revert.
+func (h *ShellHandler) validateShellInEtcShells(shellPath string) error {
+	present, err := shellInEtcShells(shellPath)
+	if err != nil {
+		return nil
+	}
+	if !present {
+		return fmt.Errorf("shell '%s' is not listed in /etc/shells - it may not be allowed as a login shell", shellPath)
+	}
+	return nil
 }
 
 // validateUsername validates usernames to prevent command injection
@@ -613,10 +709,22 @@ func (h *ShellHandler) FindUninstallRules(status *Status, currentRules []parser.
 	return uninstallRules
 }
 
-// NeedsSudo returns false because chsh typically works without sudo for the current user
+// NeedsSudo returns true only when the shell will need to be appended to
+// /etc/shells (i.e. it is not already listed). This keeps the common case —
+// zsh/bash already in /etc/shells — prompt-free, while prompting upfront when
+// an append is actually required. On any error resolving the path or reading
+// the file we return true (safe default: prompt; the append is skipped if it
+// turns out the shell is already present).
 func (h *ShellHandler) NeedsSudo() bool {
-	// chsh normally works without sudo when changing your own shell
-	return false
+	shellPath, err := h.resolveShellPath(h.Rule.ShellName)
+	if err != nil {
+		return true
+	}
+	present, err := shellInEtcShells(shellPath)
+	if err != nil {
+		return true
+	}
+	return !present
 }
 
 // isMacOS returns true if running on macOS
