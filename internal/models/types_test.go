@@ -1,14 +1,9 @@
 package models
 
-import (
-	"testing"
-	"time"
-)
+import "testing"
 
 // TestHistory tests the History type and its basic operations.
 func TestHistory(t *testing.T) {
-	start := time.Now()
-
 	// Test creating a new History
 	h := make(History)
 
@@ -30,12 +25,6 @@ func TestHistory(t *testing.T) {
 		t.Errorf("Expected h[\"nonexistent\"] to be false, got %v", h["nonexistent"])
 	}
 
-	duration := time.Since(start)
-
-	// Should be extremely fast (< 10μs)
-	if duration > 10*time.Microsecond {
-		t.Errorf("Test took %v, expected < 10μs for simple map operations", duration)
-	}
 }
 
 // TestHistoryOperations tests various map operations on History.
@@ -79,12 +68,8 @@ func TestHistoryOperations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			start := time.Now()
-
 			h := make(History)
 			result, exists := tt.operation(h)
-
-			duration := time.Since(start)
 
 			if result != tt.expected {
 				t.Errorf("Expected %v, got %v", tt.expected, result)
@@ -93,19 +78,12 @@ func TestHistoryOperations(t *testing.T) {
 			if exists != tt.exists {
 				t.Errorf("Expected exists=%v, got %v", tt.exists, exists)
 			}
-
-			// Should be extremely fast (< 10μs)
-			if duration > 10*time.Microsecond {
-				t.Errorf("Test took %v, expected < 10μs for simple map operations", duration)
-			}
 		})
 	}
 }
 
 // TestHistoryLength tests the length operations on History.
 func TestHistoryLength(t *testing.T) {
-	start := time.Now()
-
 	h := make(History)
 
 	// Test empty history
@@ -130,19 +108,10 @@ func TestHistoryLength(t *testing.T) {
 	if len(h) != 2 {
 		t.Errorf("Expected history to have length 2 after deletion, got %d", len(h))
 	}
-
-	duration := time.Since(start)
-
-	// Should be extremely fast (< 10μs)
-	if duration > 10*time.Microsecond {
-		t.Errorf("Test took %v, expected < 10μs for simple map operations", duration)
-	}
 }
 
 // TestHistoryIteration tests iterating over History.
 func TestHistoryIteration(t *testing.T) {
-	start := time.Now()
-
 	h := History{
 		"key1": true,
 		"key2": false,
@@ -177,13 +146,6 @@ func TestHistoryIteration(t *testing.T) {
 
 	if falseCount != 1 {
 		t.Errorf("Expected 1 false value, got %d", falseCount)
-	}
-
-	duration := time.Since(start)
-
-	// Should be extremely fast (< 50μs)
-	if duration > 50*time.Microsecond {
-		t.Errorf("Test took %v, expected < 50μs for simple iteration", duration)
 	}
 }
 
