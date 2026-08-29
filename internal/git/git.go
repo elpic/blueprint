@@ -517,7 +517,19 @@ func remoteRefWithError(url, ref string) (string, error) {
 // Tries go-git first; falls back to the system git binary if go-git fails (e.g. SSH agent issues).
 // Returns: (oldSHA, newSHA, status_message, error)
 // status_message can be: "Cloned", "Updated", "Already up to date"
+//
+// Recoverable incidents (e.g. #031 untracked-file protection) are dropped
+// here; callers that need them use the notes-aware core via
+// CloneOrUpdateRepositoryDirectWithNotes.
 func CloneOrUpdateRepository(url, path, branch string) (string, string, string, error) {
+	return cloneOrUpdateRepository(url, path, branch, nil)
+}
+
+// cloneOrUpdateRepository is CloneOrUpdateRepository with an optional notes
+// accumulator for recoverable incidents, threaded through to the seam's
+// CloneResult.Notes. A nil pointer means the caller ignores notes; the
+// exported wrappers keep their historical 4-value signatures.
+func cloneOrUpdateRepository(url, path, branch string, notes *[]string) (string, string, string, error) {
 	// Expand @github: shorthand to full URL
 	url = ExpandShorthand(url)
 
@@ -671,17 +683,50 @@ func CloneOrUpdateRepository(url, path, branch string) (string, string, string, 
 		if err != nil {
 			return oldSHA, "", "", fmt.Errorf("failed to get worktree: %w", err)
 		}
-		if err := worktree.Reset(&git.ResetOptions{
-			Commit: targetHash,
-			Mode:   git.HardReset,
-		}); err != nil {
-			return oldSHA, "", "", fmt.Errorf("failed to reset: %w", err)
+
+		// #031: go-git's HardReset deletes untracked worktree files (real
+		// `git reset --hard` does not). Move them aside before the reset and
+		// put them back after — see git_untracked.go for the crash-safety
+		// contract. Refusing to reset on enumeration failure is deliberate:
+		// an update that might destroy files it cannot account for is a
+		// failure, not a warning.
+		backup, protectNotes, protectErr := protectUntrackedFiles(repo, path)
+		addNotes(notes, protectNotes...)
+		if protectErr != nil {
+			return oldSHA, "", "", protectErr
 		}
 
+		resetErr := worktree.Reset(&git.ResetOptions{
+			Commit: targetHash,
+			Mode:   git.HardReset,
+		})
+
 		// go-git's HardReset may leave some working tree files un-checked-out.
-		// Repair the deletions it missed.
-		if err := repairDeletedFiles(path); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not restore deleted files in %s: %v\n", path, err)
+		// Repair the deletions it missed. This runs BEFORE the untracked
+		// restore below: repair materialises tracked files that may now
+		// occupy a collided untracked path, and the restore must see them to
+		// apply its collision rule instead of overwriting the tracked file.
+		if resetErr == nil {
+			if err := repairDeletedFiles(path); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not restore deleted files in %s: %v\n", path, err)
+			}
+		}
+
+		// Untracked files go back even when the reset failed: their original
+		// paths are empty (the reset cannot delete what was moved aside), so
+		// this is a clean rename back either way.
+		if backup != nil {
+			kept := backup.restore(path)
+			addNotes(notes, backup.notes(path, kept)...)
+			if len(kept) == 0 {
+				if err := os.RemoveAll(backup.dir); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: could not remove untracked-file backup %s: %v\n", backup.dir, err)
+				}
+			}
+		}
+
+		if resetErr != nil {
+			return oldSHA, "", "", fmt.Errorf("failed to reset: %w", resetErr)
 		}
 
 		newSHA := targetHash.String()
@@ -1222,6 +1267,22 @@ func cloneOrUpdateRepositoryTwoStageImpl(url, targetPath, branch string) (string
 // already exists it does a git pull (fast-forward only) instead of re-cloning.
 // Returns (oldSHA, newSHA, status, error) — same contract as CloneOrUpdateRepository.
 func CloneOrUpdateRepositoryDirect(url, targetPath, branch string) (string, string, string, error) {
+	oldSHA, newSHA, status, _, err := CloneOrUpdateRepositoryDirectWithNotes(url, targetPath, branch)
+	return oldSHA, newSHA, status, err
+}
+
+// CloneOrUpdateRepositoryDirectWithNotes is CloneOrUpdateRepositoryDirect
+// plus the notes channel: recoverable incidents (e.g. #031 untracked-file
+// protection warnings) surfaced through the GitProvider seam's
+// CloneResult.Notes. The ModeDirect data-safety contract — untracked files
+// MUST survive — is enforced on this path.
+func CloneOrUpdateRepositoryDirectWithNotes(url, targetPath, branch string) (string, string, string, []string, error) {
+	var notes []string
+	oldSHA, newSHA, status, err := cloneOrUpdateRepositoryDirect(url, targetPath, branch, &notes)
+	return oldSHA, newSHA, status, notes, err
+}
+
+func cloneOrUpdateRepositoryDirect(url, targetPath, branch string, notes *[]string) (string, string, string, error) {
 	// Expand tilde
 	expanded := targetPath
 	if strings.HasPrefix(targetPath, "~/") {
@@ -1240,10 +1301,9 @@ func CloneOrUpdateRepositoryDirect(url, targetPath, branch string) (string, stri
 	exists := err == nil && info.IsDir()
 
 	if !exists {
-		// Fresh clone — delegate to CloneOrUpdateRepository which handles
+		// Fresh clone — delegate to cloneOrUpdateRepository which handles
 		// SSH/HTTPS fallback and go-git vs system git negotiation.
-		old, new, status, cloneErr := CloneOrUpdateRepository(url, expanded, branch)
-		return old, new, status, cloneErr
+		return cloneOrUpdateRepository(url, expanded, branch, notes)
 	}
 
 	// If the directory exists but has no .git, it's not a valid working copy
@@ -1253,12 +1313,11 @@ func CloneOrUpdateRepositoryDirect(url, targetPath, branch string) (string, stri
 		if err := os.RemoveAll(expanded); err != nil {
 			return "", "", "", fmt.Errorf("failed to remove incomplete clone at %s: %w", expanded, err)
 		}
-		old, new, status, cloneErr := CloneOrUpdateRepository(url, expanded, branch)
-		return old, new, status, cloneErr
+		return cloneOrUpdateRepository(url, expanded, branch, notes)
 	}
 
 	// Directory already exists with .git — fetch and reset instead of re-clone.
-	return CloneOrUpdateRepository(url, expanded, branch)
+	return cloneOrUpdateRepository(url, expanded, branch, notes)
 }
 
 // fullFetchRefspec fetches every branch. `git clone --bare` stores branches

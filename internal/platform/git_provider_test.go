@@ -221,7 +221,13 @@ func TestRealGitProvider_CloneDirect(t *testing.T) {
 		t.Errorf("LocalSHA(target) = (%q, %v), want (%q, nil)", got, err, sha1)
 	}
 
-	// Second run after an origin commit: fast-forward update.
+	// Second run after an origin commit: fast-forward update. An untracked
+	// user file must survive it (#031) and the protection must surface as a
+	// Note through the seam.
+	untracked := filepath.Join(target, "user-notes.md")
+	if err := os.WriteFile(untracked, []byte("mine\n"), 0o600); err != nil {
+		t.Fatalf("write untracked file: %v", err)
+	}
 	sha2 := commitToRepo(t, origin, "second.txt", "v2\n")
 	res, err = g.Clone(spec)
 	if err != nil {
@@ -229,6 +235,13 @@ func TestRealGitProvider_CloneDirect(t *testing.T) {
 	}
 	if res.Status != StatusUpdated || res.OldSHA != sha1 || res.NewSHA != sha2 {
 		t.Errorf("Clone(direct) update = %+v, want {Updated %q %q}", res, sha1, sha2)
+	}
+	if data, err := os.ReadFile(untracked); err != nil || string(data) != "mine\n" {
+		t.Errorf("untracked file after update = (%q, %v), want %q", data, err, "mine\n")
+	}
+	wantNote := "protected 1 untracked file from reset in " + target + ": user-notes.md"
+	if len(res.Notes) != 1 || res.Notes[0] != wantNote {
+		t.Errorf("Clone(direct) update notes = %q, want [%q]", res.Notes, wantNote)
 	}
 
 	// Checkout pins the exact SHA doctor wants to inspect.
