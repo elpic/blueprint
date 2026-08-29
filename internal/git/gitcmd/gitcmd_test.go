@@ -128,8 +128,11 @@ func TestGitSubsystemDoesNotExec(t *testing.T) {
 	for _, path := range goFiles(t, root, true) {
 		rel := relPath(t, root, path)
 		dir := filepath.ToSlash(filepath.Dir(rel))
-		// Only the git subsystem, and never gitcmd itself.
-		if dir != gitSubsystem {
+		// The whole git subsystem — subdirectories included — except gitcmd
+		// itself. (Exact-match on the gitcmd dir only: a subpackage of
+		// gitcmd that execs git directly would still be flagged here.)
+		inGitSubsystem := dir == gitSubsystem || strings.HasPrefix(dir, gitSubsystem+"/")
+		if !inGitSubsystem || dir == gitSubsystem+"/gitcmd" {
 			continue
 		}
 
