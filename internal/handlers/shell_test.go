@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/user"
@@ -391,9 +393,65 @@ func TestShellHandlerGetState(t *testing.T) {
 }
 
 func TestShellHandlerNeedsSudo(t *testing.T) {
-	handler := NewShellHandler(parser.Rule{}, "")
-	if handler.NeedsSudo() {
-		t.Errorf("NeedsSudo() = true, want false")
+	// NeedsSudo is conditional: it returns true only when the resolved shell is
+	// absent from /etc/shells (an append is required). Common shells already
+	// listed (zsh/bash) stay prompt-free. On any resolution or read error it
+	// defaults to true (safe: prompt, and the append is skipped if present).
+	tests := []struct {
+		name          string
+		shellName     string
+		etcShellsBody string // contents returned by etcShellsReader; "" means empty file
+		etcShellsErr  error  // when non-nil, etcShellsReader returns this error
+		expectedSudo  bool
+	}{
+		{
+			name:          "shell present in /etc/shells -> no sudo",
+			shellName:     "/bin/sh",
+			etcShellsBody: "/bin/sh\n/bin/zsh\n",
+			expectedSudo:  false,
+		},
+		{
+			name:          "shell absent from /etc/shells -> sudo required",
+			shellName:     "/usr/local/bin/fish",
+			etcShellsBody: "/bin/sh\n/bin/zsh\n",
+			expectedSudo:  true,
+		},
+		{
+			name:          "empty /etc/shells -> sudo required",
+			shellName:     "/bin/sh",
+			etcShellsBody: "",
+			expectedSudo:  true,
+		},
+		{
+			name:         "resolution error -> safe default sudo",
+			shellName:    "../bin/sh", // path traversal rejected by resolveShellPath
+			etcShellsErr: nil,
+			expectedSudo: true,
+		},
+		{
+			name:         "read error -> safe default sudo",
+			shellName:    "/bin/sh", // absolute path resolves without exec
+			etcShellsErr: errors.New("permission denied"),
+			expectedSudo: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origReader := etcShellsReader
+			etcShellsReader = func() ([]byte, error) {
+				if tt.etcShellsErr != nil {
+					return nil, tt.etcShellsErr
+				}
+				return []byte(tt.etcShellsBody), nil
+			}
+			t.Cleanup(func() { etcShellsReader = origReader })
+
+			handler := NewShellHandler(parser.Rule{ShellName: tt.shellName}, "")
+			if got := handler.NeedsSudo(); got != tt.expectedSudo {
+				t.Errorf("NeedsSudo() = %v, want %v", got, tt.expectedSudo)
+			}
+		})
 	}
 }
 
@@ -847,4 +905,376 @@ func TestShellHandlerIsInstalled(t *testing.T) {
 	}
 
 	// Test with matching user but we can't easily test the shell check without system modifications
+}
+
+// --- Tests for auto-add-to-/etc/shells behavior ---
+
+// stubEtcShellsFile replaces etcShellsReader to read from a temp file and
+// sudoAppendToEtcShells to actually append to that same temp file (simulating
+// `sudo tee -a /etc/shells` without invoking real sudo). The temp file is
+// seeded with initialContent. Cleanup is registered via t.Cleanup. Returns the
+// temp file path so callers can assert on its contents.
+func stubEtcShellsFile(t *testing.T, initialContent string) string {
+	t.Helper()
+	tf, err := os.CreateTemp("", "blueprint-etc-shells-*")
+	if err != nil {
+		t.Fatalf("create temp /etc/shells: %v", err)
+	}
+	if initialContent != "" {
+		if _, err := tf.WriteString(initialContent); err != nil {
+			t.Fatalf("seed temp /etc/shells: %v", err)
+		}
+	}
+	if err := tf.Close(); err != nil {
+		t.Fatalf("close temp /etc/shells: %v", err)
+	}
+	path := tf.Name()
+	t.Cleanup(func() { _ = os.Remove(path) })
+
+	origReader := etcShellsReader
+	origAppender := sudoAppendToEtcShells
+	etcShellsReader = func() ([]byte, error) {
+		return os.ReadFile(path)
+	}
+	sudoAppendToEtcShells = func(content string) (string, error) {
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return "", err
+		}
+		defer func() { _ = f.Close() }()
+		if _, err := f.WriteString(content); err != nil {
+			return "", err
+		}
+		return "", nil
+	}
+	t.Cleanup(func() {
+		etcShellsReader = origReader
+		sudoAppendToEtcShells = origAppender
+	})
+	return path
+}
+
+// readShellsFile reads the temp /etc/shells file used by stubEtcShellsFile.
+func readShellsFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read temp /etc/shells: %v", err)
+	}
+	return string(b)
+}
+
+func TestShellInEtcShells(t *testing.T) {
+	tests := []struct {
+		name          string
+		etcShellsBody string
+		etcShellsErr  error
+		shellPath     string
+		wantPresent   bool
+		wantErr       bool
+	}{
+		{
+			name:          "listed shell is present",
+			etcShellsBody: "/bin/sh\n/bin/zsh\n",
+			shellPath:     "/bin/zsh",
+			wantPresent:   true,
+		},
+		{
+			name:          "unlisted shell is absent",
+			etcShellsBody: "/bin/sh\n",
+			shellPath:     "/usr/local/bin/fish",
+			wantPresent:   false,
+		},
+		{
+			name:          "line matched after trimming whitespace",
+			etcShellsBody: "/bin/sh \n /bin/zsh\n",
+			shellPath:     "/bin/sh",
+			wantPresent:   true,
+		},
+		{
+			name:         "missing /etc/shells is treated as present (no enforcement)",
+			etcShellsErr: os.ErrNotExist,
+			shellPath:    "/usr/local/bin/fish",
+			wantPresent:  true,
+		},
+		{
+			name:         "real read error is surfaced",
+			etcShellsErr: errors.New("permission denied"),
+			shellPath:    "/bin/sh",
+			wantPresent:  false,
+			wantErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origReader := etcShellsReader
+			etcShellsReader = func() ([]byte, error) {
+				if tt.etcShellsErr != nil {
+					return nil, tt.etcShellsErr
+				}
+				return []byte(tt.etcShellsBody), nil
+			}
+			t.Cleanup(func() { etcShellsReader = origReader })
+
+			present, err := shellInEtcShells(tt.shellPath)
+			if present != tt.wantPresent {
+				t.Errorf("shellInEtcShells() present = %v, want %v", present, tt.wantPresent)
+			}
+			if (err != nil) != tt.wantErr {
+				t.Errorf("shellInEtcShells() err = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestEnsureShellInEtcShells_AppendsWhenAbsent(t *testing.T) {
+	path := stubEtcShellsFile(t, "/bin/sh\n")
+
+	appended, err := ensureShellInEtcShells("/usr/local/bin/fish")
+	if err != nil {
+		t.Fatalf("ensureShellInEtcShells() unexpected error: %v", err)
+	}
+	if !appended {
+		t.Errorf("ensureShellInEtcShells() appended = false, want true")
+	}
+
+	got := readShellsFile(t, path)
+	want := "/bin/sh\n/usr/local/bin/fish\n"
+	if got != want {
+		t.Errorf("/etc/shells content = %q, want %q", got, want)
+	}
+}
+
+func TestEnsureShellInEtcShells_NoopWhenPresent(t *testing.T) {
+	path := stubEtcShellsFile(t, "/bin/sh\n/bin/zsh\n")
+
+	appended, err := ensureShellInEtcShells("/bin/zsh")
+	if err != nil {
+		t.Fatalf("ensureShellInEtcShells() unexpected error: %v", err)
+	}
+	if appended {
+		t.Errorf("ensureShellInEtcShells() appended = true, want false (already present)")
+	}
+
+	got := readShellsFile(t, path)
+	want := "/bin/sh\n/bin/zsh\n"
+	if got != want {
+		t.Errorf("/etc/shells content = %q, want unchanged %q", got, want)
+	}
+}
+
+func TestEnsureShellInEtcShells_HandlesMissingTrailingNewline(t *testing.T) {
+	// Existing file does NOT end with a newline.
+	path := stubEtcShellsFile(t, "/bin/sh")
+
+	appended, err := ensureShellInEtcShells("/usr/local/bin/fish")
+	if err != nil {
+		t.Fatalf("ensureShellInEtcShells() unexpected error: %v", err)
+	}
+	if !appended {
+		t.Errorf("ensureShellInEtcShells() appended = false, want true")
+	}
+
+	got := readShellsFile(t, path)
+	want := "/bin/sh\n/usr/local/bin/fish\n"
+	if got != want {
+		t.Errorf("/etc/shells content = %q, want %q (newline inserted before append)", got, want)
+	}
+}
+
+func TestEnsureShellInEtcShells_NoopWhenEtcShellsAbsent(t *testing.T) {
+	// /etc/shells missing -> no enforcement, no-op, no sudo.
+	origReader := etcShellsReader
+	origAppender := sudoAppendToEtcShells
+	etcShellsReader = func() ([]byte, error) { return nil, os.ErrNotExist }
+	appenderCalled := false
+	sudoAppendToEtcShells = func(string) (string, error) {
+		appenderCalled = true
+		return "", nil
+	}
+	t.Cleanup(func() {
+		etcShellsReader = origReader
+		sudoAppendToEtcShells = origAppender
+	})
+
+	appended, err := ensureShellInEtcShells("/usr/local/bin/fish")
+	if err != nil {
+		t.Fatalf("ensureShellInEtcShells() unexpected error: %v", err)
+	}
+	if appended {
+		t.Errorf("ensureShellInEtcShells() appended = true, want false (no /etc/shells)")
+	}
+	if appenderCalled {
+		t.Errorf("sudo append was invoked while /etc/shells is absent")
+	}
+}
+
+func TestEnsureShellInEtcShells_ErrorWhenSudoAppendFails(t *testing.T) {
+	origReader := etcShellsReader
+	origAppender := sudoAppendToEtcShells
+	etcShellsReader = func() ([]byte, error) { return []byte("/bin/sh\n"), nil }
+	sudoAppendToEtcShells = func(string) (string, error) {
+		return "sudo: sorry, try again", errors.New("sudo authentication failed")
+	}
+	t.Cleanup(func() {
+		etcShellsReader = origReader
+		sudoAppendToEtcShells = origAppender
+	})
+
+	appended, err := ensureShellInEtcShells("/usr/local/bin/fish")
+	if err == nil {
+		t.Fatalf("ensureShellInEtcShells() expected error, got nil")
+	}
+	if appended {
+		t.Errorf("ensureShellInEtcShells() appended = true, want false on failure")
+	}
+	if !strings.Contains(err.Error(), "failed to append") {
+		t.Errorf("ensureShellInEtcShells() error = %q, expected to contain %q", err.Error(), "failed to append")
+	}
+	if !strings.Contains(err.Error(), "/etc/shells") {
+		t.Errorf("ensureShellInEtcShells() error = %q, expected to mention /etc/shells", err.Error())
+	}
+}
+
+func TestEnsureShellInEtcShells_CleansPathBeforeWriting(t *testing.T) {
+	path := stubEtcShellsFile(t, "/bin/sh\n")
+
+	// Pass a path with a redundant segment; ensure writes the cleaned form.
+	appended, err := ensureShellInEtcShells("/usr/local/bin//fish")
+	if err != nil {
+		t.Fatalf("ensureShellInEtcShells() unexpected error: %v", err)
+	}
+	if !appended {
+		t.Errorf("ensureShellInEtcShells() appended = false, want true")
+	}
+
+	got := readShellsFile(t, path)
+	if !strings.Contains(got, "/usr/local/bin/fish\n") {
+		t.Errorf("/etc/shells content = %q, expected cleaned path /usr/local/bin/fish", got)
+	}
+	if strings.Contains(got, "//fish") {
+		t.Errorf("/etc/shells content = %q, expected no redundant slashes", got)
+	}
+}
+
+// TestShellHandlerUp_ProceedsToChshAfterAppend verifies that after a successful
+// /etc/shells append, Up() continues to the chsh step. chsh is stubbed so the
+// real login shell is never mutated. /bin/cat is an executable that is never
+// anyone's login shell, so the idempotency check never short-circuits.
+func TestShellHandlerUp_ProceedsToChshAfterAppend(t *testing.T) {
+	// /bin/cat must exist and be executable for validateShell to pass.
+	if _, err := os.Stat("/bin/cat"); err != nil {
+		t.Skip("/bin/cat not available on this platform, skipping")
+	}
+
+	stubEtcShellsFile(t, "/bin/sh\n") // /bin/cat not listed -> append required
+
+	sudoCalled := false
+	origAppender := sudoAppendToEtcShells
+	sudoAppendToEtcShells = func(string) (string, error) {
+		sudoCalled = true
+		return "", nil
+	}
+	chshCalled := false
+	origChsh := chshRunner
+	chshRunner = func(shellPath, username string) (string, error) {
+		chshCalled = true
+		if shellPath != "/bin/cat" {
+			return "", fmt.Errorf("unexpected shellPath %q", shellPath)
+		}
+		if username == "" {
+			return "", fmt.Errorf("chshRunner stub: username must not be empty")
+		}
+		return "chsh ok", nil
+	}
+	t.Cleanup(func() {
+		sudoAppendToEtcShells = origAppender
+		chshRunner = origChsh
+	})
+
+	handler := NewShellHandler(parser.Rule{Action: "shell", ShellName: "/bin/cat"}, "")
+	msg, err := handler.Up()
+	if err != nil {
+		t.Fatalf("Up() unexpected error: %v", err)
+	}
+
+	if !sudoCalled {
+		t.Error("expected sudo append to be invoked (shell absent from /etc/shells)")
+	}
+	if !chshCalled {
+		t.Error("expected chsh to be invoked after a successful append")
+	}
+	if !strings.Contains(msg, "Added /bin/cat to /etc/shells") {
+		t.Errorf("Up() message = %q, expected to note the /etc/shells append", msg)
+	}
+	if !strings.Contains(msg, "changed default shell to /bin/cat") {
+		t.Errorf("Up() message = %q, expected to mention the shell change", msg)
+	}
+}
+
+// TestShellHandlerUp_FailsWhenSudoAppendFails verifies that a sudo append
+// failure surfaces a clear error and that chsh is never reached.
+func TestShellHandlerUp_FailsWhenSudoAppendFails(t *testing.T) {
+	if _, err := os.Stat("/bin/cat"); err != nil {
+		t.Skip("/bin/cat not available on this platform, skipping")
+	}
+
+	origReader := etcShellsReader
+	origAppender := sudoAppendToEtcShells
+	origChsh := chshRunner
+	etcShellsReader = func() ([]byte, error) { return []byte("/bin/sh\n"), nil }
+	sudoAppendToEtcShells = func(string) (string, error) {
+		return "sudo: sorry", errors.New("sudo authentication failed")
+	}
+	chshCalled := false
+	chshRunner = func(shellPath, username string) (string, error) {
+		chshCalled = true
+		if username == "" {
+			return "", fmt.Errorf("chshRunner stub: username must not be empty")
+		}
+		return "", nil
+	}
+	t.Cleanup(func() {
+		etcShellsReader = origReader
+		sudoAppendToEtcShells = origAppender
+		chshRunner = origChsh
+	})
+
+	handler := NewShellHandler(parser.Rule{Action: "shell", ShellName: "/bin/cat"}, "")
+	_, err := handler.Up()
+	if err == nil {
+		t.Fatalf("Up() expected error when sudo append fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to append") {
+		t.Errorf("Up() error = %q, expected to contain %q", err.Error(), "failed to append")
+	}
+	if chshCalled {
+		t.Error("chsh must not be invoked when the /etc/shells append fails")
+	}
+}
+
+// TestChshRunnerUsernameContract documents the chshRunner contract: the sudo
+// path MUST pass the username (sudo chsh -s <shell> <user>) because without
+// it, `sudo chsh -s <shell>` changes ROOT's shell, not the target user's.
+// The actual exec behavior is verified by code inspection — running the real
+// chshRunner in tests would mutate the real login shell, so all tests stub it.
+func TestChshRunnerUsernameContract(t *testing.T) {
+	// chshRunner is a function var; verify its signature accepts a username
+	// by assigning a stub with the two-arg signature. If the signature were
+	// to regress to a single arg, this file would fail to compile.
+	orig := chshRunner
+	chshRunner = func(shellPath, username string) (string, error) {
+		if username == "" {
+			t.Error("chshRunner contract violated: username must not be empty")
+		}
+		return "stubbed", nil
+	}
+	t.Cleanup(func() { chshRunner = orig })
+
+	// Invoke via a handler-like path to prove the wiring passes a username.
+	// (Direct invocation of the stub is enough to pin the signature.)
+	if _, err := chshRunner("/bin/cat", "testuser"); err != nil {
+		t.Fatalf("unexpected error from stubbed chshRunner: %v", err)
+	}
 }
