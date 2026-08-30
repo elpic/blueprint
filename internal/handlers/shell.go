@@ -146,7 +146,9 @@ func (h *ShellHandler) Up() (string, error) {
 
 	// Change shell using chsh (with path sanitization). chshRunner is
 	// overridable for testing so tests don't mutate the real login shell.
-	out, err := chshRunner(shellPath)
+	// The username is passed so the sudo path targets the right user —
+	// without it, `sudo chsh -s <shell>` would change ROOT's shell.
+	out, err := chshRunner(shellPath, currentUser.Username)
 	if err != nil {
 		return "", fmt.Errorf("failed to change shell: %w (output: %s)", err, out)
 	}
@@ -208,13 +210,12 @@ func (h *ShellHandler) Down() (string, error) {
 		return fmt.Sprintf("Shell already reverted to %s for user %s", shellStatus.PreviousShell, currentUser.Username), nil
 	}
 
-	// Revert shell using chsh (with path sanitization and timeout)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "chsh", "-s", filepath.Clean(shellStatus.PreviousShell))
-	output, err := cmd.CombinedOutput()
+	// Revert shell using chsh (with path sanitization and timeout). Routed
+	// through chshRunner so the sudo path targets the right user and the
+	// PAM password prompt is avoided when the sudo session is warm.
+	out, err := chshRunner(shellStatus.PreviousShell, currentUser.Username)
 	if err != nil {
-		return "", fmt.Errorf("failed to revert shell: %w (output: %s)", err, string(output))
+		return "", fmt.Errorf("failed to revert shell: %w (output: %s)", err, out)
 	}
 
 	return fmt.Sprintf("Reverted shell to %s for user %s", shellStatus.PreviousShell, currentUser.Username), nil
@@ -496,22 +497,25 @@ var sudoAppendToEtcShells = func(content string) (string, error) {
 	return string(out), err
 }
 
-// chshRunner runs `chsh -s <shellPath>` to change the login shell. On macOS,
-// chsh prompts for the user's PAM password mid-stream — to avoid that, we try
-// `sudo -n chsh` first (the sudo session was pre-warmed upfront by the engine
-// when NeedsSudo() returned true), and fall back to plain `chsh` if sudo is
-// not available (e.g. the shell was already in /etc/shells and no upfront
-// sudo prompt happened). Overridable for testing so tests don't mutate the
-// real login shell.
-var chshRunner = func(shellPath string) (string, error) {
+// chshRunner changes the login shell for the given user. On macOS, plain
+// `chsh` prompts for the user's PAM password mid-stream — to avoid that, we
+// try `sudo -n chsh -s <shell> <user>` first (the sudo session was pre-warmed
+// upfront by the engine when NeedsSudo() returned true), and fall back to
+// plain `chsh -s <shell>` if sudo is not available. The username MUST be
+// passed explicitly in the sudo path: without it, `sudo chsh -s <shell>`
+// changes ROOT's shell (sudo runs as root, and chsh without a user argument
+// targets the invoking user — which is root under sudo).
+// Overridable for testing so tests don't mutate the real login shell.
+var chshRunner = func(shellPath, username string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cleaned := filepath.Clean(shellPath)
 	// Try sudo -n chsh first to reuse the pre-warmed sudo session (avoids
 	// macOS PAM password prompt mid-stream). If sudo -n is not available
-	// (no timestamp cached), fall back to plain chsh.
+	// (no timestamp cached), fall back to plain chsh (which will prompt for
+	// the user's password via PAM).
 	if exec.Command("sudo", "-n", "true").Run() == nil {
-		cmd := exec.CommandContext(ctx, "sudo", "-n", "chsh", "-s", cleaned)
+		cmd := exec.CommandContext(ctx, "sudo", "-n", "chsh", "-s", cleaned, username)
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
