@@ -61,10 +61,18 @@ func needsSudo(command string) bool {
 // sudoRunWithPassword runs cmdStr under sudo by feeding password via stdin.
 // The password never appears in the process argument list.
 var sudoRunWithPassword = func(password, cmdStr string) (string, error) {
+	// Package handlers include "sudo" in generated commands so they can be
+	// displayed accurately. Do not pass that prefix to the password wrapper or
+	// it becomes "sudo -S sudo ..." and authenticates twice.
+	cmdStr = commandWithoutSudoPrefix(cmdStr)
 	cmd := exec.Command("sh", "-c", "sudo -S "+cmdStr) // #nosec G204 -- user-supplied command from blueprint
 	cmd.Stdin = strings.NewReader(password + "\n")
 	output, err := cmd.CombinedOutput()
 	return string(output), err
+}
+
+func commandWithoutSudoPrefix(cmd string) string {
+	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(cmd), "sudo "))
 }
 
 func executeCommand(cmdStr string) (string, error) {

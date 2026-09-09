@@ -403,10 +403,10 @@ func (h *HomebrewHandler) installHomebrewLinux() error {
 	if internal.NewOSDetector().Distro() == "arch" {
 		depCmd = "pacman -S --noconfirm --needed git curl base-devel"
 	}
-	if _, err := executeCommandWithCache(fmt.Sprintf("sudo %s", depCmd)); err != nil {
+	if output, err := executeCommandWithCache(fmt.Sprintf("sudo %s", depCmd)); err != nil {
 		// Try without sudo if it fails (user might have permissions)
-		if _, err := executeCommandWithCache(depCmd); err != nil {
-			return fmt.Errorf("failed to install homebrew dependencies: %w", err)
+		if fallbackOutput, fallbackErr := executeCommandWithCache(depCmd); fallbackErr != nil {
+			return fmt.Errorf("failed to install homebrew dependencies: %w: %s; fallback: %v: %s", err, strings.TrimSpace(output), fallbackErr, strings.TrimSpace(fallbackOutput))
 		}
 	}
 
@@ -414,6 +414,9 @@ func (h *HomebrewHandler) installHomebrewLinux() error {
 	installCmd := `curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | bash`
 	if _, err := executeCommandWithCache(installCmd); err != nil {
 		return fmt.Errorf("failed to install homebrew on Linux: %w", err)
+	}
+	if !h.isHomebrewInstalled() {
+		return fmt.Errorf("homebrew installer completed but brew was not found in the expected locations")
 	}
 
 	// Set up shell config so brew binaries are on PATH.

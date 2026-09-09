@@ -27,3 +27,20 @@ func TestSudoPasswordNotExposedInCommandLine(t *testing.T) {
 
 	_, _ = sudoRunWithPassword(sensitivePassword, "sudo ls /root")
 }
+
+func TestCommandWithoutSudoPrefix(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "sudo pacman -S --noconfirm zsh", want: "pacman -S --noconfirm zsh"},
+		{input: "pacman -S --noconfirm zsh", want: "pacman -S --noconfirm zsh"},
+		{input: "  sudo apt-get install -y git  ", want: "apt-get install -y git"},
+	}
+
+	for _, test := range tests {
+		if got := commandWithoutSudoPrefix(test.input); got != test.want {
+			t.Errorf("commandWithoutSudoPrefix(%q) = %q, want %q", test.input, got, test.want)
+		}
+	}
+}
