@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/elpic/blueprint/internal"
 	"github.com/elpic/blueprint/internal/parser"
 	"github.com/elpic/blueprint/internal/ui"
 )
@@ -399,6 +400,9 @@ func (h *HomebrewHandler) installHomebrewLinux() error {
 	// Homebrew on Linux requires some dependencies and a specific installation process
 	// First ensure we have git and curl
 	depCmd := "apt-get update && apt-get install -y git curl build-essential"
+	if internal.NewOSDetector().Distro() == "arch" {
+		depCmd = "pacman -S --noconfirm --needed git curl base-devel"
+	}
 	if _, err := executeCommandWithCache(fmt.Sprintf("sudo %s", depCmd)); err != nil {
 		// Try without sudo if it fails (user might have permissions)
 		if _, err := executeCommandWithCache(depCmd); err != nil {

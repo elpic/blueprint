@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., 1.0.0). Leave empty for auto-detect'
+        description: 'Prerelease version for manual runs (e.g., 1.0.0-rc.1)'
         required: false
         type: string
 
@@ -21,6 +21,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       should_release: ${{ steps.version.outputs.should_release }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
       changelog: ${{ steps.changelog.outputs.changelog }}
     steps:
       - uses: actions/checkout@v6
@@ -30,7 +31,8 @@ jobs:
       - name: Get latest tag
         id: latest_tag
         run: |
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          LATEST_TAG=$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
+          LATEST_TAG=${LATEST_TAG:-v0.0.0}
           echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
 
       - name: Analyze commits and determine version
@@ -38,6 +40,10 @@ jobs:
         run: |
           LATEST_TAG=${{ steps.latest_tag.outputs.tag }}
           COMMITS=$(git log ${LATEST_TAG}..HEAD --pretty=%B)
+          PRERELEASE=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PRERELEASE=true
+          fi
 
           BREAKING=false
           FEATURE=false
@@ -52,10 +58,13 @@ jobs:
           echo "$COMMITS" | grep -q "^fix:" && BUGFIX=true || true
           echo "$COMMITS" | grep -qE "^fix\(.*\):" && BUGFIX=true || true
 
-          # Check if manual version was provided
+          # Manual runs target the selected branch and always publish a prerelease.
           if [ -n "${{ github.event.inputs.version }}" ]; then
             SHOULD_RELEASE=true
             NEW_VERSION="${{ github.event.inputs.version }}"
+          elif [ "$PRERELEASE" = true ]; then
+            echo "A version is required when publishing a prerelease (for example, 1.0.0-rc.1)." >&2
+            exit 1
           # Only proceed if there are releasable commits
           elif [ "$BREAKING" = true ] || [ "$FEATURE" = true ] || [ "$BUGFIX" = true ]; then
             SHOULD_RELEASE=true
@@ -86,6 +95,7 @@ jobs:
 
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "should_release=$SHOULD_RELEASE" >> $GITHUB_OUTPUT
+          echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
 
       - name: Generate changelog
         if: steps.version.outputs.should_release == 'true'
@@ -199,5 +209,6 @@ jobs:
             ## Changes
             ${{ needs.release.outputs.changelog }}
           artifacts: "binaries/*/*"
-          makeLatest: true
+          makeLatest: ${{ needs.release.outputs.prerelease != 'true' }}
+          prerelease: ${{ needs.release.outputs.prerelease == 'true' }}
           token: ${{ secrets.GITHUB_TOKEN }}

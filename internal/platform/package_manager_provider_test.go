@@ -7,11 +7,13 @@ import (
 
 // stubOSDetector provides a controllable OSDetector for command-building tests.
 type stubOSDetector struct {
-	name string
-	root bool
+	name   string
+	distro string
+	root   bool
 }
 
-func (s stubOSDetector) Name() string { return s.name }
+func (s stubOSDetector) Name() string   { return s.name }
+func (s stubOSDetector) Distro() string { return s.distro }
 func (s stubOSDetector) Architecture() string {
 	return "amd64"
 }
@@ -37,6 +39,7 @@ func TestRealPackageManagerProvider_InstallCommand(t *testing.T) {
 		{name: "apt with sudo", p: linux, packages: []string{"git", "curl"}, manager: "apt", want: "sudo apt-get install -y git curl"},
 		{name: "apt-get with sudo", p: linux, packages: []string{"git"}, manager: "apt-get", want: "sudo apt-get install -y git"},
 		{name: "apt as root without sudo", p: linuxRoot, packages: []string{"git"}, manager: "apt", want: "apt-get install -y git"},
+		{name: "pacman with sudo", p: &realPackageManagerProvider{osDetector: stubOSDetector{name: "linux", distro: "arch"}}, packages: []string{"git", "curl"}, manager: "pacman", want: "sudo pacman -S --noconfirm --needed git curl"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -65,6 +68,7 @@ func TestRealPackageManagerProvider_UninstallCommand(t *testing.T) {
 		{name: "brew", p: mac, packages: []string{"git", "curl"}, manager: "brew", want: "brew uninstall -y git curl"},
 		{name: "apt with sudo", p: linux, packages: []string{"git"}, manager: "apt", want: "sudo apt-get remove -y git"},
 		{name: "apt-get with sudo", p: linux, packages: []string{"git"}, manager: "apt-get", want: "sudo apt-get remove -y git"},
+		{name: "pacman with sudo", p: &realPackageManagerProvider{osDetector: stubOSDetector{name: "linux", distro: "arch"}}, packages: []string{"git"}, manager: "pacman", want: "sudo pacman -R --noconfirm git"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -85,14 +89,8 @@ func TestRealPackageManagerProvider_CommandErrors(t *testing.T) {
 	if _, err := p.installCommand(nil, "brew"); err == nil {
 		t.Error("installCommand(nil, brew) = nil error, want error")
 	}
-	if _, err := p.installCommand([]string{"git"}, "pacman"); err == nil {
-		t.Error("installCommand(git, pacman) = nil error, want error")
-	}
 	if _, err := p.uninstallCommand(nil, "apt"); err == nil {
 		t.Error("uninstallCommand(nil, apt) = nil error, want error")
-	}
-	if _, err := p.uninstallCommand([]string{"git"}, "pacman"); err == nil {
-		t.Error("uninstallCommand(git, pacman) = nil error, want error")
 	}
 }
 
@@ -105,8 +103,8 @@ func TestRealPackageManagerProvider_ProbeCommand(t *testing.T) {
 	if got := p.probeCommand("git", "apt"); got != "dpkg -s git" {
 		t.Errorf("probeCommand(git, apt) = %q, want %q", got, "dpkg -s git")
 	}
-	if got := p.probeCommand("git", "pacman"); got != "" {
-		t.Errorf("probeCommand(git, pacman) = %q, want empty", got)
+	if got := p.probeCommand("git", "pacman"); got != "pacman -Q git" {
+		t.Errorf("probeCommand(git, pacman) = %q, want %q", got, "pacman -Q git")
 	}
 }
 
@@ -142,8 +140,26 @@ func TestParseDpkgVersion(t *testing.T) {
 	}
 }
 
+func TestParsePacmanVersion(t *testing.T) {
+	got, err := parsePacmanVersion("git 2.43.0-1\n")
+	if err != nil {
+		t.Fatalf("parsePacmanVersion error: %v", err)
+	}
+	if got != "2.43.0-1" {
+		t.Errorf("parsePacmanVersion() = %q, want %q", got, "2.43.0-1")
+	}
+
+	if _, err := parsePacmanVersion("git\n"); err == nil {
+		t.Error("parsePacmanVersion(no version) = nil error, want error")
+	}
+}
+
 func TestRealPackageManagerProvider_GetDefaultManager(t *testing.T) {
 	p := &realPackageManagerProvider{}
+	arch := &realPackageManagerProvider{osDetector: stubOSDetector{name: "linux", distro: "arch"}}
+	if got := arch.GetDefaultManager(); got != "pacman" {
+		t.Errorf("Arch GetDefaultManager() = %q, want %q", got, "pacman")
+	}
 
 	switch runtime.GOOS {
 	case "darwin":
@@ -163,7 +179,7 @@ func TestRealPackageManagerProvider_GetDefaultManager(t *testing.T) {
 
 func TestRealPackageManagerProvider_IsManagerAvailable_Unknown(t *testing.T) {
 	p := &realPackageManagerProvider{}
-	if p.IsManagerAvailable("pacman") {
-		t.Error("IsManagerAvailable(pacman) = true, want false")
+	if p.IsManagerAvailable("unknown") {
+		t.Error("IsManagerAvailable(unknown) = true, want false")
 	}
 }

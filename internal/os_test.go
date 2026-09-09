@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"os"
 	"testing"
 )
 
@@ -11,6 +12,10 @@ type MockOSDetector struct {
 
 func (m *MockOSDetector) Name() string {
 	return m.osName
+}
+
+func (m *MockOSDetector) Distro() string {
+	return ""
 }
 
 func TestOSDetector_Name(t *testing.T) {
@@ -117,6 +122,32 @@ func TestOSDetector_Name_Unknown(t *testing.T) {
 
 	if got := detector.Name(); got != "freebsd" {
 		t.Errorf("freebsd -> freebsd: got %q, want %q", got, "freebsd")
+	}
+}
+
+func TestOSDetector_DistroArchLike(t *testing.T) {
+	originalOS := runtimeOS
+	originalFile := osReleaseFile
+	defer func() {
+		runtimeOS = originalOS
+		osReleaseFile = originalFile
+	}()
+
+	file, err := os.CreateTemp(t.TempDir(), "os-release")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString("ID=omarchy\nID_LIKE=arch\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	runtimeOS = "linux"
+	osReleaseFile = file.Name()
+	if got := NewOSDetector().Distro(); got != "arch" {
+		t.Errorf("Distro() = %q, want %q", got, "arch")
 	}
 }
 

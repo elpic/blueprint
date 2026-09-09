@@ -10,6 +10,31 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
+PRE_RELEASE=false
+
+print_usage() {
+	printf '%s\n' "Usage: install.sh [--pre-release]"
+	printf '%s\n' "  --pre-release  Install the newest GitHub prerelease instead of the latest stable release"
+}
+
+parse_args() {
+	for arg in "$@"; do
+		case "$arg" in
+			--pre-release)
+				PRE_RELEASE=true
+				;;
+			--help|-h)
+				print_usage
+				exit 0
+				;;
+			*)
+				printf "${RED}Error: Unknown option: %s${NC}\n" "$arg"
+				print_usage >&2
+				exit 1
+				;;
+		esac
+	done
+}
 
 # Detect OS and architecture
 detect_os_arch() {
@@ -48,8 +73,26 @@ detect_os_arch() {
 
 # Get the latest release version
 get_latest_version() {
-	# Try to fetch from GitHub releases API
-	VERSION=$(curl -s https://api.github.com/repos/elpic/blueprint/releases/latest | grep -o '"tag_name": "[^"]*"' | cut -d'"' -f4)
+	if [ "$PRE_RELEASE" = true ]; then
+		# The /releases/latest endpoint intentionally excludes prereleases. GitHub
+		# returns releases newest first, so select the first object marked prerelease.
+		VERSION=$(curl -fsSL 'https://api.github.com/repos/elpic/blueprint/releases?per_page=100' | awk '
+			/^[[:space:]]*\{/ { if (depth == 0) { tag=""; pre=false }; depth++ }
+			/"tag_name"[[:space:]]*:/ && depth == 1 {
+				line = $0
+				sub(/.*"tag_name"[[:space:]]*:[[:space:]]*"/, "", line)
+				sub(/".*/, "", line)
+				tag = line
+			}
+			/"prerelease"[[:space:]]*:[[:space:]]*true/ && depth == 1 && tag != "" { print tag; exit }
+			/^[[:space:]]*\}/ {
+				depth--
+			}
+		')
+	else
+		# Try to fetch the latest stable release from GitHub releases API.
+		VERSION=$(curl -fsSL https://api.github.com/repos/elpic/blueprint/releases/latest | grep -o '"tag_name": "[^"]*"' | cut -d'"' -f4)
+	fi
 
 	if [ -z "$VERSION" ]; then
 		printf "${RED}Error: Could not determine latest version${NC}\n"
@@ -196,6 +239,7 @@ verify_installation() {
 
 # Main installation flow
 main() {
+	parse_args "$@"
 	printf "${GREEN}=== Blueprint Installer ===${NC}\n\n"
 
 	printf "${YELLOW}Detecting OS and architecture...${NC}\n"

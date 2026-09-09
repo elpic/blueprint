@@ -22,7 +22,7 @@ var Git platform.GitProvider = platform.NewContainer().GitProvider()
 type Package struct {
 	Name           string
 	Version        string
-	PackageManager string // e.g., "apt", "snap", defaults to system default
+	PackageManager string // e.g., "apt", "pacman", "snap", defaults to system default
 	Stage          string // e.g., "build", "runtime" — used by container templates
 }
 

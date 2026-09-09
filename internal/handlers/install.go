@@ -46,6 +46,7 @@ func init() {
 		},
 		ShellExport: func(rule parser.Rule, _, osName string) []string {
 			var lines []string
+			distro := internal.NewOSDetector().Distro()
 			for _, p := range rule.Packages {
 				name := p.Name
 				if p.PackageManager == "snap" {
@@ -54,10 +55,16 @@ func init() {
 						fmt.Sprintf("  sudo snap install %s", name),
 						"fi",
 					)
-				} else if osName == "mac" {
+				} else if osName == "mac" || p.PackageManager == "brew" || p.PackageManager == "homebrew" {
 					lines = append(lines,
 						fmt.Sprintf("if ! brew list --versions %s >/dev/null 2>&1 && ! brew list --cask %s >/dev/null 2>&1; then", name, name),
 						fmt.Sprintf("  brew install %s", name),
+						"fi",
+					)
+				} else if distro == "arch" || p.PackageManager == "pacman" {
+					lines = append(lines,
+						fmt.Sprintf("if ! pacman -Q %s >/dev/null 2>&1; then", name),
+						fmt.Sprintf("  sudo pacman -S --noconfirm --needed %s", name),
 						"fi",
 					)
 				} else {
@@ -275,6 +282,11 @@ func (h *InstallHandler) buildInstallCommandForManager(manager string, pkgNames 
 		return ""
 	}
 
+	// Resolve the generic "default" manager to the OS/distro-specific one.
+	if manager == "default" {
+		manager = h.defaultManager()
+	}
+
 	pkgStr := strings.Join(pkgNames, " ")
 
 	// Handle specific package managers
@@ -310,7 +322,7 @@ func (h *InstallHandler) buildInstallCommandForManager(manager string, pkgNames 
 		// Homebrew (macOS and Linux) — use dependency injection for brew command
 		return fmt.Sprintf("%s install %s", h.getBrewCommand(), pkgStr)
 
-	case "apt", "apt-get", "default":
+	case "apt", "apt-get":
 		// apt-get (Linux default)
 		if targetOS == "mac" {
 			// Fallback to brew on macOS if apt is specified — use dependency injection for brew command
@@ -323,6 +335,13 @@ func (h *InstallHandler) buildInstallCommandForManager(manager string, pkgNames 
 		}
 		return cmd
 
+	case "pacman":
+		cmd := fmt.Sprintf("pacman -S --noconfirm --needed %s", pkgStr)
+		if h.shouldAddSudo() {
+			cmd = fmt.Sprintf("sudo %s", cmd)
+		}
+		return cmd
+
 	default:
 		// Unknown package manager, try to use it directly
 		cmd := fmt.Sprintf("%s install %s", manager, pkgStr)
@@ -330,6 +349,22 @@ func (h *InstallHandler) buildInstallCommandForManager(manager string, pkgNames 
 			cmd = fmt.Sprintf("sudo %s", cmd)
 		}
 		return cmd
+	}
+}
+
+// defaultManager returns the package manager used for unqualified packages.
+func (h *InstallHandler) defaultManager() string {
+	osDetector := h.Container.SystemProvider().OS()
+	switch osDetector.Name() {
+	case "mac":
+		return "brew"
+	case "linux":
+		if osDetector.Distro() == "arch" {
+			return "pacman"
+		}
+		return "apt"
+	default:
+		return "apt"
 	}
 }
 
@@ -375,6 +410,11 @@ func (h *InstallHandler) buildUninstallCommandForManager(manager string, pkgName
 		return ""
 	}
 
+	// Resolve the generic "default" manager to the OS/distro-specific one.
+	if manager == "default" {
+		manager = h.defaultManager()
+	}
+
 	pkgStr := strings.Join(pkgNames, " ")
 
 	// Handle specific package managers
@@ -409,7 +449,7 @@ func (h *InstallHandler) buildUninstallCommandForManager(manager string, pkgName
 		// Homebrew uninstall — use dependency injection for brew command
 		return fmt.Sprintf("%s uninstall -y %s", h.getBrewCommand(), pkgStr)
 
-	case "apt", "apt-get", "default":
+	case "apt", "apt-get":
 		// apt-get (Linux default)
 		if targetOS == "mac" {
 			// Fallback to brew on macOS if apt is specified — use dependency injection for brew command
@@ -417,6 +457,13 @@ func (h *InstallHandler) buildUninstallCommandForManager(manager string, pkgName
 		}
 
 		cmd := fmt.Sprintf("apt-get remove -y %s", pkgStr)
+		if h.shouldAddSudo() {
+			cmd = fmt.Sprintf("sudo %s", cmd)
+		}
+		return cmd
+
+	case "pacman":
+		cmd := fmt.Sprintf("pacman -R --noconfirm %s", pkgStr)
 		if h.shouldAddSudo() {
 			cmd = fmt.Sprintf("sudo %s", cmd)
 		}

@@ -17,6 +17,16 @@ dotfiles ~/.dotfiles on: [mac]
 curl -fsSL https://install.getbp.dev | sh
 ```
 
+To install the newest prerelease instead of the latest stable release:
+
+```bash
+curl -fsSL https://install.getbp.dev | sh -s -- --pre-release
+```
+
+Prereleases are created by manually running the `Semantic Release` workflow from
+the GitHub Actions tab, selecting a branch, and providing a version such as
+`1.0.0-rc.1`. Merging to `main` continues to trigger the normal stable release.
+
 Or download the latest binary from [releases](https://github.com/elpic/blueprint/releases).
 
 ## Quick Start

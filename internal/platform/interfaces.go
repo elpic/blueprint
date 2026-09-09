@@ -23,6 +23,9 @@ type SystemProvider interface {
 type OSDetector interface {
 	// Name returns the normalized OS name (mac, linux, windows)
 	Name() string
+	// Distro returns the normalized Linux distribution family (e.g. "arch",
+	// "debian", "ubuntu"), or "" on non-Linux or undetectable systems.
+	Distro() string
 	// Architecture returns the system architecture (amd64, arm64, etc.)
 	Architecture() string
 	// IsRoot returns true if running with root/admin privileges
@@ -294,7 +297,7 @@ type CryptoProvider interface {
 }
 
 // PackageManagerProvider handles package manager operations.
-// This abstracts different package managers (brew, apt, snap, etc.) behind a common interface.
+// This abstracts different package managers (brew, apt, pacman, snap, etc.) behind a common interface.
 type PackageManagerProvider interface {
 	// Install installs packages using the appropriate package manager
 	Install(packages []string, manager string) (*ExecuteResult, error)
