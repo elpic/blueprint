@@ -229,6 +229,12 @@ func (d *realOSDetector) Name() string {
 	return detector.Name()
 }
 
+// Distro returns the normalized Linux distribution family, or "" when unknown.
+func (d *realOSDetector) Distro() string {
+	detector := internal.NewOSDetector()
+	return detector.Distro()
+}
+
 // Architecture returns the system architecture.
 func (d *realOSDetector) Architecture() string {
 	return runtime.GOARCH
@@ -804,6 +810,8 @@ func (p *realPackageManagerProvider) probeCommand(packageName, manager string) s
 		return "brew list --versions " + packageName
 	case "apt", "apt-get":
 		return "dpkg -s " + packageName
+	case "pacman":
+		return "pacman -Q " + packageName
 	default:
 		return ""
 	}
@@ -825,6 +833,12 @@ func (p *realPackageManagerProvider) installCommand(packages []string, manager s
 			cmd = "sudo " + cmd
 		}
 		return cmd, nil
+	case "pacman":
+		cmd := fmt.Sprintf("pacman -S --noconfirm --needed %s", pkgStr)
+		if p.shouldAddSudo() {
+			cmd = "sudo " + cmd
+		}
+		return cmd, nil
 	default:
 		return "", fmt.Errorf("unsupported package manager: %s", manager)
 	}
@@ -842,6 +856,12 @@ func (p *realPackageManagerProvider) uninstallCommand(packages []string, manager
 		return fmt.Sprintf("brew uninstall -y %s", pkgStr), nil
 	case "apt", "apt-get":
 		cmd := fmt.Sprintf("apt-get remove -y %s", pkgStr)
+		if p.shouldAddSudo() {
+			cmd = "sudo " + cmd
+		}
+		return cmd, nil
+	case "pacman":
+		cmd := fmt.Sprintf("pacman -R --noconfirm %s", pkgStr)
 		if p.shouldAddSudo() {
 			cmd = "sudo " + cmd
 		}
@@ -878,6 +898,16 @@ func parseDpkgVersion(output string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("unable to find version line in dpkg output")
+}
+
+// parsePacmanVersion extracts the version from "pacman -Q <pkg>" output, e.g.
+// "git 2.43.0-1" → "2.43.0-1".
+func parsePacmanVersion(output string) (string, error) {
+	fields := strings.Fields(strings.TrimSpace(output))
+	if len(fields) < 2 {
+		return "", fmt.Errorf("unable to parse version from pacman output: %q", output)
+	}
+	return fields[len(fields)-1], nil
 }
 
 func (p *realPackageManagerProvider) Install(packages []string, manager string) (*ExecuteResult, error) {
@@ -926,6 +956,12 @@ func (p *realPackageManagerProvider) GetInstalledVersion(packageName, manager st
 			return "", fmt.Errorf("failed to parse version for %s: %w", packageName, parseErr)
 		}
 		return version, nil
+	case "pacman":
+		version, parseErr := parsePacmanVersion(result.Stdout)
+		if parseErr != nil {
+			return "", fmt.Errorf("failed to parse version for %s: %w", packageName, parseErr)
+		}
+		return version, nil
 	default:
 		return "", fmt.Errorf("unsupported package manager: %s", manager)
 	}
@@ -944,6 +980,9 @@ func (p *realPackageManagerProvider) IsManagerAvailable(manager string) bool {
 		}
 		_, err := exec.LookPath("apt")
 		return err == nil
+	case "pacman":
+		_, err := exec.LookPath("pacman")
+		return err == nil
 	default:
 		return false
 	}
@@ -954,6 +993,9 @@ func (p *realPackageManagerProvider) GetDefaultManager() string {
 	case "mac":
 		return "brew"
 	case "linux":
+		if p.os().Distro() == "arch" {
+			return "pacman"
+		}
 		return "apt"
 	default:
 		return ""

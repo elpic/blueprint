@@ -57,6 +57,12 @@ func (m *MockSystemProvider) WithOS(name string) *MockSystemProvider {
 	return m
 }
 
+// WithDistro configures the Linux distro family and returns the system provider for chaining.
+func (m *MockSystemProvider) WithDistro(distro string) *MockSystemProvider {
+	m.osDetector.WithDistro(distro)
+	return m
+}
+
 // WithUser configures the current user and returns the system provider for chaining.
 func (m *MockSystemProvider) WithUser(username, uid, gid, homeDir string) *MockSystemProvider {
 	m.osDetector.WithUser(username, uid, gid, homeDir)
@@ -97,6 +103,7 @@ func (m *MockSystemProvider) WithEnvironmentVar(key, value string) *MockSystemPr
 // MockOSDetector provides a mock implementation of OSDetector.
 type MockOSDetector struct {
 	name         string
+	distro       string
 	architecture string
 	isRoot       bool
 	userInfo     platform.UserInfo
@@ -123,6 +130,11 @@ func (m *MockOSDetector) Name() string {
 	return m.name
 }
 
+// Distro returns the configured distro family.
+func (m *MockOSDetector) Distro() string {
+	return m.distro
+}
+
 // Architecture returns the configured architecture.
 func (m *MockOSDetector) Architecture() string {
 	return m.architecture
@@ -143,6 +155,12 @@ func (m *MockOSDetector) CurrentUser() (platform.UserInfo, error) {
 // WithName sets the OS name and returns the detector for chaining.
 func (m *MockOSDetector) WithName(name string) *MockOSDetector {
 	m.name = name
+	return m
+}
+
+// WithDistro sets the distro family and returns the detector for chaining.
+func (m *MockOSDetector) WithDistro(distro string) *MockOSDetector {
+	m.distro = distro
 	return m
 }
 
