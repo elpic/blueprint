@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Prerelease version for manual runs (e.g., 1.0.0-rc.1)'
+        description: 'Optional version for manual prereleases (blank auto-generates the next rc version)'
         required: false
         type: string
 
@@ -63,8 +63,30 @@ jobs:
             SHOULD_RELEASE=true
             NEW_VERSION="${{ github.event.inputs.version }}"
           elif [ "$PRERELEASE" = true ]; then
-            echo "A version is required when publishing a prerelease (for example, 1.0.0-rc.1)." >&2
-            exit 1
+            SHOULD_RELEASE=true
+
+            # Manual prereleases default to the next semantic version based on
+            # the latest stable tag and the commits on the selected branch.
+            CURRENT_VERSION=${LATEST_TAG#v}
+            MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+            MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+            PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+
+            if [ "$BREAKING" = true ]; then
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+            elif [ "$FEATURE" = true ]; then
+              MINOR=$((MINOR + 1))
+              PATCH=0
+            else
+              PATCH=$((PATCH + 1))
+            fi
+
+            BASE_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            LAST_RC=$(git tag --list "v${BASE_VERSION}-rc.*" | sed -E 's/.*-rc\.//' | sort -n | tail -n 1)
+            LAST_RC=${LAST_RC:-0}
+            NEW_VERSION="${BASE_VERSION}-rc.$((LAST_RC + 1))"
           # Only proceed if there are releasable commits
           elif [ "$BREAKING" = true ] || [ "$FEATURE" = true ] || [ "$BUGFIX" = true ]; then
             SHOULD_RELEASE=true
