@@ -88,7 +88,7 @@ shell fish after: fish on: [mac, linux]
 2. **Validation**: Ensures the shell:
    - Exists and is a file (not a directory)
    - Is executable
-   - Is listed in `/etc/shells` (when available)
+   - Is listed in `/etc/shells` (auto-added if missing, requires sudo)
 
 3. **Idempotency**: Checks if the shell is already set before making changes
 
@@ -154,9 +154,15 @@ Error: shell is not executable: /path/to/shell
 
 ### Shell Not in /etc/shells
 ```
-Error: shell '/usr/local/bin/fish' is not listed in /etc/shells
+Error: failed to append '/usr/local/bin/fish' to /etc/shells: sudo authentication failed
 ```
-**Solution**: Add the shell to `/etc/shells` or install it properly
+**Solution**: Blueprint automatically appends the resolved shell path to `/etc/shells` (via `sudo`) when it is missing, so you no longer have to edit the file by hand. This error only appears if the sudo append itself fails — for example, you cancelled the password prompt or your account cannot run sudo. In that case, add the shell manually and re-run:
+
+```
+echo '/usr/local/bin/fish' | sudo tee -a /etc/shells
+```
+
+Rollback (`blueprint uninstall`) does **not** remove the entry from `/etc/shells`, since another user on the machine may depend on it; it only changes your login shell back via `chsh`.
 
 ### Permission Denied
 ```
@@ -168,7 +174,7 @@ Error: failed to change shell: permission denied
 
 - The shell handler only changes the shell for the current user
 - Validates shells against `/etc/shells` when available
-- Does not require sudo for normal operation
+- Requires sudo only when the shell is not already in `/etc/shells`
 - Tracks previous shell for automatic rollback capability
 
 ## Status and Tracking

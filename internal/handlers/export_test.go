@@ -361,6 +361,42 @@ func TestExportShell(t *testing.T) {
 	if !strings.Contains(joined, "chsh") {
 		t.Error("expected chsh")
 	}
+	// Export must contain a conditional, idempotent append to
+	// /etc/shells before the chsh line.
+	if !strings.Contains(joined, `grep -qxF "$SHELL_PATH" /etc/shells`) {
+		t.Error("expected grep -qxF check against /etc/shells")
+	}
+	if !strings.Contains(joined, `sudo tee -a /etc/shells > /dev/null`) {
+		t.Error("expected 'sudo tee -a /etc/shells' append")
+	}
+	if !strings.Contains(joined, `SHELL_PATH="$(command -v "zsh")"`) {
+		t.Error("expected SHELL_PATH to be resolved via command -v for a named shell")
+	}
+	// The ensure line must come before the chsh line.
+	if iEnsure, iChsh := strings.Index(joined, "grep -qxF"), strings.Index(joined, "chsh"); iEnsure == -1 || iChsh == -1 || iEnsure > iChsh {
+		t.Errorf("expected /etc/shells ensure line before chsh line; got:\n%s", joined)
+	}
+}
+
+func TestExportShell_AbsolutePath(t *testing.T) {
+	rule := parser.Rule{
+		Action:    "shell",
+		ShellName: "/usr/local/bin/fish",
+	}
+	lines := shellExport(t, "shell", rule, "bash", "mac")
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, `chsh -s "$SHELL_PATH"`) {
+		t.Errorf("expected 'chsh -s \"$SHELL_PATH\"' for absolute path; got:\n%s", joined)
+	}
+	if !strings.Contains(joined, `SHELL_PATH="/usr/local/bin/fish"`) {
+		t.Errorf("expected SHELL_PATH inlined with the absolute path; got:\n%s", joined)
+	}
+	if !strings.Contains(joined, `grep -qxF "$SHELL_PATH" /etc/shells`) {
+		t.Error("expected grep -qxF check against /etc/shells for absolute path")
+	}
+	if !strings.Contains(joined, `sudo tee -a /etc/shells > /dev/null`) {
+		t.Error("expected 'sudo tee -a /etc/shells' append for absolute path")
+	}
 }
 
 func TestExportDotfiles(t *testing.T) {
