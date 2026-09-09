@@ -17,6 +17,18 @@ dotfiles ~/.dotfiles on: [mac]
 curl -fsSL https://install.getbp.dev | sh
 ```
 
+To install the newest prerelease instead of the latest stable release:
+
+```bash
+curl -fsSL https://install.getbp.dev | sh -s -- --pre-release
+```
+
+To install an exact release or prerelease version:
+
+```bash
+curl -fsSL https://install.getbp.dev | sh -s -- --version 0.59.0-rc.1
+```
+
 Or download the latest binary from [releases](https://github.com/elpic/blueprint/releases).
 
 ## Quick Start

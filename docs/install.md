@@ -27,3 +27,18 @@ install curl after: setup-git on: [mac]
 # Multiple dependencies
 install curl wget after: git, base-tools on: [mac]
 ```
+
+## Installing a prerelease
+
+The installer uses the latest stable release by default. To install the newest
+GitHub prerelease instead:
+
+```bash
+curl -fsSL https://install.getbp.dev | sh -s -- --pre-release
+```
+
+To install an exact release or prerelease version:
+
+```bash
+curl -fsSL https://install.getbp.dev | sh -s -- --version 0.59.0-rc.1
+```

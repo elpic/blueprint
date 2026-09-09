@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., 1.0.0). Leave empty for auto-detect'
+        description: 'Optional version for manual prereleases (blank auto-generates the next rc version)'
         required: false
         type: string
 
@@ -21,6 +21,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       should_release: ${{ steps.version.outputs.should_release }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
       changelog: ${{ steps.changelog.outputs.changelog }}
     steps:
       - uses: actions/checkout@v6
@@ -30,7 +31,8 @@ jobs:
       - name: Get latest tag
         id: latest_tag
         run: |
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          LATEST_TAG=$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
+          LATEST_TAG=${LATEST_TAG:-v0.0.0}
           echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
 
       - name: Analyze commits and determine version
@@ -38,6 +40,10 @@ jobs:
         run: |
           LATEST_TAG=${{ steps.latest_tag.outputs.tag }}
           COMMITS=$(git log ${LATEST_TAG}..HEAD --pretty=%B)
+          PRERELEASE=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PRERELEASE=true
+          fi
 
           BREAKING=false
           FEATURE=false
@@ -52,10 +58,35 @@ jobs:
           echo "$COMMITS" | grep -q "^fix:" && BUGFIX=true || true
           echo "$COMMITS" | grep -qE "^fix\(.*\):" && BUGFIX=true || true
 
-          # Check if manual version was provided
+          # Manual runs target the selected branch and always publish a prerelease.
           if [ -n "${{ github.event.inputs.version }}" ]; then
             SHOULD_RELEASE=true
             NEW_VERSION="${{ github.event.inputs.version }}"
+          elif [ "$PRERELEASE" = true ]; then
+            SHOULD_RELEASE=true
+
+            # Derive the next prerelease from the latest stable tag and the
+            # conventional commits on the selected branch.
+            CURRENT_VERSION=${LATEST_TAG#v}
+            MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+            MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+            PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+
+            if [ "$BREAKING" = true ]; then
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+            elif [ "$FEATURE" = true ]; then
+              MINOR=$((MINOR + 1))
+              PATCH=0
+            else
+              PATCH=$((PATCH + 1))
+            fi
+
+            BASE_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            LAST_RC=$(git tag --list "v${BASE_VERSION}-rc.*" | sed -E 's/.*-rc\.//' | sort -n | tail -n 1)
+            LAST_RC=${LAST_RC:-0}
+            NEW_VERSION="${BASE_VERSION}-rc.$((LAST_RC + 1))"
           # Only proceed if there are releasable commits
           elif [ "$BREAKING" = true ] || [ "$FEATURE" = true ] || [ "$BUGFIX" = true ]; then
             SHOULD_RELEASE=true
@@ -86,6 +117,7 @@ jobs:
 
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "should_release=$SHOULD_RELEASE" >> $GITHUB_OUTPUT
+          echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
 
       - name: Generate changelog
         if: steps.version.outputs.should_release == 'true'
@@ -199,5 +231,6 @@ jobs:
             ## Changes
             ${{ needs.release.outputs.changelog }}
           artifacts: "binaries/*/*"
-          makeLatest: true
+          makeLatest: ${{ needs.release.outputs.prerelease != 'true' }}
+          prerelease: ${{ needs.release.outputs.prerelease == 'true' }}
           token: ${{ secrets.GITHUB_TOKEN }}
