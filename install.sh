@@ -11,24 +11,41 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 PRE_RELEASE=false
+VERSION=''
 
 print_usage() {
-	printf '%s\n' "Usage: install.sh [--pre-release]"
+	printf '%s\n' "Usage: install.sh [--pre-release] [--version VERSION]"
 	printf '%s\n' "  --pre-release  Install the newest GitHub prerelease instead of the latest stable release"
+	printf '%s\n' "  --version      Install an exact release version, such as 0.59.0-rc.1"
 }
 
 parse_args() {
-	for arg in "$@"; do
-		case "$arg" in
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
 			--pre-release)
 				PRE_RELEASE=true
+				shift
+				;;
+			--version)
+				if [ "$#" -lt 2 ]; then
+					printf "${RED}Error: --version requires a value${NC}\n" >&2
+					print_usage >&2
+					exit 1
+				fi
+				VERSION=$2
+				shift 2
+				;;
+			--version=*)
+				VERSION=${1#--version=}
+				shift
 				;;
 			--help|-h)
 				print_usage
+				shift
 				exit 0
 				;;
 			*)
-				printf "${RED}Error: Unknown option: %s${NC}\n" "$arg"
+				printf "${RED}Error: Unknown option: %s${NC}\n" "$1"
 				print_usage >&2
 				exit 1
 				;;
@@ -73,6 +90,18 @@ detect_os_arch() {
 
 # Get the latest release version
 get_latest_version() {
+	if [ -n "$VERSION" ]; then
+		# Accept both 0.59.0-rc.1 and v0.59.0-rc.1.
+		VERSION=${VERSION#v}
+		case "$VERSION" in
+			*[!A-Za-z0-9._-]*|'')
+				printf "${RED}Error: Invalid version: %s${NC}\n" "$VERSION" >&2
+				exit 1
+				;;
+		esac
+		return
+	fi
+
 	if [ "$PRE_RELEASE" = true ]; then
 		# The /releases/latest endpoint intentionally excludes prereleases. GitHub
 		# returns releases newest first, so select the first object marked prerelease.

@@ -36,3 +36,9 @@ GitHub prerelease instead:
 ```bash
 curl -fsSL https://install.getbp.dev | sh -s -- --pre-release
 ```
+
+To install an exact release or prerelease version:
+
+```bash
+curl -fsSL https://install.getbp.dev | sh -s -- --version 0.59.0-rc.1
+```

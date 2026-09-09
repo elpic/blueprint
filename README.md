@@ -23,6 +23,12 @@ To install the newest prerelease instead of the latest stable release:
 curl -fsSL https://install.getbp.dev | sh -s -- --pre-release
 ```
 
+To install an exact release or prerelease version:
+
+```bash
+curl -fsSL https://install.getbp.dev | sh -s -- --version 0.59.0-rc.1
+```
+
 Prereleases are created by manually running the `Semantic Release` workflow from
 the GitHub Actions tab, selecting a branch, and providing a version such as
 `1.0.0-rc.1`. Merging to `main` continues to trigger the normal stable release.
